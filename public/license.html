@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Get YourNet Control</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:20px;max-width:480px;margin-inline:auto}
+  h1{font-size:22px}
+  .price{font-size:30px;font-weight:800;color:#ffc55a;margin:8px 0 20px}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px;margin-bottom:16px}
+  .card h2{margin:0 0 8px;font-size:15px;color:#2ec4b6}
+  .momo{font-family:monospace;font-size:18px;font-weight:800;color:#fff;background:#0d1a1e;
+    border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:10px;display:block;margin:8px 0}
+  input{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#0d1a1e;color:#fff;margin-bottom:10px}
+  button{width:100%;padding:12px;border:none;border-radius:8px;background:#e8a33d;color:#0d1a1e;
+    font-weight:700;cursor:pointer;font-size:14px}
+  .msg{margin-top:10px;font-size:13px;padding:10px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
+  .note{font-size:12px;color:#6b8a91;line-height:1.6}
+</style>
+</head>
+<body>
+<div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
+<h1 data-i18n="ownIt">Own YourNet Control</h1>
+<div class="price">GHS <span id="priceDisplay">500</span> - <span data-i18n="oneTime">one time</span></div>
+
+<div class="card">
+  <h2 data-i18n="option1Title">Option 1 - Pay instantly (Card or Mobile Money)</h2>
+  <input id="email" type="email" data-i18n-placeholder="email" placeholder="Your email (for your activation key)">
+  <button onclick="payWithPaystack()" data-i18n="payWithPaystackBtn">Pay with Paystack</button>
+  <div class="msg" id="paystackMsg"></div>
+  <p class="note" data-i18n="autoKeyNote">Your activation key is generated automatically the moment payment is confirmed.</p>
+</div>
+
+<div class="card">
+  <h2 data-i18n="option2Title">Option 2 - Direct Mobile Money transfer</h2>
+  <p><span data-i18n="sendThisAmount">Send GHS</span> <span id="priceDisplay2">500</span> <span data-i18n="momoTo">to</span>:</p>
+  <span class="momo">Snowy Enterprise - 0559103879</span>
+  <p class="note" data-i18n="afterSendingFillIn">After sending, fill this in so your key can be reviewed and issued:</p>
+  <input id="momoName" data-i18n-placeholder="yourName" placeholder="Your name">
+  <input id="momoBiz" data-i18n-placeholder="businessName" placeholder="Business name">
+  <input id="momoEmail" type="email" placeholder="Email (your key will be sent here)">
+  <input id="momoPhone" data-i18n-placeholder="phoneUsedForMomo" placeholder="Phone number used for MoMo">
+  <input id="momoRef" data-i18n-placeholder="momoTransRef" placeholder="MoMo transaction reference (from SMS)">
+  <button onclick="submitMomoClaim()" data-i18n="submitForReview">I've paid - submit for review</button>
+  <div class="msg" id="momoMsg"></div>
+  <p class="note" data-i18n="manualIssueNote">Keys are issued manually after the transfer is confirmed - usually within a few hours.</p>
+</div>
+
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<script>
+  const t = window.yournetI18n.t;
+
+  async function payWithPaystack() {
+    const email = document.getElementById('email').value;
+    const msg = document.getElementById('paystackMsg');
+    if (!email) {
+      msg.textContent = t('email') + ' ' + t('submit');
+      msg.className = 'msg show err';
+      return;
+    }
+    try {
+      const res = await fetch('/license/purchase/paystack/initialize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not start payment');
+      window.location.href = data.authorizationUrl;
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
+  }
+
+  async function submitMomoClaim() {
+    const msg = document.getElementById('momoMsg');
+    const buyerEmail = document.getElementById('momoEmail').value;
+    if (!buyerEmail) {
+      msg.textContent = t('email');
+      msg.className = 'msg show err';
+      return;
+    }
+    try {
+      const res = await fetch('/license/momo-claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          buyerName: document.getElementById('momoName').value,
+          businessName: document.getElementById('momoBiz').value,
+          buyerEmail,
+          buyerPhone: document.getElementById('momoPhone').value,
+          momoReference: document.getElementById('momoRef').value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not submit');
+      msg.textContent = 'Submitted - your key will be sent once the payment is confirmed.';
+      msg.className = 'msg show';
+      msg.style.background = 'rgba(46,196,182,.12)';
+      msg.style.color = '#2ec4b6';
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
+  }
+</script>
+</body>
+</html>

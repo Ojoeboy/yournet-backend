@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YourNet Dashboard</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:20px;max-width:720px;margin-inline:auto}
+  h1{font-size:20px;margin-bottom:2px}
+  .sub{color:#6b8a91;font-size:13px;margin-bottom:20px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:20px}
+  .stat{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px}
+  .stat .num{font-size:22px;font-weight:800;color:#ffc55a}
+  .stat .label{font-size:11px;color:#6b8a91;text-transform:uppercase;margin-top:2px}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 10px;color:#2ec4b6}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;min-width:420px;border-collapse:collapse;font-size:13px}
+  td,th{padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:rgba(255,255,255,.08)}
+  .pill.online{background:rgba(46,196,182,.15);color:#2ec4b6}
+  .pill.error{background:rgba(255,107,107,.15);color:#ff6b6b}
+  input,select{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#0d1a1e;color:#fff;margin-right:6px}
+  button{padding:9px 14px;border:none;border-radius:8px;background:#e8a33d;color:#0d1a1e;
+    font-weight:700;cursor:pointer;font-size:13px}
+  .msg{margin-top:10px;font-size:13px;color:#6b8a91}
+</style>
+</head>
+<body>
+<div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
+<h1 data-i18n="dashboardTitle">Dashboard</h1>
+<div class="sub" data-i18n="realNumbers">Real numbers from your database - refresh anytime.</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="card">
+  <h2 data-i18n="topPackagesTitle">Top packages</h2>
+  <div class="table-scroll"><table id="packagesTable"></table></div>
+</div>
+
+<div class="card">
+  <h2 data-i18n="sitesTitle">Sites</h2>
+  <div class="table-scroll"><table id="sitesTable"></table></div>
+</div>
+
+<div class="card">
+  <h2 data-i18n="agentsTitle">Agents</h2>
+  <div style="margin-bottom:10px">
+    <input id="agentName" data-i18n-placeholder="agentNamePlaceholder" placeholder="Agent name">
+    <input id="agentCommission" data-i18n-placeholder="commissionPlaceholder" placeholder="Commission %" value="10" style="width:100px">
+    <button onclick="addAgent()" data-i18n="addAgentBtn">Add agent</button>
+  </div>
+  <div class="table-scroll"><table id="agentsTable"></table></div>
+  <div class="msg" id="agentMsg"></div>
+</div>
+
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<script>
+  const t = window.yournetI18n.t;
+  const token = localStorage.getItem('yournet_token');
+
+  async function api(path, method = 'GET', body) {
+    const res = await fetch(path, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  }
+
+  async function loadDashboard() {
+    if (!token) {
+      document.body.innerHTML = '<p style="padding:40px;text-align:center">Please log in via <a href="/admin" style="color:#2ec4b6">/admin</a> first.</p>';
+      return;
+    }
+
+    const s = await api('/api/dashboard/summary');
+
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="num">GHS ${s.revenue}</div><div class="label">${t('totalRevenue')}</div></div>
+      <div class="stat"><div class="num">${s.redeemedVouchers}</div><div class="label">${t('vouchersSold')}</div></div>
+      <div class="stat"><div class="num">${s.unusedVouchers}</div><div class="label">${t('unusedVouchers')}</div></div>
+      <div class="stat"><div class="num">${s.totalVouchers}</div><div class="label">${t('totalGenerated')}</div></div>
+    `;
+
+    document.getElementById('packagesTable').innerHTML =
+      '<tr><th>Package</th><th>Sold</th></tr>' +
+      (s.topPackages.length ? s.topPackages.map(p => `<tr><td>${p.label}</td><td>${p.sold}</td></tr>`).join('')
+        : '<tr><td colspan="2" style="color:#6b8a91">No sales yet</td></tr>');
+
+    document.getElementById('sitesTable').innerHTML =
+      '<tr><th>Site</th><th>Type</th><th>Status</th></tr>' +
+      s.sites.map(site => `<tr><td>${site.name}</td><td>${site.type}</td><td><span class="pill ${site.status}">${site.status}</span></td></tr>`).join('');
+
+    await loadAgents();
+  }
+
+  async function loadAgents() {
+    const agents = await api('/api/agents');
+    const rowsHtml = [];
+    for (const a of agents) {
+      const summary = await api(`/api/agents/${a.id}/summary`);
+      rowsHtml.push(`<tr>
+        <td>${a.name}</td>
+        <td>${summary.vouchersSold}</td>
+        <td>GHS ${summary.revenue}</td>
+        <td>${summary.commissionPct}%</td>
+        <td>GHS ${summary.commissionOwed}</td>
+      </tr>`);
+    }
+    document.getElementById('agentsTable').innerHTML =
+      '<tr><th>Agent</th><th>Sold</th><th>Revenue</th><th>Rate</th><th>Owed</th></tr>' +
+      (rowsHtml.length ? rowsHtml.join('') : '<tr><td colspan="5" style="color:#6b8a91">No agents yet</td></tr>');
+  }
+
+  async function addAgent() {
+    const msg = document.getElementById('agentMsg');
+    try {
+      await api('/api/agents', 'POST', {
+        name: document.getElementById('agentName').value,
+        commissionPct: Number(document.getElementById('agentCommission').value) || 10,
+      });
+      msg.textContent = 'Agent added.';
+      document.getElementById('agentName').value = '';
+      await loadAgents();
+    } catch (err) {
+      msg.textContent = err.message;
+    }
+  }
+
+  loadDashboard();
+</script>
+</body>
+</html>

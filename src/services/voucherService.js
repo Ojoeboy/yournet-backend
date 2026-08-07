@@ -1,0 +1,124 @@
+const { v4: uuidv4 } = require('uuid');
+const pool = require('../db/pool');
+const mikrotik = require('../integrations/mikrotik');
+const omada = require('../integrations/omada');
+const { decrypt } = require('../utils/credentialCrypto');
+
+function randomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
+  let s = '';
+  for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return `${s.slice(0, 4)}-${s.slice(4)}`;
+}
+
+/**
+ * Generate N vouchers in the DB. Does NOT touch the router yet - hotspot
+ * users are only created on the router at redemption time (this keeps the
+ * router's user table small and avoids pre-loading thousands of unused
+ * accounts onto a Mikrotik with limited memory).
+ */
+async function generateVouchers(tenantId, { packageId, siteId, agentId, quantity, batch }) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const created = [];
+    for (let i = 0; i < quantity; i++) {
+      // Extremely unlikely (32^8 possibilities per tenant), but if a
+      // duplicate code is ever generated, retry with a fresh one instead
+      // of aborting the entire batch over one collision.
+      let inserted = null;
+      for (let attempt = 0; attempt < 5 && !inserted; attempt++) {
+        const code = randomCode();
+        try {
+          const { rows } = await client.query(
+            `INSERT INTO vouchers (id, tenant_id, site_id, package_id, agent_id, code, batch)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [uuidv4(), tenantId, siteId, packageId, agentId, code, batch]
+          );
+          inserted = rows[0];
+        } catch (err) {
+          if (err.code !== '23505') throw err; // anything other than "duplicate code" is a real error
+          // 23505 = unique_violation on (tenant_id, code) - loop and try again
+        }
+      }
+      if (!inserted) throw new Error('Could not generate a unique voucher code after 5 attempts.');
+      created.push(inserted);
+    }
+    await client.query('COMMIT');
+    return created;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Redeem a voucher: validates it, then actually calls the right router
+ * integration to grant network access. This replaces the old front-end
+ * behaviour of just flipping a status flag in localStorage.
+ */
+async function redeemVoucher(tenantId, code, redeemContext = {}) {
+  const { rows } = await pool.query(
+    `SELECT
+       v.id AS voucher_id, v.code, v.status AS voucher_status, v.site_id,
+       p.duration_minutes, p.rate_limit_down, p.rate_limit_up,
+       s.id AS site_id_full, s.type AS site_type,
+       s.mk_host, s.mk_api_port, s.mk_username, s.mk_password_encrypted, s.mk_hotspot_profile,
+       s.omada_base_url, s.omada_client_id, s.omada_client_secret_encrypted,
+       s.omada_omadac_id, s.omada_site_id
+     FROM vouchers v
+     JOIN packages p ON p.id = v.package_id
+     JOIN sites s ON s.id = v.site_id
+     WHERE v.tenant_id = $1 AND v.code = $2`,
+    [tenantId, code]
+  );
+
+  if (!rows.length) return { ok: false, reason: 'not_found' };
+  const v = rows[0];
+  if (v.voucher_status !== 'unused') {
+    return { ok: false, reason: 'already_used', status: v.voucher_status };
+  }
+
+  // Mikrotik/Omada integration modules expect decrypted credential fields -
+  // map them here in one place (today this is a pass-through since real
+  // encryption isn't wired in yet; see README "Security" section).
+  const site = {
+    ...v,
+    mk_password_decrypted: decrypt(v.mk_password_encrypted),
+    omada_client_secret_decrypted: decrypt(v.omada_client_secret_encrypted),
+  };
+
+  let providerResult;
+  if (v.site_type === 'mikrotik') {
+    providerResult = await mikrotik.createHotspotUser(site, {
+      code: v.code,
+      profile: v.mk_hotspot_profile,
+      durationMinutes: v.duration_minutes,
+      rateLimit: v.rate_limit_up && v.rate_limit_down ? `${v.rate_limit_up}/${v.rate_limit_down}` : null,
+      clientMac: redeemContext.clientMac || null,
+    });
+  } else if (v.site_type === 'omada') {
+    providerResult = await omada.authorizeClient(site, {
+      clientMac: redeemContext.clientMac,
+      apMac: redeemContext.apMac,
+      ssidName: redeemContext.ssidName,
+      radioId: redeemContext.radioId,
+      siteParam: v.omada_site_id,
+    });
+  } else {
+    return { ok: false, reason: 'unsupported_site_type' };
+  }
+
+  const expiresAt = new Date(Date.now() + v.duration_minutes * 60000);
+  await pool.query(
+    `UPDATE vouchers SET status='active', redeemed_at=now(), expires_at=$1,
+     client_mac=$2, provider_ref=$3 WHERE id=$4`,
+    [expiresAt, redeemContext.clientMac || null, JSON.stringify(providerResult).slice(0, 250), v.voucher_id]
+  );
+
+  return { ok: true, expiresAt };
+}
+
+module.exports = { generateVouchers, redeemVoucher, randomCode };

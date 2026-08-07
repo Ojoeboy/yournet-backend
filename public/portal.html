@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>WiFi Access</title>
+<style>
+  /* System fonts only - no external CDN calls. The device has no internet
+     yet, so anything loaded from a CDN will just fail to render. */
+  :root{
+    --ink:#080F12;--panel:rgba(20,40,46,0.9);--gold:#E8A33D;--gold2:#FFC55A;
+    --teal:#2EC4B6;--cream:#E8F0F1;--muted:#6B8A91;--danger:#FF6B6B;--line:rgba(255,255,255,0.1);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;min-height:100vh;background:var(--ink);color:var(--cream);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+  body{background:radial-gradient(900px 600px at 20% -10%,rgba(46,196,182,0.16),transparent),
+    radial-gradient(700px 500px at 90% 100%,rgba(232,163,61,0.1),transparent),var(--ink);
+    display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{width:100%;max-width:380px;background:linear-gradient(180deg,rgba(20,40,46,0.92),rgba(13,26,30,0.85));
+    border:1px solid var(--line);border-radius:22px;padding:26px 22px;box-shadow:0 20px 50px rgba(0,0,0,0.5)}
+  .logo{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:16px}
+  .logo .box{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,#1A363E,#14282E);
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--teal)}
+  h1{font-size:20px;margin:0 0 4px;text-align:center}
+  .sub{font-size:12.5px;color:var(--muted);text-align:center;margin:0 0 20px;line-height:1.4}
+  label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600;display:block;margin-bottom:6px}
+  input{width:100%;background:rgba(0,0,0,0.3);border:1px solid var(--line);color:var(--cream);
+    border-radius:12px;padding:14px;font-size:16px;text-align:center;letter-spacing:2px;text-transform:uppercase;font-weight:700}
+  input:focus{outline:none;border-color:rgba(232,163,61,.5)}
+  button{width:100%;margin-top:14px;padding:14px;border:none;border-radius:12px;font-weight:700;font-size:15px;
+    background:linear-gradient(135deg,var(--gold),var(--gold2));color:#080F12;cursor:pointer}
+  button:disabled{opacity:.6}
+  .msg{margin-top:14px;font-size:13px;text-align:center;padding:10px;border-radius:10px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(255,107,107,.12);color:var(--danger);border:1px solid rgba(255,107,107,.25)}
+  .msg.ok{background:rgba(46,196,182,.12);color:var(--teal);border:1px solid rgba(46,196,182,.25)}
+  .success{display:none;text-align:center}
+  .success.show{display:block}
+  .success .tick{font-size:40px;margin-bottom:6px}
+  .success h2{margin:0 0 6px;font-size:18px}
+  .success p{color:var(--muted);font-size:13px;margin:0}
+  .footer{margin-top:18px;font-size:11px;color:var(--muted);text-align:center}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:6px" id="yournetLangSwitcherContainer"></div>
+    <div class="logo"><div class="box">Y</div><div style="font-weight:700" data-i18n="portalTitle">YourNet WiFi</div></div>
+
+    <div id="form-view">
+      <h1 data-i18n="enterCode">Enter your voucher code</h1>
+      <p class="sub" data-i18n="typeCodeHint">Type the code from your card or receipt to get online.</p>
+      <label for="code" data-i18n="voucherCodeLabel">Voucher Code</label>
+      <input id="code" type="text" placeholder="XXXX-XXXX" maxlength="9" autocomplete="off" autocapitalize="characters">
+      <button id="submitBtn" onclick="redeem()" data-i18n="connectBtn">Connect</button>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="success" id="success-view">
+      <div class="tick">✅</div>
+      <h2 data-i18n="connectedTitle">You're connected!</h2>
+      <p id="expiry-text" data-i18n="connectedSub">Enjoy your internet access.</p>
+    </div>
+
+    <div class="footer" data-i18n="poweredBy">Powered by YourNet Control</div>
+  </div>
+
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<script>
+  const t = window.yournetI18n.t;
+
+  // Server returns REASON CODES, not English text, so they can be
+  // translated into whatever language the customer has selected.
+  const REASON_MESSAGES = {
+    not_found: 'errNotFound',
+    already_used: 'errAlreadyUsed',
+    unsupported_site_type: 'errUnsupportedSite',
+    network_error: 'errNetwork',
+  };
+</script>
+<script>
+  // siteId comes from the portal URL path: /p/{siteId}
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const siteId = pathParts[pathParts.length - 1];
+
+  // Omada / Mikrotik both append connection details as query params when
+  // they redirect a newly-joined device to this external login page.
+  const params = new URLSearchParams(window.location.search);
+  const clientMac = params.get('clientMac') || params.get('mac') || '';
+  const apMac = params.get('apMac') || '';
+  const ssidName = params.get('ssidName') || params.get('ssid') || '';
+  const radioId = params.get('radioId') || '';
+
+  const codeInput = document.getElementById('code');
+  const msgEl = document.getElementById('msg');
+  const submitBtn = document.getElementById('submitBtn');
+
+  codeInput.addEventListener('input', () => {
+    // auto-format as XXXX-XXXX while typing
+    let v = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (v.length > 4) v = v.slice(0, 4) + '-' + v.slice(4, 8);
+    codeInput.value = v;
+  });
+
+  function showMsg(text, type) {
+    msgEl.textContent = text;
+    msgEl.className = 'msg show ' + type;
+  }
+
+  async function redeem() {
+    const code = codeInput.value.trim();
+    if (!code || code.length < 8) {
+      showMsg(t('enterFullCode'), 'err');
+      return;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = t('loading');
+    msgEl.className = 'msg';
+
+    try {
+      const res = await fetch(`/portal/${siteId}/redeem`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, clientMac, apMac, ssidName, radioId }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        const key = REASON_MESSAGES[data.reason] || 'errNetwork';
+        showMsg(t(key), 'err');
+        submitBtn.disabled = false;
+        submitBtn.textContent = t('connectBtn');
+        return;
+      }
+
+      document.getElementById('form-view').style.display = 'none';
+      document.getElementById('success-view').classList.add('show');
+      if (data.expiresAt) {
+        const exp = new Date(data.expiresAt);
+        document.getElementById('expiry-text').textContent = exp.toLocaleString();
+      }
+      // Give the router a moment to apply access, then try to move the
+      // browser off the portal page so normal browsing can resume.
+      setTimeout(() => {
+        window.location.href = params.get('originUrl') || params.get('redirectUrl') || 'http://neverssl.com';
+      }, 2500);
+    } catch (err) {
+      showMsg(t('errNetwork'), 'err');
+      submitBtn.disabled = false;
+      submitBtn.textContent = t('connectBtn');
+    }
+  }
+
+  codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') redeem(); });
+</script>
+</body>
+</html>

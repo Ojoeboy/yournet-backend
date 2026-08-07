@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YourNet Admin</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:20px;max-width:640px;margin-inline:auto}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{color:#6b8a91;font-size:13px;margin-bottom:20px}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 12px;color:#2ec4b6}
+  label{display:block;font-size:11px;color:#6b8a91;text-transform:uppercase;margin:10px 0 4px}
+  input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);
+    background:#0d1a1e;color:#fff;font-size:14px}
+  button{margin-top:14px;padding:11px 16px;border:none;border-radius:8px;background:#e8a33d;
+    color:#0d1a1e;font-weight:700;cursor:pointer;font-size:14px}
+  button.secondary{background:#1a363e;color:#e8f0f1}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:140px}
+  .row>div{flex:1}
+  .msg{margin-top:10px;font-size:13px;padding:8px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.ok{background:rgba(46,196,182,.12);color:#2ec4b6}
+  .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
+  .hidden{display:none}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;min-width:420px;border-collapse:collapse;font-size:13px;margin-top:8px}
+  td,th{padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+  .code{font-family:monospace;font-weight:700;color:#ffc55a}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:rgba(255,255,255,.08)}
+</style>
+</head>
+<body>
+<div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
+<h1>YourNet Admin</h1>
+<div class="sub">Click-through setup - no raw API calls needed</div>
+
+<!-- STEP 1: Login/Signup -->
+<div class="card" id="auth-card">
+  <h2 data-i18n="step1Title">Step 1 - Your account</h2>
+  <label data-i18n="licenseKeyLabel">License key</label>
+  <input id="licenseKey" placeholder="YNET-XXXX-XXXX-XXXX">
+  <label data-i18n="businessName">Business name</label>
+  <input id="businessName" placeholder="BITTNET INTERNET SERVICES">
+  <label data-i18n="email">Email</label>
+  <input id="email" type="email" placeholder="you@example.com">
+  <label data-i18n="password">Password</label>
+  <input id="password" type="password">
+  <button onclick="signup()" data-i18n="createAccountBtn">Create account</button>
+  <button class="secondary" onclick="login()" data-i18n="loginInsteadBtn">Log in instead</button>
+  <div class="msg" id="auth-msg"></div>
+  <p style="font-size:11px;color:#6b8a91;margin-top:10px">
+    <span data-i18n="needKeyText">Need a key?</span>
+    <a href="/license" style="color:#2ec4b6" data-i18n="getOneHere">Get one here</a>.
+    <span data-i18n="forgotPasswordText">Forgot your password?</span>
+    <a href="/forgot-password" style="color:#2ec4b6" data-i18n="resetIt">Reset it</a>.
+  </p>
+</div>
+
+<!-- STEP 2: Add Site -->
+<div class="card hidden" id="site-card">
+  <h2 data-i18n="step2Title">Step 2 - Add your Mikrotik router</h2>
+  <label data-i18n="siteNameLabel">Site name</label>
+  <input id="siteName" placeholder="Main compound">
+  <label data-i18n="routerIpLabel">Router IP address</label>
+  <input id="mkHost" placeholder="e.g. 192.168.88.1">
+  <div class="row">
+    <div><label data-i18n="apiPortLabel">API port</label><input id="mkPort" value="8728"></div>
+    <div><label data-i18n="hotspotProfileLabel">Hotspot profile</label><input id="mkProfile" value="default"></div>
+  </div>
+  <label data-i18n="routerUsernameLabel">Router API username</label>
+  <input id="mkUser" placeholder="admin">
+  <label data-i18n="routerPasswordLabel">Router API password</label>
+  <input id="mkPass" type="password">
+  <button onclick="addSite()" data-i18n="saveSiteBtn">Save site</button>
+  <button class="secondary" onclick="testSite()" data-i18n="testConnectionBtn">Test connection</button>
+  <button class="secondary" onclick="openRscWizard()" data-i18n="rscWizardBtn">Mikrotik config wizard</button>
+  <div class="msg" id="site-msg"></div>
+</div>
+
+<!-- STEP 3: Packages -->
+<div class="card hidden" id="package-card">
+  <h2 data-i18n="step3Title">Step 3 - Create a package</h2>
+  <label data-i18n="pkgLabelLabel">Label</label>
+  <input id="pkgLabel" placeholder="6 Hours">
+  <div class="row">
+    <div><label data-i18n="priceLabel">Price (GHS)</label><input id="pkgPrice" placeholder="5"></div>
+    <div><label data-i18n="durationLabel">Duration (minutes)</label><input id="pkgDuration" placeholder="360"></div>
+  </div>
+  <div class="row">
+    <div><label data-i18n="speedDownLabel">Speed down (e.g. 10M)</label><input id="pkgDown" placeholder="10M"></div>
+    <div><label data-i18n="speedUpLabel">Speed up (e.g. 4M)</label><input id="pkgUp" placeholder="4M"></div>
+  </div>
+  <button onclick="addPackage()" data-i18n="savePackageBtn">Save package</button>
+  <div class="msg" id="package-msg"></div>
+</div>
+
+<!-- STEP 4: Vouchers -->
+<div class="card hidden" id="voucher-card">
+  <h2 data-i18n="step4Title">Step 4 - Generate vouchers</h2>
+  <label data-i18n="packageLabel">Package</label>
+  <select id="voucherPackage"></select>
+  <label data-i18n="siteLabel">Site</label>
+  <select id="voucherSite"></select>
+  <label data-i18n="quantityLabel">How many?</label>
+  <input id="voucherQty" value="5">
+  <button onclick="generateVouchers()" data-i18n="generateBtn">Generate</button>
+  <div class="msg" id="voucher-msg"></div>
+  <div class="table-scroll"><table id="voucherTable"></table></div>
+</div>
+
+<!-- STEP 5: Payment gateway (optional - lets customers buy vouchers online) -->
+<div class="card hidden" id="gateway-card">
+  <h2>Step 5 - Accept online payments (optional)</h2>
+  <p style="font-size:12px;color:#6b8a91;margin-bottom:10px">
+    Link your own Paystack, Hubtel, or Flutterwave account so customers can pay online and get a voucher instantly.
+    Payments go straight to YOUR account, not the platform's.
+  </p>
+  <label>Provider</label>
+  <select id="gwProvider" onchange="renderGatewayFields()">
+    <option value="paystack">Paystack</option>
+    <option value="hubtel">Hubtel</option>
+    <option value="flutterwave">Flutterwave</option>
+  </select>
+
+  <div id="gwFields-paystack" class="gw-fields">
+    <label>Secret key</label>
+    <input id="gwPaystackSecret" type="password" placeholder="sk_live_...">
+    <label>Public key</label>
+    <input id="gwPaystackPublic" placeholder="pk_live_...">
+  </div>
+
+  <div id="gwFields-hubtel" class="gw-fields hidden">
+    <label>Client ID</label>
+    <input id="gwHubtelClientId" placeholder="Client ID">
+    <label>Client secret</label>
+    <input id="gwHubtelClientSecret" type="password" placeholder="Client secret">
+    <label>Merchant account number</label>
+    <input id="gwHubtelMerchant" placeholder="e.g. 11334">
+  </div>
+
+  <div id="gwFields-flutterwave" class="gw-fields hidden">
+    <label>Secret key</label>
+    <input id="gwFlutterwaveSecret" type="password" placeholder="FLWSECK-...">
+    <label>Public key</label>
+    <input id="gwFlutterwavePublic" placeholder="FLWPUBK-...">
+  </div>
+
+  <button onclick="saveGateway()">Save credentials</button>
+  <button class="secondary" onclick="activateGateway()">Make this the active gateway</button>
+  <div class="msg" id="gateway-msg"></div>
+  <div class="table-scroll"><table id="gatewayTable"></table></div>
+</div>
+
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<script>
+  let token = localStorage.getItem('yournet_token') || null;
+  let tenant = null;
+
+  function showMsg(id, text, type) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = 'msg show ' + type;
+  }
+
+  async function api(path, method, body) {
+    const res = await fetch(path, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  }
+
+  async function signup() {
+    try {
+      const data = await api('/api/auth/signup', 'POST', {
+        licenseKey: document.getElementById('licenseKey').value,
+        businessName: document.getElementById('businessName').value,
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value,
+      });
+      onAuthed(data);
+    } catch (err) {
+      showMsg('auth-msg', err.message, 'err');
+    }
+  }
+
+  async function login() {
+    try {
+      const data = await api('/api/auth/login', 'POST', {
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value,
+      });
+      onAuthed(data);
+    } catch (err) {
+      showMsg('auth-msg', err.message, 'err');
+    }
+  }
+
+  function onAuthed(data) {
+    token = data.token;
+    tenant = data.tenant;
+    localStorage.setItem('yournet_token', token);
+    showMsg('auth-msg', 'Logged in as ' + (tenant.businessName || tenant.business_name), 'ok');
+    document.getElementById('site-card').classList.remove('hidden');
+    document.getElementById('package-card').classList.remove('hidden');
+    document.getElementById('voucher-card').classList.remove('hidden');
+    document.getElementById('gateway-card').classList.remove('hidden');
+    loadSitesAndPackages();
+    loadGateways();
+  }
+
+  async function addSite() {
+    try {
+      await api('/api/sites', 'POST', {
+        name: document.getElementById('siteName').value,
+        type: 'mikrotik',
+        mikrotik: {
+          host: document.getElementById('mkHost').value,
+          port: Number(document.getElementById('mkPort').value) || 8728,
+          hotspotProfile: document.getElementById('mkProfile').value,
+          username: document.getElementById('mkUser').value,
+          password: document.getElementById('mkPass').value,
+        },
+      });
+      showMsg('site-msg', 'Site saved. Click "Test connection" to verify.', 'ok');
+      loadSitesAndPackages();
+    } catch (err) {
+      showMsg('site-msg', err.message, 'err');
+    }
+  }
+
+  async function openRscWizard() {
+    try {
+      const sites = await api('/api/sites', 'GET');
+      if (!sites.length) return showMsg('site-msg', 'Save the site first.', 'err');
+      const site = sites[sites.length - 1];
+      window.open(`/rsc-wizard.html?siteId=${site.id}`, '_blank');
+    } catch (err) {
+      showMsg('site-msg', err.message, 'err');
+    }
+  }
+
+  async function testSite() {
+    try {
+      const sites = await api('/api/sites', 'GET');
+      if (!sites.length) return showMsg('site-msg', 'Save the site first.', 'err');
+      const site = sites[sites.length - 1];
+      const result = await api(`/api/sites/${site.id}/test`, 'POST');
+      if (result.online) {
+        showMsg('site-msg', 'Connected! Router identity: ' + (result.identity || 'unknown'), 'ok');
+      } else {
+        showMsg('site-msg', 'Could not connect: ' + (result.error || 'unknown error'), 'err');
+      }
+    } catch (err) {
+      showMsg('site-msg', err.message, 'err');
+    }
+  }
+
+  async function addPackage() {
+    try {
+      await api('/api/packages', 'POST', {
+        label: document.getElementById('pkgLabel').value,
+        price: Number(document.getElementById('pkgPrice').value),
+        durationMinutes: Number(document.getElementById('pkgDuration').value),
+        rateLimitDown: document.getElementById('pkgDown').value || null,
+        rateLimitUp: document.getElementById('pkgUp').value || null,
+      });
+      showMsg('package-msg', 'Package saved.', 'ok');
+      loadSitesAndPackages();
+    } catch (err) {
+      showMsg('package-msg', err.message, 'err');
+    }
+  }
+
+  async function loadSitesAndPackages() {
+    try {
+      const sites = await api('/api/sites', 'GET');
+      const siteSelect = document.getElementById('voucherSite');
+      siteSelect.innerHTML = sites.map(s => `<option value="${s.id}">${s.name} (${s.status})</option>`).join('');
+
+      const packages = await api('/api/packages', 'GET');
+      const pkgSelect = document.getElementById('voucherPackage');
+      pkgSelect.innerHTML = packages.map(p => `<option value="${p.id}">${p.label} - GHS ${p.price}</option>`).join('');
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  async function generateVouchers() {
+    try {
+      const data = await api('/api/vouchers/generate', 'POST', {
+        packageId: document.getElementById('voucherPackage').value,
+        siteId: document.getElementById('voucherSite').value,
+        quantity: Number(document.getElementById('voucherQty').value) || 1,
+      });
+      showMsg('voucher-msg', `Generated ${data.count} vouchers.`, 'ok');
+      const table = document.getElementById('voucherTable');
+      table.innerHTML = '<tr><th>Code</th><th>Status</th></tr>' +
+        data.vouchers.map(v => `<tr><td class="code">${v.code}</td><td><span class="pill">${v.status}</span></td></tr>`).join('');
+    } catch (err) {
+      showMsg('voucher-msg', err.message, 'err');
+    }
+  }
+
+  // Auto-resume session if already logged in
+  if (token) {
+    document.getElementById('site-card').classList.remove('hidden');
+    document.getElementById('package-card').classList.remove('hidden');
+    document.getElementById('voucher-card').classList.remove('hidden');
+    document.getElementById('gateway-card').classList.remove('hidden');
+    loadSitesAndPackages();
+    loadGateways();
+  }
+
+  function renderGatewayFields() {
+    document.querySelectorAll('.gw-fields').forEach(el => el.classList.add('hidden'));
+    const provider = document.getElementById('gwProvider').value;
+    document.getElementById('gwFields-' + provider).classList.remove('hidden');
+  }
+
+  async function saveGateway() {
+    const provider = document.getElementById('gwProvider').value;
+    const body = { provider };
+    if (provider === 'paystack') {
+      body.paystackSecretKey = document.getElementById('gwPaystackSecret').value;
+      body.paystackPublicKey = document.getElementById('gwPaystackPublic').value;
+    } else if (provider === 'hubtel') {
+      body.hubtelClientId = document.getElementById('gwHubtelClientId').value;
+      body.hubtelClientSecret = document.getElementById('gwHubtelClientSecret').value;
+      body.hubtelMerchantAccountNumber = document.getElementById('gwHubtelMerchant').value;
+    } else if (provider === 'flutterwave') {
+      body.flutterwaveSecretKey = document.getElementById('gwFlutterwaveSecret').value;
+      body.flutterwavePublicKey = document.getElementById('gwFlutterwavePublic').value;
+    }
+    try {
+      await api('/api/payment-gateways', 'POST', body);
+      showMsg('gateway-msg', provider + ' credentials saved.', 'ok');
+      loadGateways();
+    } catch (err) {
+      showMsg('gateway-msg', err.message, 'err');
+    }
+  }
+
+  async function activateGateway() {
+    const provider = document.getElementById('gwProvider').value;
+    try {
+      await api(`/api/payment-gateways/${provider}/activate`, 'POST');
+      showMsg('gateway-msg', provider + ' is now the active gateway for your customers.', 'ok');
+      loadGateways();
+    } catch (err) {
+      showMsg('gateway-msg', err.message, 'err');
+    }
+  }
+
+  async function loadGateways() {
+    try {
+      const gateways = await api('/api/payment-gateways', 'GET');
+      const table = document.getElementById('gatewayTable');
+      if (!gateways.length) {
+        table.innerHTML = '<tr><td style="color:#6b8a91">No gateway linked yet.</td></tr>';
+        return;
+      }
+      table.innerHTML = '<tr><th>Provider</th><th>Status</th></tr>' +
+        gateways.map(g => `<tr><td>${g.provider}</td><td>${g.is_active ? '<span class="pill">Active</span>' : 'Configured'}</td></tr>`).join('');
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  renderGatewayFields();
+</script>
+</body>
+</html>

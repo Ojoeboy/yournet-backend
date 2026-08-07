@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoMo Claims - Owner Review</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:20px;max-width:640px;margin-inline:auto}
+  h1{font-size:20px}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;margin-bottom:12px}
+  .card .row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
+  .card .row span:first-child{color:#6b8a91}
+  .actions{display:flex;gap:8px;margin-top:12px}
+  button{padding:9px 14px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px}
+  .approve{background:#2ec4b6;color:#0d1a1e}
+  .reject{background:rgba(255,107,107,.15);color:#ff6b6b}
+  input{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#132228;color:#fff;margin-bottom:10px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,255,255,.08)}
+  .pill.pending{background:rgba(255,193,7,.15);color:#ffc107}
+  .pill.approved{background:rgba(46,196,182,.15);color:#2ec4b6}
+  .pill.rejected{background:rgba(255,107,107,.15);color:#ff6b6b}
+  .keyBox{font-family:monospace;color:#ffc55a;font-weight:700;margin-top:8px}
+</style>
+</head>
+<body>
+<h1>MoMo Claims Review</h1>
+
+<div id="panel">
+  <div id="list"></div>
+</div>
+
+<script>
+  const token = sessionStorage.getItem('yournet_owner_token');
+  if (!token) {
+    window.location.href = '/owner-login';
+  }
+
+  async function loadClaims() {
+    const res = await fetch('/license/admin/momo-claims', {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    if (res.status === 401) {
+      sessionStorage.removeItem('yournet_owner_token');
+      window.location.href = '/owner-login';
+      return;
+    }
+    const claims = await res.json();
+    const list = document.getElementById('list');
+    if (!claims.length) {
+      list.innerHTML = '<p style="color:#6b8a91">No claims yet.</p>';
+      return;
+    }
+    list.innerHTML = claims.map(c => `
+      <div class="card">
+        <div class="row"><span>Name</span><span>${c.buyer_name || '-'}</span></div>
+        <div class="row"><span>Business</span><span>${c.business_name || '-'}</span></div>
+        <div class="row"><span>Email</span><span>${c.buyer_email}</span></div>
+        <div class="row"><span>Phone</span><span>${c.buyer_phone || '-'}</span></div>
+        <div class="row"><span>MoMo Ref</span><span>${c.momo_reference || '-'}</span></div>
+        <div class="row"><span>Submitted</span><span>${new Date(c.created_at).toLocaleString()}</span></div>
+        <div class="row"><span>Status</span><span class="pill ${c.status}">${c.status}</span></div>
+        ${c.status === 'pending' ? `
+          <div class="actions">
+            <button class="approve" onclick="approve('${c.id}')">Approve & issue key</button>
+            <button class="reject" onclick="reject('${c.id}')">Reject</button>
+          </div>` : ''}
+        <div class="keyBox" id="key-${c.id}"></div>
+      </div>
+    `).join('');
+  }
+
+  async function approve(id) {
+    const res = await fetch(`/license/admin/momo-claims/${id}/approve`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const data = await res.json();
+    if (!res.ok) return alert(data.error || 'Failed');
+    document.getElementById(`key-${id}`).textContent = 'Key: ' + data.key.key_code + ' - send this to the buyer.';
+    loadClaims();
+  }
+
+  async function reject(id) {
+    await fetch(`/license/admin/momo-claims/${id}/reject`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    loadClaims();
+  }
+
+  if (token) loadClaims();
+</script>
+</body>
+</html>

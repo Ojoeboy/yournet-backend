@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Settlement</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:20px;max-width:520px;margin-inline:auto}
+  h1{font-size:20px;margin-bottom:14px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  select,input{padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#132228;color:#fff}
+  button{padding:9px 14px;border:none;border-radius:8px;background:#e8a33d;color:#0d1a1e;
+    font-weight:700;cursor:pointer;font-size:13px}
+  .sheet{background:#fff;color:#0d1a1e;border-radius:14px;padding:20px;display:none}
+  .sheet.show{display:block}
+  .sheet .header{display:flex;justify-content:space-between;border-bottom:2px solid #0d1a1e;padding-bottom:10px;margin-bottom:12px}
+  .sheet h2{margin:0;font-size:17px}
+  .sheet .sub{font-size:11px;color:#6b8a91}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;min-width:420px;border-collapse:collapse;font-size:13px}
+  td,th{padding:7px 4px;border-bottom:1px solid #eee;text-align:left}
+  tfoot td{font-weight:700;border-top:2px solid #0d1a1e}
+  .summary{margin-top:14px;padding:12px;background:#fffbf0;border-radius:8px;font-size:13px}
+  .summary .row{display:flex;justify-content:space-between;padding:4px 0}
+  .summary .row.total{font-weight:800;border-top:1px solid #ddd;margin-top:6px;padding-top:8px}
+  @media print { body{background:#fff;color:#000} .controls{display:none} }
+</style>
+</head>
+<body>
+<div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
+<h1 data-i18n="settlementTitle">Agent Settlement Sheet</h1>
+
+<div class="controls">
+  <select id="agentSelect"></select>
+  <input id="dateInput" type="date">
+  <button onclick="load()" data-i18n="loadBtn">Load</button>
+  <button onclick="window.print()" data-i18n="print">Print</button>
+</div>
+
+<div class="sheet" id="sheet"></div>
+
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<script>
+  const token = localStorage.getItem('yournet_token');
+
+  async function api(path) {
+    const res = await fetch(path, { headers: { Authorization: 'Bearer ' + token } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  }
+
+  async function loadAgentList() {
+    const agents = await api('/api/agents');
+    document.getElementById('agentSelect').innerHTML =
+      agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+  }
+
+  async function load() {
+    const agentId = document.getElementById('agentSelect').value;
+    const date = document.getElementById('dateInput').value;
+    if (!agentId) return;
+
+    const s = await api(`/api/agents/${agentId}/settlement${date ? `?date=${date}` : ''}`);
+    const sheet = document.getElementById('sheet');
+    sheet.classList.add('show');
+
+    sheet.innerHTML = `
+      <div class="header">
+        <div>
+          <h2>${s.agent.name}</h2>
+          <div class="sub">${s.date || 'All time'} - Commission ${s.agent.commissionPct}%</div>
+        </div>
+      </div>
+      <div class="table-scroll">
+      <table>
+        <tr><th>Package</th><th>Price</th><th>Given</th><th>Sold</th><th>Sales</th></tr>
+        ${s.items.length ? s.items.map(i => `
+          <tr><td>${i.label}</td><td>GHS ${i.price}</td><td>${i.given}</td><td>${i.sold}</td><td>GHS ${i.sales}</td></tr>
+        `).join('') : '<tr><td colspan="5" style="color:#888">No vouchers for this period</td></tr>'}
+        <tfoot><tr><td colspan="4">TOTAL</td><td>GHS ${s.totalSales}</td></tr></tfoot>
+      </table>
+      </div>
+      <div class="summary">
+        <div class="row"><span>Commission (${s.agent.commissionPct}%)</span><span>GHS ${s.commissionOwed}</span></div>
+        <div class="row total"><span>Cash to return</span><span>GHS ${s.cashToReturn}</span></div>
+      </div>
+    `;
+  }
+
+  if (token) loadAgentList();
+</script>
+</body>
+</html>
