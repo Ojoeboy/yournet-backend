@@ -6,9 +6,9 @@
 const { RouterOSAPI } = require('node-routeros');
 
 /**
- * Open a connection to a tenant's Mikrotik router.
- * @param {object} site - row from `sites` table (type = 'mikrotik')
- */
+* Open a connection to a tenant's Mikrotik router.
+* @param {object} site - row from `sites` table (type = 'mikrotik')
+*/
 async function connect(site) {
   const conn = new RouterOSAPI({
     host: site.mk_host,
@@ -22,17 +22,17 @@ async function connect(site) {
 }
 
 /**
- * Create a hotspot user on the router for a redeemed voucher.
- * duration_minutes -> RouterOS "limit-uptime" (e.g. 360m for 6 hours)
- * rate limits -> RouterOS "limit-bytes-in/out" style rate-limit string e.g. "4M/10M"
- *
- * IP/MAC BINDING: if clientMac is provided, the hotspot user account is
- * locked to that one device's MAC address on the router itself (RouterOS's
- * own "mac-address" field on a hotspot user). This is enforced by the
- * router, not just our database - so even if a customer texts their code
- * to a friend, it will not work on the friend's phone. If clientMac isn't
- * available for some reason, the voucher still works but isn't locked.
- */
+* Create a hotspot user on the router for a redeemed voucher.
+* duration_minutes -> RouterOS "limit-uptime" (e.g. 360m for 6 hours)
+* rate limits -> RouterOS "limit-bytes-in/out" style rate-limit string e.g. "4M/10M"
+*
+* IP/MAC BINDING: if clientMac is provided, the hotspot user account is
+* locked to that one device's MAC address on the router itself (RouterOS's
+* own "mac-address" field on a hotspot user). This is enforced by the
+* router, not just our database - so even if a customer texts their code
+* to a friend, it will not work on the friend's phone. If clientMac isn't
+* available for some reason, the voucher still works but isn't locked.
+*/
 async function createHotspotUser(site, { code, profile, durationMinutes, rateLimit, clientMac }) {
   const conn = await connect(site);
   try {
@@ -52,8 +52,8 @@ async function createHotspotUser(site, { code, profile, durationMinutes, rateLim
 }
 
 /**
- * Kick + remove a hotspot user (voucher expired/void).
- */
+* Kick + remove a hotspot user (voucher expired/void).
+*/
 async function removeHotspotUser(site, code) {
   const conn = await connect(site);
   try {
@@ -73,22 +73,30 @@ async function removeHotspotUser(site, code) {
 }
 
 /**
- * Basic reachability/health check used by the site status poller.
- */
+* Basic reachability/health check used by the site status poller.
+*/
 async function ping(site) {
+  if (!site.mk_host) {
+    return { online: false, error: 'No router IP address is set for this site - fill it in and save the site again.' };
+  }
   try {
     const conn = await connect(site);
     const identity = await conn.write('/system/identity/print');
     conn.close();
     return { online: true, identity: identity[0]?.name };
   } catch (err) {
-    return { online: false, error: err.message };
+    // Some failure modes from the underlying RouterOS client reject with
+    // something other than a proper Error (a bare string, or an object with
+    // no .message) - never let that surface as a blank/"unknown" error, since
+    // that gives the tenant nothing to act on.
+    const reason = (err && err.message) ? err.message : String(err || 'connection failed');
+    return { online: false, error: `${reason} - check the router IP, API port, and credentials` };
   }
 }
 
 /**
- * List currently active clients (for dashboard's "live clients" view).
- */
+* List currently active clients (for dashboard's "live clients" view).
+*/
 async function listActiveClients(site) {
   const conn = await connect(site);
   try {
