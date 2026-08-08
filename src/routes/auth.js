@@ -6,6 +6,7 @@ const pool = require('../db/pool');
 const emailService = require('../integrations/emailService');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
@@ -61,7 +62,9 @@ router.post('/signup', asyncHandler(async (req, res) => {
     emailService.sendVerificationEmail(
       tenant.owner_email,
       `${process.env.APP_BASE_URL}/api/auth/verify-email?token=${verifyToken}`
-    ).catch(() => {});
+    ).catch((err) => {
+      logger.error('Verification email failed to send', { email: tenant.owner_email, error: err.message });
+    });
 
     const token = jwt.sign({ tenantId: tenant.id, role: 'owner' }, process.env.JWT_SECRET, {
       expiresIn: process.env.JWT_EXPIRES_IN || '7d',
@@ -127,7 +130,13 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
     emailService.sendPasswordResetEmail(
       email,
       `${process.env.APP_BASE_URL}/reset-password?token=${resetToken}`
-    ).catch(() => {});
+    ).catch((err) => {
+      // Never let this reach the response (would leak whether the email
+      // exists), but DO log it - otherwise a real delivery failure (bad
+      // API key, Resend rejecting an unverified sender, etc.) is invisible
+      // even to us, and looks identical to "email just didn't arrive."
+      logger.error('Password reset email failed to send', { email, error: err.message });
+    });
   }
 
   res.json({ ok: true, message: 'If an account exists for that email, a reset link has been sent.' });
