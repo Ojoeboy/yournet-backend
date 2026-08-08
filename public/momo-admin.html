@@ -21,7 +21,13 @@
   .pill.pending{background:rgba(255,193,7,.15);color:#ffc107}
   .pill.approved{background:rgba(46,196,182,.15);color:#2ec4b6}
   .pill.rejected{background:rgba(255,107,107,.15);color:#ff6b6b}
-  .keyBox{font-family:monospace;color:#ffc55a;font-weight:700;margin-top:8px}
+  .keyBox{font-family:monospace;color:#ffc55a;font-weight:700;margin-top:8px;
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .keyBox button{background:rgba(255,197,90,.15);color:#ffc55a;padding:4px 10px;font-size:12px}
+  h2{font-size:15px;color:#6b8a91;margin-top:32px}
+  .keysTable{width:100%;border-collapse:collapse;font-size:13px}
+  .keysTable th,.keysTable td{text-align:left;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .keysTable td:first-child{font-family:monospace;color:#ffc55a}
 </style>
 </head>
 <body>
@@ -30,6 +36,9 @@
 <div id="panel">
   <div id="list"></div>
 </div>
+
+<h2>Recently issued keys (in case one was missed)</h2>
+<div id="keysPanel"><table class="keysTable" id="keysTable"></table></div>
 
 <script>
   const token = sessionStorage.getItem('yournet_owner_token');
@@ -62,7 +71,7 @@
         <div class="row"><span>Submitted</span><span>${new Date(c.created_at).toLocaleString()}</span></div>
         <div class="row"><span>Status</span><span class="pill ${c.status}">${c.status}</span></div>
         ${c.status === 'pending' ? `
-          <div class="actions">
+          <div class="actions" id="actions-${c.id}">
             <button class="approve" onclick="approve('${c.id}')">Approve & issue key</button>
             <button class="reject" onclick="reject('${c.id}')">Reject</button>
           </div>` : ''}
@@ -71,6 +80,32 @@
     `).join('');
   }
 
+  async function loadKeys() {
+    const res = await fetch('/license/admin/list', {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    if (!res.ok) return;
+    const keys = await res.json();
+    const table = document.getElementById('keysTable');
+    if (!keys.length) {
+      table.innerHTML = '<tr><td style="color:#6b8a91">No keys issued yet.</td></tr>';
+      return;
+    }
+    table.innerHTML = '<tr><th>Key</th><th>Buyer</th><th>Status</th><th>Issued</th></tr>' +
+      keys.map(k => `
+        <tr>
+          <td>${k.key_code}</td>
+          <td>${k.buyer_email || k.buyer_phone || '-'}</td>
+          <td>${k.status}</td>
+          <td>${new Date(k.created_at).toLocaleString()}</td>
+        </tr>
+      `).join('');
+  }
+
+  // Does NOT call loadClaims() here - that used to wipe the freshly-displayed
+  // key out of the DOM before anyone could read or copy it. The card is
+  // instead updated in place, and the key stays on screen until you
+  // navigate away. loadKeys() also gives a permanent backup view.
   async function approve(id) {
     const res = await fetch(`/license/admin/momo-claims/${id}/approve`, {
       method: 'POST',
@@ -78,8 +113,12 @@
     });
     const data = await res.json();
     if (!res.ok) return alert(data.error || 'Failed');
-    document.getElementById(`key-${id}`).textContent = 'Key: ' + data.key.key_code + ' - send this to the buyer.';
-    loadClaims();
+    const keyBox = document.getElementById(`key-${id}`);
+    keyBox.innerHTML = `Key: ${data.key.key_code} - send this to the buyer.
+      <button onclick="navigator.clipboard.writeText('${data.key.key_code}')">Copy</button>`;
+    const actions = document.getElementById(`actions-${id}`);
+    if (actions) actions.remove();
+    loadKeys();
   }
 
   async function reject(id) {
@@ -90,7 +129,7 @@
     loadClaims();
   }
 
-  if (token) loadClaims();
+  if (token) { loadClaims(); loadKeys(); }
 </script>
 </body>
 </html>
