@@ -18,6 +18,7 @@ const paymentGatewayRoutes = require('./routes/paymentGateways');
 const portalRoutes = require('./routes/portal');
 
 const app = express();
+app.set( 'trust proxy' , 1);
 // contentSecurityPolicy disabled: the captive portal page (public/portal.html)
 // intentionally uses inline <style>/<script> so it stays a single
 // self-contained file with zero external requests - required because the
