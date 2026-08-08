@@ -11,6 +11,9 @@ const nodemailer = require('nodemailer');
 // - Requires a Gmail "App Password" (NOT your normal Gmail password) -
 //   generate one at https://myaccount.google.com/apppasswords (needs
 //   2-Step Verification enabled on the Google account first).
+// - Uses an explicit host/port (465, SSL) instead of the 'service: gmail'
+//   shorthand, since some hosts (Render included) can behave differently
+//   depending on which port/method is used to reach Gmail's SMTP servers.
 //
 // When there's revenue to justify ~$10-15/year for a real domain, swap
 // this back to Resend (or similar) + a verified domain for branded
@@ -24,7 +27,9 @@ let transporter = null;
 function getTransporter() {
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
       auth: {
         user: process.env.GMAIL_USER,
         pass: process.env.GMAIL_APP_PASSWORD,
@@ -41,12 +46,23 @@ async function sendEmail({ to, subject, html }) {
     return;
   }
 
-  await getTransporter().sendMail({
-    from: process.env.EMAIL_FROM || `YourNet Control <${process.env.GMAIL_USER}>`,
-    to,
-    subject,
-    html,
-  });
+  try {
+    await getTransporter().sendMail({
+      from: process.env.EMAIL_FROM || `YourNet Control <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html,
+    });
+  } catch (err) {
+    console.error(JSON.stringify({
+      time: new Date().toISOString(),
+      level: 'error',
+      message: 'Email failed to send',
+      email: to,
+      error: err.message,
+    }));
+    throw err;
+  }
 }
 
 async function sendPasswordResetEmail(toEmail, resetLink) {
