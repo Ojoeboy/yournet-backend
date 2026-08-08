@@ -84,6 +84,7 @@
     already_used: 'errAlreadyUsed',
     unsupported_site_type: 'errUnsupportedSite',
     network_error: 'errNetwork',
+    missing_meraki_grant_url: 'errMerakiNoGrantUrl',
   };
 </script>
 <script>
@@ -98,6 +99,12 @@
   const apMac = params.get('apMac') || '';
   const ssidName = params.get('ssidName') || params.get('ssid') || '';
   const radioId = params.get('radioId') || '';
+  // Cisco Meraki appends these on its splash redirect - see
+  // src/integrations/meraki.js for what they're used for. Absent entirely
+  // for Mikrotik/Omada/UniFi sites, which is fine - the backend only needs
+  // them for Meraki-type sites.
+  const baseGrantUrl = params.get('base_grant_url') || '';
+  const continueUrl = params.get('user_continue_url') || '';
 
   const codeInput = document.getElementById('code');
   const msgEl = document.getElementById('msg');
@@ -129,7 +136,7 @@
       const res = await fetch(`/portal/${siteId}/redeem`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, clientMac, apMac, ssidName, radioId }),
+        body: JSON.stringify({ code, clientMac, apMac, ssidName, radioId, baseGrantUrl, continueUrl }),
       });
       const data = await res.json();
 
@@ -146,6 +153,15 @@
       if (data.expiresAt) {
         const exp = new Date(data.expiresAt);
         document.getElementById('expiry-text').textContent = exp.toLocaleString();
+      }
+      // Meraki: the voucher is valid, but access isn't actually granted
+      // until THIS browser requests data.redirectUrl (Meraki ties the
+      // grant to the requesting IP - see src/integrations/meraki.js).
+      // Every other provider already authorized the client server-side,
+      // so redirectUrl is null for them and this is skipped.
+      if (data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+        return;
       }
       // Give the router a moment to apply access, then try to move the
       // browser off the portal page so normal browsing can resume.

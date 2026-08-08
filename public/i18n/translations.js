@@ -33,6 +33,7 @@ window.YOURNET_I18N = {
     errAlreadyUsed: 'This code has already been used.',
     errUnsupportedSite: 'This site is not configured correctly. Contact the WiFi operator.',
     errNetwork: 'Could not reach the network device. Please try again shortly.',
+    errMerakiNoGrantUrl: 'This connection did not come through the WiFi login page properly. Please reconnect to the WiFi and try again.',
     enterFullCode: 'Enter your full voucher code.', poweredBy: 'Powered by YourNet Control',
 
     // Admin - signup/login
@@ -103,6 +104,7 @@ window.YOURNET_I18N = {
     errAlreadyUsed: 'Ce code a déjà été utilisé.',
     errUnsupportedSite: "Ce site n'est pas configuré correctement. Contactez l'opérateur WiFi.",
     errNetwork: "Impossible de joindre l'appareil réseau. Veuillez réessayer bientôt.",
+    errMerakiNoGrantUrl: "Cette connexion n'est pas passée correctement par la page de connexion WiFi. Reconnectez-vous au WiFi et réessayez.",
     enterFullCode: 'Entrez votre code de bon complet.', poweredBy: 'Propulsé par YourNet Control',
 
     step1Title: 'Étape 1 - Votre compte', licenseKeyLabel: 'Clé de licence',
@@ -164,6 +166,7 @@ window.YOURNET_I18N = {
     errAlreadyUsed: 'Wɔadi saa code yi dwuma dedaw.',
     errUnsupportedSite: 'Wɔansiesie saa site yi yiye. Frɛ WiFi wura no.',
     errNetwork: 'Yɛantumi ankɔ router no ho. Yɛsrɛ sɛ sɔ hwɛ bio.',
+    errMerakiNoGrantUrl: 'Wo nkitahodi yi mfaa WiFi login krataa no mu yiye. Sane kɔ WiFi so bio na sɔ hwɛ bio.',
     enterFullCode: 'Fa wo voucher code no nyinaa hyɛ mu.', poweredBy: 'YourNet Control na ɛma eyi kɔ so',
 
     step1Title: 'Aketesia 1 - Wo akawnt', licenseKeyLabel: 'License key',
@@ -225,6 +228,7 @@ window.YOURNET_I18N = {
     errAlreadyUsed: 'Este código ya ha sido utilizado.',
     errUnsupportedSite: 'Este sitio no está configurado correctamente. Contacta al operador de WiFi.',
     errNetwork: 'No se pudo conectar con el dispositivo de red. Inténtalo de nuevo en breve.',
+    errMerakiNoGrantUrl: 'Esta conexión no llegó correctamente a través de la página de inicio de sesión WiFi. Vuelve a conectarte al WiFi e inténtalo de nuevo.',
     enterFullCode: 'Ingresa tu código de voucher completo.', poweredBy: 'Desarrollado por YourNet Control',
 
     step1Title: 'Paso 1 - Tu cuenta', licenseKeyLabel: 'Clave de licencia',
@@ -286,6 +290,7 @@ window.YOURNET_I18N = {
     errAlreadyUsed: 'Este código já foi utilizado.',
     errUnsupportedSite: 'Este site não está configurado corretamente. Contate o operador de WiFi.',
     errNetwork: 'Não foi possível conectar ao dispositivo de rede. Tente novamente em breve.',
+    errMerakiNoGrantUrl: 'Esta conexão não passou corretamente pela página de login do WiFi. Reconecte-se ao WiFi e tente novamente.',
     enterFullCode: 'Digite o código completo do seu voucher.', poweredBy: 'Desenvolvido por YourNet Control',
 
     step1Title: 'Passo 1 - Sua conta', licenseKeyLabel: 'Chave de licença',
@@ -347,6 +352,7 @@ window.YOURNET_I18N = {
     errAlreadyUsed: 'Msimbo huu tayari umetumika.',
     errUnsupportedSite: 'Tovuti hii haijasanidiwa vizuri. Wasiliana na mtoa huduma wa WiFi.',
     errNetwork: 'Imeshindwa kufikia kifaa cha mtandao. Tafadhali jaribu tena baadaye kidogo.',
+    errMerakiNoGrantUrl: 'Muunganisho huu haukupitia ukurasa wa kuingia wa WiFi vizuri. Tafadhali unganisha tena kwenye WiFi na ujaribu tena.',
     enterFullCode: 'Weka msimbo wako kamili wa voucher.', poweredBy: 'Inaendeshwa na YourNet Control',
 
     step1Title: 'Hatua 1 - Akaunti yako', licenseKeyLabel: 'Ufunguo wa leseni',

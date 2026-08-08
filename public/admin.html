@@ -77,6 +77,7 @@
     <option value="mikrotik">Mikrotik RouterOS</option>
     <option value="omada">TP-Link Omada</option>
     <option value="unifi">Ubiquiti UniFi (self-hosted controller)</option>
+    <option value="meraki">Cisco Meraki (cloud dashboard)</option>
   </select>
 
   <div id="siteFields-mikrotik" class="site-fields">
@@ -117,21 +118,60 @@
   </div>
 
   <div id="siteFields-unifi" class="site-fields hidden">
-    <p style="font-size:12px;color:#6b8a91">
+    <label>UniFi auth mode</label>
+    <select id="ufAuthMode" onchange="renderUnifiAuthFields()">
+      <option value="classic">Self-hosted controller / Cloud Key (username+password)</option>
+      <option value="unifios">UniFi OS Console - UDM/UDM-Pro/UDR (API key)</option>
+    </select>
+
+    <p id="ufHint-classic" style="font-size:12px;color:#6b8a91">
       For a self-hosted controller or Cloud Key. Set this site's portal URL as the
       "External portal server" under Settings &gt; Guest Control on your controller.
     </p>
+    <p id="ufHint-unifios" class="hidden" style="font-size:12px;color:#6b8a91">
+      For a UDM, UDM-Pro, UDR, or Cloud Gateway. Create an API key under
+      Settings &gt; Control Plane &gt; Integrations on the console, then paste it below.
+    </p>
+
     <label>Controller base URL</label>
-    <input id="ufBaseUrl" placeholder="https://192.168.1.5:8443">
+    <input id="ufBaseUrl" placeholder="https://192.168.1.5:8443 (classic) or https://192.168.1.1 (UniFi OS)">
     <label>UniFi site name</label>
     <input id="ufSite" value="default">
-    <label>Controller username</label>
-    <input id="ufUser" placeholder="admin">
-    <label>Controller password</label>
-    <div class="pwd-wrap">
-      <input id="ufPass" type="password">
-      <button type="button" class="pwd-toggle" onclick="togglePwd('ufPass')" aria-label="Show password">👁</button>
+
+    <div id="ufFields-classic">
+      <label>Controller username</label>
+      <input id="ufUser" placeholder="admin">
+      <label>Controller password</label>
+      <div class="pwd-wrap">
+        <input id="ufPass" type="password">
+        <button type="button" class="pwd-toggle" onclick="togglePwd('ufPass')" aria-label="Show password">👁</button>
+      </div>
     </div>
+
+    <div id="ufFields-unifios" class="hidden">
+      <label>API key</label>
+      <div class="pwd-wrap">
+        <input id="ufApiKey" type="password">
+        <button type="button" class="pwd-toggle" onclick="togglePwd('ufApiKey')" aria-label="Show key">👁</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="siteFields-meraki" class="site-fields hidden">
+    <p style="font-size:12px;color:#6b8a91">
+      Set this site's portal URL as the "Custom splash URL" under Wireless/Security &amp; SD-WAN
+      &gt; Configure &gt; Splash page on your Meraki network, and set "Where should users go
+      after the splash page" to "The URL they were trying to fetch". Note: unlike the other
+      equipment types, Meraki's access grant is completed by the customer's own device, not
+      by this server - see the code comments in src/integrations/meraki.js for why.
+    </p>
+    <label>Dashboard API key</label>
+    <div class="pwd-wrap">
+      <input id="mrApiKey" type="password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('mrApiKey')" aria-label="Show key">👁</button>
+    </div>
+    <label>Network ID</label>
+    <input id="mrNetworkId" placeholder="e.g. N_1234567890">
   </div>
 
   <button onclick="addSite()" data-i18n="saveSiteBtn">Save site</button>
@@ -349,6 +389,15 @@
     document.querySelectorAll('.site-fields').forEach(el => el.classList.add('hidden'));
     const type = document.getElementById('siteType').value;
     document.getElementById('siteFields-' + type).classList.remove('hidden');
+    if (type === 'unifi') renderUnifiAuthFields();
+  }
+
+  function renderUnifiAuthFields() {
+    const mode = document.getElementById('ufAuthMode').value;
+    document.getElementById('ufFields-classic').classList.toggle('hidden', mode !== 'classic');
+    document.getElementById('ufFields-unifios').classList.toggle('hidden', mode !== 'unifios');
+    document.getElementById('ufHint-classic').classList.toggle('hidden', mode !== 'classic');
+    document.getElementById('ufHint-unifios').classList.toggle('hidden', mode !== 'unifios');
   }
 
   function buildSitePayload() {
@@ -374,8 +423,15 @@
       payload.unifi = {
         baseUrl: document.getElementById('ufBaseUrl').value,
         site: document.getElementById('ufSite').value || 'default',
+        authMode: document.getElementById('ufAuthMode').value,
         username: document.getElementById('ufUser').value,
         password: document.getElementById('ufPass').value,
+        apiKey: document.getElementById('ufApiKey').value,
+      };
+    } else if (type === 'meraki') {
+      payload.meraki = {
+        dashboardApiKey: document.getElementById('mrApiKey').value,
+        networkId: document.getElementById('mrNetworkId').value,
       };
     }
     return payload;

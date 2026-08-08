@@ -16,7 +16,7 @@ const router = express.Router();
 // know which router/controller to talk to.
 router.post('/:siteId/redeem', asyncHandler(async (req, res) => {
   const { siteId } = req.params;
-  const { code, clientMac, apMac, ssidName, radioId } = req.body;
+  const { code, clientMac, apMac, ssidName, radioId, baseGrantUrl, continueUrl } = req.body;
   if (!code) return res.status(400).json({ error: 'code is required' });
 
   const { rows } = await pool.query('SELECT tenant_id FROM sites WHERE id=$1', [siteId]);
@@ -25,14 +25,18 @@ router.post('/:siteId/redeem', asyncHandler(async (req, res) => {
 
   try {
     const result = await voucherService.redeemVoucher(tenantId, code.trim().toUpperCase(), {
-      clientMac, apMac, ssidName, radioId,
+      clientMac, apMac, ssidName, radioId, baseGrantUrl, continueUrl,
     });
     if (!result.ok) {
       // Return a reason CODE, not English text - the portal page translates
       // it into whichever language the customer has selected.
       return res.status(400).json({ error: true, reason: result.reason || 'redemption_failed' });
     }
-    res.json({ ok: true, expiresAt: result.expiresAt });
+    // redirectUrl is only present for Meraki - the portal page must send
+    // the customer's OWN browser there to actually complete the grant
+    // (see src/integrations/meraki.js for why). Every other provider
+    // authorizes server-side already, so this is null for them.
+    res.json({ ok: true, expiresAt: result.expiresAt, redirectUrl: result.redirectUrl || null });
   } catch (err) {
     // Router/controller unreachable, wrong credentials, etc. - surfaced
     // honestly rather than silently marking the voucher as used.

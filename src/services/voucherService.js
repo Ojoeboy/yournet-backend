@@ -3,6 +3,7 @@ const pool = require('../db/pool');
 const mikrotik = require('../integrations/mikrotik');
 const omada = require('../integrations/omada');
 const unifi = require('../integrations/unifi');
+const meraki = require('../integrations/meraki');
 const { decrypt } = require('../utils/credentialCrypto');
 
 function randomCode() {
@@ -87,7 +88,8 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
        s.omada_base_url, s.omada_client_id, s.omada_client_secret_encrypted,
        s.omada_omadac_id, s.omada_site_id,
        s.unifi_base_url, s.unifi_username, s.unifi_password_encrypted, s.unifi_site,
-       s.unifi_auth_mode, s.unifi_api_key_encrypted
+       s.unifi_auth_mode, s.unifi_api_key_encrypted,
+       s.meraki_dashboard_api_key_encrypted, s.meraki_network_id
      FROM vouchers v
      JOIN packages p ON p.id = v.package_id
      JOIN sites s ON s.id = v.site_id
@@ -110,6 +112,7 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
     omada_client_secret_decrypted: decrypt(v.omada_client_secret_encrypted),
     unifi_password_decrypted: decrypt(v.unifi_password_encrypted),
     unifi_api_key_decrypted: decrypt(v.unifi_api_key_encrypted),
+    meraki_dashboard_api_key_decrypted: decrypt(v.meraki_dashboard_api_key_encrypted),
   };
 
   let providerResult;
@@ -140,6 +143,20 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
       rateLimitKbpsDown: parseRateToKbps(v.rate_limit_down),
       rateLimitKbpsUp: parseRateToKbps(v.rate_limit_up),
     });
+  } else if (v.site_type === 'meraki') {
+    if (!redeemContext.baseGrantUrl) {
+      // This isn't a credentials/network problem - it means the customer's
+      // device didn't arrive via a real Meraki splash redirect (no
+      // base_grant_url in the query string), so there is nothing to grant
+      // access to. Surfaced as its own reason so the portal page can show
+      // something more useful than a generic network error.
+      return { ok: false, reason: 'missing_meraki_grant_url' };
+    }
+    providerResult = await meraki.authorizeClient(site, {
+      baseGrantUrl: redeemContext.baseGrantUrl,
+      continueUrl: redeemContext.continueUrl,
+      durationSeconds: v.duration_minutes * 60,
+    });
   } else {
     return { ok: false, reason: 'unsupported_site_type' };
   }
@@ -151,7 +168,7 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
     [expiresAt, redeemContext.clientMac || null, JSON.stringify(providerResult).slice(0, 250), v.voucher_id]
   );
 
-  return { ok: true, expiresAt };
+  return { ok: true, expiresAt, redirectUrl: providerResult.redirectUrl || null };
 }
 
 module.exports = { generateVouchers, redeemVoucher, randomCode };

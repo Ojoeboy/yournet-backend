@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const mikrotik = require('../integrations/mikrotik');
 const omada = require('../integrations/omada');
 const unifi = require('../integrations/unifi');
+const meraki = require('../integrations/meraki');
 const { encrypt, decrypt } = require('../utils/credentialCrypto');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
@@ -12,10 +13,10 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, type, mikrotik: mk, omada: om, unifi: uf } = req.body;
+  const { name, type, mikrotik: mk, omada: om, unifi: uf, meraki: mr } = req.body;
   const missingError = validate.required(req.body, ['name', 'type']);
   if (missingError) return res.status(400).json({ error: missingError });
-  if (!['mikrotik', 'omada', 'unifi'].includes(type)) return res.status(400).json({ error: "type must be 'mikrotik', 'omada', or 'unifi'" });
+  if (!['mikrotik', 'omada', 'unifi', 'meraki'].includes(type)) return res.status(400).json({ error: "type must be 'mikrotik', 'omada', 'unifi', or 'meraki'" });
   if (uf?.authMode && !['classic', 'unifios'].includes(uf.authMode)) {
     return res.status(400).json({ error: "unifi.authMode must be 'classic' or 'unifios'" });
   }
@@ -25,14 +26,16 @@ router.post('/', asyncHandler(async (req, res) => {
        mk_password_encrypted, mk_hotspot_profile, omada_base_url, omada_client_id,
        omada_client_secret_encrypted, omada_omadac_id, omada_site_id,
        unifi_base_url, unifi_username, unifi_password_encrypted, unifi_site,
-       unifi_auth_mode, unifi_api_key_encrypted)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id, name, type, status`,
+       unifi_auth_mode, unifi_api_key_encrypted,
+       meraki_dashboard_api_key_encrypted, meraki_network_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id, name, type, status`,
     [
       req.tenantId, name, type,
       mk?.host, mk?.port || 8728, mk?.username, encrypt(mk?.password), mk?.hotspotProfile,
       om?.baseUrl, om?.clientId, encrypt(om?.clientSecret), om?.omadacId, om?.siteId,
       uf?.baseUrl, uf?.username, encrypt(uf?.password), uf?.site || 'default',
       uf?.authMode || 'classic', encrypt(uf?.apiKey),
+      encrypt(mr?.dashboardApiKey), mr?.networkId,
     ]
   );
   res.json(rows[0]);
@@ -56,7 +59,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   ]);
   if (!existing.length) return res.status(404).json({ error: 'Site not found' });
 
-  const { name, mikrotik: mk, omada: om, unifi: uf } = req.body;
+  const { name, mikrotik: mk, omada: om, unifi: uf, meraki: mr } = req.body;
   if (uf?.authMode && !['classic', 'unifios'].includes(uf.authMode)) {
     return res.status(400).json({ error: "unifi.authMode must be 'classic' or 'unifios'" });
   }
@@ -80,14 +83,17 @@ router.patch('/:id', asyncHandler(async (req, res) => {
        unifi_site = COALESCE($15, unifi_site),
        unifi_auth_mode = COALESCE($16, unifi_auth_mode),
        unifi_api_key_encrypted = COALESCE($17, unifi_api_key_encrypted),
+       meraki_dashboard_api_key_encrypted = COALESCE($18, meraki_dashboard_api_key_encrypted),
+       meraki_network_id = COALESCE($19, meraki_network_id),
        status = 'unconfigured'
-     WHERE id=$18 AND tenant_id=$19
+     WHERE id=$20 AND tenant_id=$21
      RETURNING id, name, type, status`,
     [
       name, mk?.host, mk?.port, mk?.username, encrypt(mk?.password), mk?.hotspotProfile,
       om?.baseUrl, om?.clientId, encrypt(om?.clientSecret), om?.omadacId, om?.siteId,
       uf?.baseUrl, uf?.username, encrypt(uf?.password), uf?.site,
       uf?.authMode, encrypt(uf?.apiKey),
+      encrypt(mr?.dashboardApiKey), mr?.networkId,
       req.params.id, req.tenantId,
     ]
   );
@@ -109,6 +115,11 @@ router.post('/:id/test', asyncHandler(async (req, res) => {
         ...site,
         unifi_password_decrypted: decrypt(site.unifi_password_encrypted),
         unifi_api_key_decrypted: decrypt(site.unifi_api_key_encrypted),
+      });
+    } else if (site.type === 'meraki') {
+      result = await meraki.ping({
+        ...site,
+        meraki_dashboard_api_key_decrypted: decrypt(site.meraki_dashboard_api_key_encrypted),
       });
     } else {
       const token = await omada.getAccessToken({ ...site, omada_client_secret_decrypted: decrypt(site.omada_client_secret_encrypted) });
