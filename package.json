@@ -18,6 +18,7 @@
     "dotenv": "^16.4.5",
     "axios": "^1.7.2",
     "node-routeros": "^1.6.7",
+    "nodemailer": "^6.9.14",
     "cors": "^2.8.5",
     "helmet": "^7.1.0",
     "express-rate-limit": "^7.3.1",

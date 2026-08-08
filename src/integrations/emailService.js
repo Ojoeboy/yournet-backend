@@ -1,33 +1,49 @@
-const axios = require('axios');
+const nodemailer = require('nodemailer');
 
-// Real transactional email via Resend (resend.com) - free for 3,000
-// emails/month, which comfortably covers password resets and signup
-// verification for a small-to-mid WiFi business.
+// Real transactional email via Gmail SMTP - free, no domain required.
 //
-// HONEST LIMIT: sending to real customers (not just your own Resend
-// account email) requires verifying a domain you own in Resend's
-// dashboard (a couple of DNS records). Without that, Resend will only
-// deliver to the email address you signed up with - fine for testing,
-// not for real customers.
+// HONEST LIMITS:
+// - Sends from your own Gmail address (e.g. yournet.control@gmail.com),
+//   not a branded "yournet.net" address - fine for now, less polished
+//   than a real domain.
+// - Gmail's free sending cap is ~500 emails/day, which is plenty for
+//   testing and early real usage but won't scale to a large customer base.
+// - Requires a Gmail "App Password" (NOT your normal Gmail password) -
+//   generate one at https://myaccount.google.com/apppasswords (needs
+//   2-Step Verification enabled on the Google account first).
 //
-// If RESEND_API_KEY isn't set, this falls back to logging the link to the
-// console instead of crashing - useful for local development before you've
-// set up Resend, but NOT something to rely on for real users.
-const resend = axios.create({
-  baseURL: 'https://api.resend.com',
-  headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
-});
+// When there's revenue to justify ~$10-15/year for a real domain, swap
+// this back to Resend (or similar) + a verified domain for branded
+// "no-reply@yournet.net" sending - the sendEmail/sendPasswordResetEmail/
+// sendVerificationEmail function signatures below won't need to change.
+//
+// If GMAIL_USER / GMAIL_APP_PASSWORD aren't set, this falls back to
+// logging the link to the console instead of crashing - useful for local
+// development, but NOT something to rely on for real users.
+let transporter = null;
+function getTransporter() {
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+    });
+  }
+  return transporter;
+}
 
 async function sendEmail({ to, subject, html }) {
-  if (!process.env.RESEND_API_KEY) {
-    console.log(`[EMAIL STUB - no RESEND_API_KEY set] To: ${to} | Subject: ${subject}`);
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    console.log(`[EMAIL STUB - no GMAIL_USER/GMAIL_APP_PASSWORD set] To: ${to} | Subject: ${subject}`);
     console.log(html);
     return;
   }
 
-  await resend.post('/emails', {
-    from: process.env.EMAIL_FROM || 'YourNet Control <onboarding@resend.dev>',
-    to: [to],
+  await getTransporter().sendMail({
+    from: process.env.EMAIL_FROM || `YourNet Control <${process.env.GMAIL_USER}>`,
+    to,
     subject,
     html,
   });
