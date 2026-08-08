@@ -18,7 +18,6 @@ const paymentGatewayRoutes = require('./routes/paymentGateways');
 const portalRoutes = require('./routes/portal');
 
 const app = express();
-app.set( 'trust proxy' , 1);
 // contentSecurityPolicy disabled: the captive portal page (public/portal.html)
 // intentionally uses inline <style>/<script> so it stays a single
 // self-contained file with zero external requests - required because the
@@ -29,8 +28,36 @@ app.use(cors());
 app.use(express.json());
 app.use('/p', express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.use('/i18n', express.static(path.join(__dirname, '..', 'public', 'i18n')));
-app.get('/p/:siteId', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'portal.html'));
+app.use('/icons', express.static(path.join(__dirname, '..', 'public', 'icons')));
+
+const pool = require('./db/pool');
+const { renderPortal, renderManifest, renderServiceWorker } = require('./utils/portalRenderer');
+const asyncHandler = require('./utils/asyncHandler');
+
+// Serves the captive portal page for a site - either the built-in template
+// with that tenant's branding (business name / logo / color) injected, or,
+// if the tenant has set portal_custom_html, their own page verbatim. In
+// the custom-HTML case it's on THEM to keep it working against
+// /portal/:siteId/redeem - documented in the admin UI, not enforced here.
+app.get('/p/:siteId', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM sites WHERE id=$1', [req.params.siteId]);
+  if (!rows.length) return res.status(404).send('Unknown site.');
+  const site = rows[0];
+
+  if (site.portal_custom_html) {
+    return res.type('html').send(site.portal_custom_html);
+  }
+  res.type('html').send(renderPortal(site));
+}));
+
+app.get('/p/:siteId/manifest.json', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM sites WHERE id=$1', [req.params.siteId]);
+  if (!rows.length) return res.status(404).json({ error: 'Unknown site' });
+  res.type('application/manifest+json').json(renderManifest(rows[0]));
+}));
+
+app.get('/p/:siteId/sw.js', (req, res) => {
+  res.type('application/javascript').send(renderServiceWorker(req.params.siteId));
 });
 
 // Public captive-portal endpoint gets its own, more generous rate limit
@@ -116,9 +143,9 @@ app.listen(port, () => console.log(`YourNet backend running on port ${port}`));
 // having to remember to check. Runs inside this same process for now -
 // fine at small scale; a genuinely large deployment would move this to a
 // separate worker process instead of sharing the web server's event loop.
-const pool = require('./db/pool');
 const mikrotik = require('./integrations/mikrotik');
 const omada = require('./integrations/omada');
+const unifi = require('./integrations/unifi');
 const { decrypt } = require('./utils/credentialCrypto');
 const logger = require('./utils/logger');
 
@@ -134,6 +161,9 @@ async function pollAllSites() {
         } else if (site.type === 'omada') {
           const token = await omada.getAccessToken({ ...site, omada_client_secret_decrypted: decrypt(site.omada_client_secret_encrypted) });
           online = !!token;
+        } else if (site.type === 'unifi') {
+          const result = await unifi.ping({ ...site, unifi_password_decrypted: decrypt(site.unifi_password_encrypted) });
+          online = result.online;
         }
         await pool.query('UPDATE sites SET status=$1, last_checked_at=now() WHERE id=$2', [
           online ? 'online' : 'error', site.id,

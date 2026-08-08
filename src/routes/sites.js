@@ -3,6 +3,7 @@ const pool = require('../db/pool');
 const { requireAuth } = require('../middleware/auth');
 const mikrotik = require('../integrations/mikrotik');
 const omada = require('../integrations/omada');
+const unifi = require('../integrations/unifi');
 const { encrypt, decrypt } = require('../utils/credentialCrypto');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
@@ -11,20 +12,27 @@ const router = express.Router();
 router.use(requireAuth);
 
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, type, mikrotik: mk, omada: om } = req.body;
+  const { name, type, mikrotik: mk, omada: om, unifi: uf } = req.body;
   const missingError = validate.required(req.body, ['name', 'type']);
   if (missingError) return res.status(400).json({ error: missingError });
-  if (!['mikrotik', 'omada'].includes(type)) return res.status(400).json({ error: "type must be 'mikrotik' or 'omada'" });
+  if (!['mikrotik', 'omada', 'unifi'].includes(type)) return res.status(400).json({ error: "type must be 'mikrotik', 'omada', or 'unifi'" });
+  if (uf?.authMode && !['classic', 'unifios'].includes(uf.authMode)) {
+    return res.status(400).json({ error: "unifi.authMode must be 'classic' or 'unifios'" });
+  }
 
   const { rows } = await pool.query(
     `INSERT INTO sites (tenant_id, name, type, mk_host, mk_api_port, mk_username,
        mk_password_encrypted, mk_hotspot_profile, omada_base_url, omada_client_id,
-       omada_client_secret_encrypted, omada_omadac_id, omada_site_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id, name, type, status`,
+       omada_client_secret_encrypted, omada_omadac_id, omada_site_id,
+       unifi_base_url, unifi_username, unifi_password_encrypted, unifi_site,
+       unifi_auth_mode, unifi_api_key_encrypted)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id, name, type, status`,
     [
       req.tenantId, name, type,
       mk?.host, mk?.port || 8728, mk?.username, encrypt(mk?.password), mk?.hotspotProfile,
       om?.baseUrl, om?.clientId, encrypt(om?.clientSecret), om?.omadacId, om?.siteId,
+      uf?.baseUrl, uf?.username, encrypt(uf?.password), uf?.site || 'default',
+      uf?.authMode || 'classic', encrypt(uf?.apiKey),
     ]
   );
   res.json(rows[0]);
@@ -48,7 +56,11 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   ]);
   if (!existing.length) return res.status(404).json({ error: 'Site not found' });
 
-  const { name, mikrotik: mk, omada: om } = req.body;
+  const { name, mikrotik: mk, omada: om, unifi: uf } = req.body;
+  if (uf?.authMode && !['classic', 'unifios'].includes(uf.authMode)) {
+    return res.status(400).json({ error: "unifi.authMode must be 'classic' or 'unifios'" });
+  }
+
   const { rows } = await pool.query(
     `UPDATE sites SET
        name = COALESCE($1, name),
@@ -62,12 +74,20 @@ router.patch('/:id', asyncHandler(async (req, res) => {
        omada_client_secret_encrypted = COALESCE($9, omada_client_secret_encrypted),
        omada_omadac_id = COALESCE($10, omada_omadac_id),
        omada_site_id = COALESCE($11, omada_site_id),
+       unifi_base_url = COALESCE($12, unifi_base_url),
+       unifi_username = COALESCE($13, unifi_username),
+       unifi_password_encrypted = COALESCE($14, unifi_password_encrypted),
+       unifi_site = COALESCE($15, unifi_site),
+       unifi_auth_mode = COALESCE($16, unifi_auth_mode),
+       unifi_api_key_encrypted = COALESCE($17, unifi_api_key_encrypted),
        status = 'unconfigured'
-     WHERE id=$12 AND tenant_id=$13
+     WHERE id=$18 AND tenant_id=$19
      RETURNING id, name, type, status`,
     [
       name, mk?.host, mk?.port, mk?.username, encrypt(mk?.password), mk?.hotspotProfile,
       om?.baseUrl, om?.clientId, encrypt(om?.clientSecret), om?.omadacId, om?.siteId,
+      uf?.baseUrl, uf?.username, encrypt(uf?.password), uf?.site,
+      uf?.authMode, encrypt(uf?.apiKey),
       req.params.id, req.tenantId,
     ]
   );
@@ -84,6 +104,12 @@ router.post('/:id/test', asyncHandler(async (req, res) => {
     let result;
     if (site.type === 'mikrotik') {
       result = await mikrotik.ping({ ...site, mk_password_decrypted: decrypt(site.mk_password_encrypted) });
+    } else if (site.type === 'unifi') {
+      result = await unifi.ping({
+        ...site,
+        unifi_password_decrypted: decrypt(site.unifi_password_encrypted),
+        unifi_api_key_decrypted: decrypt(site.unifi_api_key_encrypted),
+      });
     } else {
       const token = await omada.getAccessToken({ ...site, omada_client_secret_decrypted: decrypt(site.omada_client_secret_encrypted) });
       result = { online: !!token };
@@ -209,6 +235,56 @@ ${profileLines.join('\n') || '# No active packages yet - create some in /admin f
 `;
 
   res.type('text/plain').attachment(`${slug}-mikrotik-config.rsc`).send(rsc);
+}));
+
+// Portal branding - separate from the router-credentials PATCH above on
+// purpose: saving a logo/color shouldn't reset the site's connection
+// status to 'unconfigured' the way a credentials change should.
+router.get('/:id/portal', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, portal_business_name, portal_logo_url, portal_primary_color, portal_custom_html
+     FROM sites WHERE id=$1 AND tenant_id=$2`,
+    [req.params.id, req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Site not found' });
+  res.json(rows[0]);
+}));
+
+router.patch('/:id/portal', asyncHandler(async (req, res) => {
+  const { rows: existing } = await pool.query('SELECT id FROM sites WHERE id=$1 AND tenant_id=$2', [
+    req.params.id, req.tenantId,
+  ]);
+  if (!existing.length) return res.status(404).json({ error: 'Site not found' });
+
+  const { businessName, logoUrl, primaryColor, customHtml } = req.body;
+
+  // Basic sanity check on the color so a typo doesn't silently break the
+  // portal page's CSS - not full validation, just catches the obvious case.
+  if (primaryColor && !/^#[0-9A-Fa-f]{6}$/.test(primaryColor)) {
+    return res.status(400).json({ error: 'primaryColor must be a hex code like #2EC4B6' });
+  }
+
+  const { rows } = await pool.query(
+    `UPDATE sites SET
+       portal_business_name = COALESCE($1, portal_business_name),
+       portal_logo_url = COALESCE($2, portal_logo_url),
+       portal_primary_color = COALESCE($3, portal_primary_color),
+       portal_custom_html = COALESCE($4, portal_custom_html)
+     WHERE id=$5 AND tenant_id=$6
+     RETURNING id, portal_business_name, portal_logo_url, portal_primary_color, portal_custom_html`,
+    [businessName, logoUrl, primaryColor, customHtml, req.params.id, req.tenantId]
+  );
+  res.json(rows[0]);
+}));
+
+// Revert from a custom HTML portal back to the built-in default template.
+router.delete('/:id/portal/custom-html', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE sites SET portal_custom_html = NULL WHERE id=$1 AND tenant_id=$2 RETURNING id`,
+    [req.params.id, req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Site not found' });
+  res.json({ ok: true });
 }));
 
 module.exports = router;

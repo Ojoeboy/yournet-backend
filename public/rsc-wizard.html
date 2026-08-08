@@ -29,6 +29,10 @@
   .msg.show{display:block}
   .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
   .msg.ok{background:rgba(46,196,182,.12);color:#2ec4b6}
+  .pwd-wrap{position:relative}
+  .pwd-wrap input{padding-right:40px}
+  .pwd-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;
+    border:none;cursor:pointer;font-size:16px;padding:4px 6px;margin:0;color:#6b8a91;line-height:1}
 </style>
 </head>
 <body>
@@ -58,7 +62,10 @@
     <label>PPPoE username</label>
     <input id="pppoeUsername">
     <label>PPPoE password</label>
-    <input id="pppoePassword" type="password">
+    <div class="pwd-wrap">
+      <input id="pppoePassword" type="password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('pppoePassword')" aria-label="Show password">👁</button>
+    </div>
   </div>
 
   <label>Which port is your internet plugged into?</label>
@@ -96,6 +103,20 @@
   const token = localStorage.getItem('yournet_token');
   const params = new URLSearchParams(window.location.search);
   const siteId = params.get('siteId');
+
+  function togglePwd(id) {
+    const input = document.getElementById(id);
+    const btn = input.nextElementSibling;
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = '🙈';
+      btn.setAttribute('aria-label', 'Hide password');
+    } else {
+      input.type = 'password';
+      btn.textContent = '👁';
+      btn.setAttribute('aria-label', 'Show password');
+    }
+  }
 
   document.querySelectorAll('input[name="wanType"]').forEach(r => {
     r.addEventListener('change', () => {

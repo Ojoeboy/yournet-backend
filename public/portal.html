@@ -3,12 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>WiFi Access</title>
+<meta name="theme-color" content="{{PRIMARY_COLOR}}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{BUSINESS_NAME}}">
+<link rel="manifest" href="/p/{{SITE_ID}}/manifest.json">
+<link rel="apple-touch-icon" href="{{ICON_URL}}">
+<title>{{BUSINESS_NAME}}</title>
 <style>
   /* System fonts only - no external CDN calls. The device has no internet
      yet, so anything loaded from a CDN will just fail to render. */
   :root{
-    --ink:#080F12;--panel:rgba(20,40,46,0.9);--gold:#E8A33D;--gold2:#FFC55A;
+    --ink:#080F12;--panel:rgba(20,40,46,0.9);--gold:{{PRIMARY_COLOR}};--gold2:{{PRIMARY_COLOR_2}};
     --teal:#2EC4B6;--cream:#E8F0F1;--muted:#6B8A91;--danger:#FF6B6B;--line:rgba(255,255,255,0.1);
   }
   *{box-sizing:border-box}
@@ -46,7 +52,7 @@
 <body>
   <div class="card">
     <div style="display:flex;justify-content:flex-end;margin-bottom:6px" id="yournetLangSwitcherContainer"></div>
-    <div class="logo"><div class="box">Y</div><div style="font-weight:700" data-i18n="portalTitle">YourNet WiFi</div></div>
+    <div class="logo">{{LOGO_HTML}}<div style="font-weight:700">{{BUSINESS_NAME}}</div></div>
 
     <div id="form-view">
       <h1 data-i18n="enterCode">Enter your voucher code</h1>
@@ -154,6 +160,17 @@
   }
 
   codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') redeem(); });
+
+  // PWA install support. Registered defensively - a captive portal device
+  // often has no real internet yet (only a path to this server), and some
+  // captive-portal browser shells (iOS/Android's mini in-portal webview)
+  // don't support service workers at all. Both cases should fail silently,
+  // never block voucher redemption.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register(`/p/${siteId}/sw.js`).catch(() => {});
+    });
+  }
 </script>
 </body>
 </html>

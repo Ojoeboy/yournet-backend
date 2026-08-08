@@ -1,62 +1,52 @@
-const axios = require('axios');
+const nodemailer = require('nodemailer');
 
-// Real transactional email via Brevo (brevo.com) - free for 300
-// emails/day. Sends over HTTPS, not raw SMTP - this matters because
-// Render (and many hosts) block outbound SMTP ports to prevent abuse,
-// which is why Gmail SMTP timed out no matter which port we tried.
+// Real transactional email via Gmail SMTP - free, no domain required.
 //
 // HONEST LIMITS:
-// - Requires verifying the sender email address in Brevo's dashboard
-//   (click a confirmation link - no domain or DNS needed, unlike Resend).
-// - Free tier caps at 300 emails/day - plenty for testing and early
-//   real usage, not for large-scale sending.
-// - Sends from whatever address you verified in Brevo (e.g. your Gmail),
-//   not a branded "yournet.net" address - a polish limit, not a
-//   delivery one.
+// - Sends from your own Gmail address (e.g. yournet.control@gmail.com),
+//   not a branded "yournet.net" address - fine for now, less polished
+//   than a real domain.
+// - Gmail's free sending cap is ~500 emails/day, which is plenty for
+//   testing and early real usage but won't scale to a large customer base.
+// - Requires a Gmail "App Password" (NOT your normal Gmail password) -
+//   generate one at https://myaccount.google.com/apppasswords (needs
+//   2-Step Verification enabled on the Google account first).
 //
-// When there's revenue to justify ~$10-15/year for a real domain, you
-// can verify a domain in Brevo (or swap to Resend) for branded
+// When there's revenue to justify ~$10-15/year for a real domain, swap
+// this back to Resend (or similar) + a verified domain for branded
 // "no-reply@yournet.net" sending - the sendEmail/sendPasswordResetEmail/
 // sendVerificationEmail function signatures below won't need to change.
 //
-// If BREVO_API_KEY isn't set, this falls back to logging the link to the
-// console instead of crashing - useful for local development, but NOT
-// something to rely on for real users.
-const brevo = axios.create({
-  baseURL: 'https://api.brevo.com/v3',
-  headers: {
-    'api-key': process.env.BREVO_API_KEY,
-    'Content-Type': 'application/json',
-  },
-});
+// If GMAIL_USER / GMAIL_APP_PASSWORD aren't set, this falls back to
+// logging the link to the console instead of crashing - useful for local
+// development, but NOT something to rely on for real users.
+let transporter = null;
+function getTransporter() {
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+    });
+  }
+  return transporter;
+}
 
 async function sendEmail({ to, subject, html }) {
-  if (!process.env.BREVO_API_KEY) {
-    console.log(`[EMAIL STUB - no BREVO_API_KEY set] To: ${to} | Subject: ${subject}`);
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+    console.log(`[EMAIL STUB - no GMAIL_USER/GMAIL_APP_PASSWORD set] To: ${to} | Subject: ${subject}`);
     console.log(html);
     return;
   }
 
-  try {
-    await brevo.post('/smtp/email', {
-      sender: {
-        name: 'YourNet Control',
-        email: process.env.EMAIL_FROM_ADDRESS,
-      },
-      to: [{ email: to }],
-      subject,
-      htmlContent: html,
-    });
-  } catch (err) {
-    console.error(JSON.stringify({
-      time: new Date().toISOString(),
-      level: 'error',
-      message: 'Email failed to send',
-      email: to,
-      error: err.response?.data?.message || err.message,
-    }));
-    throw err;
-  }
+  await getTransporter().sendMail({
+    from: process.env.EMAIL_FROM || `YourNet Control <${process.env.GMAIL_USER}>`,
+    to,
+    subject,
+    html,
+  });
 }
 
 async function sendPasswordResetEmail(toEmail, resetLink) {

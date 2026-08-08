@@ -26,6 +26,10 @@
   .msg.ok{background:rgba(46,196,182,.12);color:#2ec4b6}
   .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
   .hidden{display:none}
+  .pwd-wrap{position:relative}
+  .pwd-wrap input{padding-right:40px}
+  .pwd-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;
+    border:none;cursor:pointer;font-size:16px;padding:4px 6px;margin:0;color:#6b8a91;line-height:1}
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
   table{width:100%;min-width:420px;border-collapse:collapse;font-size:13px;margin-top:8px}
   td,th{padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
@@ -48,7 +52,10 @@
   <label data-i18n="email">Email</label>
   <input id="email" type="email" placeholder="you@example.com">
   <label data-i18n="password">Password</label>
-  <input id="password" type="password">
+  <div class="pwd-wrap">
+    <input id="password" type="password">
+    <button type="button" class="pwd-toggle" onclick="togglePwd('password')" aria-label="Show password">👁</button>
+  </div>
   <button onclick="signup()" data-i18n="createAccountBtn">Create account</button>
   <button class="secondary" onclick="login()" data-i18n="loginInsteadBtn">Log in instead</button>
   <div class="msg" id="auth-msg"></div>
@@ -62,23 +69,117 @@
 
 <!-- STEP 2: Add Site -->
 <div class="card hidden" id="site-card">
-  <h2 data-i18n="step2Title">Step 2 - Add your Mikrotik router</h2>
+  <h2 data-i18n="step2Title">Step 2 - Add your router or controller</h2>
   <label data-i18n="siteNameLabel">Site name</label>
   <input id="siteName" placeholder="Main compound">
-  <label data-i18n="routerIpLabel">Router IP address</label>
-  <input id="mkHost" placeholder="e.g. 192.168.88.1">
-  <div class="row">
-    <div><label data-i18n="apiPortLabel">API port</label><input id="mkPort" value="8728"></div>
-    <div><label data-i18n="hotspotProfileLabel">Hotspot profile</label><input id="mkProfile" value="default"></div>
+  <label>Equipment type</label>
+  <select id="siteType" onchange="renderSiteTypeFields()">
+    <option value="mikrotik">Mikrotik RouterOS</option>
+    <option value="omada">TP-Link Omada</option>
+    <option value="unifi">Ubiquiti UniFi (self-hosted controller)</option>
+  </select>
+
+  <div id="siteFields-mikrotik" class="site-fields">
+    <label data-i18n="routerIpLabel">Router IP address</label>
+    <input id="mkHost" placeholder="e.g. 192.168.88.1">
+    <div class="row">
+      <div><label data-i18n="apiPortLabel">API port</label><input id="mkPort" value="8728"></div>
+      <div><label data-i18n="hotspotProfileLabel">Hotspot profile</label><input id="mkProfile" value="default"></div>
+    </div>
+    <label data-i18n="routerUsernameLabel">Router API username</label>
+    <input id="mkUser" placeholder="admin">
+    <label data-i18n="routerPasswordLabel">Router API password</label>
+    <div class="pwd-wrap">
+      <input id="mkPass" type="password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('mkPass')" aria-label="Show password">👁</button>
+    </div>
+    <button class="secondary" onclick="openRscWizard()" data-i18n="rscWizardBtn">Mikrotik config wizard</button>
   </div>
-  <label data-i18n="routerUsernameLabel">Router API username</label>
-  <input id="mkUser" placeholder="admin">
-  <label data-i18n="routerPasswordLabel">Router API password</label>
-  <input id="mkPass" type="password">
+
+  <div id="siteFields-omada" class="site-fields hidden">
+    <p style="font-size:12px;color:#6b8a91">
+      Enable Open API under Global View &gt; Settings &gt; Platform Integration on your
+      Omada Controller (Standard tier or higher) to get these values.
+    </p>
+    <label>Controller base URL</label>
+    <input id="omBaseUrl" placeholder="https://your-controller:8043">
+    <label>Omadac ID</label>
+    <input id="omOmadacId">
+    <label>Omada site ID</label>
+    <input id="omSiteId">
+    <label>Client ID</label>
+    <input id="omClientId">
+    <label>Client secret</label>
+    <div class="pwd-wrap">
+      <input id="omClientSecret" type="password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('omClientSecret')" aria-label="Show password">👁</button>
+    </div>
+  </div>
+
+  <div id="siteFields-unifi" class="site-fields hidden">
+    <p style="font-size:12px;color:#6b8a91">
+      For a self-hosted controller or Cloud Key. Set this site's portal URL as the
+      "External portal server" under Settings &gt; Guest Control on your controller.
+    </p>
+    <label>Controller base URL</label>
+    <input id="ufBaseUrl" placeholder="https://192.168.1.5:8443">
+    <label>UniFi site name</label>
+    <input id="ufSite" value="default">
+    <label>Controller username</label>
+    <input id="ufUser" placeholder="admin">
+    <label>Controller password</label>
+    <div class="pwd-wrap">
+      <input id="ufPass" type="password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('ufPass')" aria-label="Show password">👁</button>
+    </div>
+  </div>
+
   <button onclick="addSite()" data-i18n="saveSiteBtn">Save site</button>
   <button class="secondary" onclick="testSite()" data-i18n="testConnectionBtn">Test connection</button>
-  <button class="secondary" onclick="openRscWizard()" data-i18n="rscWizardBtn">Mikrotik config wizard</button>
   <div class="msg" id="site-msg"></div>
+</div>
+
+<!-- STEP 2.5: Portal branding -->
+<div class="card hidden" id="portal-card">
+  <h2>Customize your portal page (optional)</h2>
+  <p style="font-size:12px;color:#6b8a91;margin-bottom:10px">
+    This is the page your customers see when they join your WiFi. Leave it as-is for the
+    default YourNet look, or brand it with your own name, logo, and color.
+  </p>
+  <label>Site</label>
+  <select id="portalSite" onchange="loadPortalBranding()"></select>
+
+  <label>Business name shown on the portal</label>
+  <input id="portalBusinessName" placeholder="e.g. BITTNET WiFi">
+  <label>Logo image URL (optional - a small square image works best)</label>
+  <input id="portalLogoUrl" placeholder="https://...">
+  <label>Brand color</label>
+  <input id="portalPrimaryColor" type="color" value="#e8a33d" style="height:42px;padding:4px">
+
+  <button onclick="savePortalBranding()">Save branding</button>
+  <button class="secondary" onclick="previewPortal()">Preview portal</button>
+  <div class="msg" id="portal-msg"></div>
+
+  <div style="margin-top:18px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="portalAdvancedToggle" style="width:auto" onchange="toggleAdvancedPortal()">
+      <span style="text-transform:none;font-size:13px;color:#e8f0f1">Advanced: use my own custom HTML page instead</span>
+    </label>
+    <div id="portal-advanced" class="hidden" style="margin-top:10px">
+      <p style="font-size:12px;color:#6b8a91">
+        Paste a complete HTML page below. It replaces the portal above entirely - branding
+        fields will be ignored while this is active. Your page must POST the customer's
+        voucher code as JSON to <code style="color:#ffc55a">/portal/{siteId}/redeem</code>
+        (with your real site ID in place of <code style="color:#ffc55a">{siteId}</code>) to
+        actually connect them - this endpoint doesn't change.
+      </p>
+      <textarea id="portalCustomHtml" rows="10" style="width:100%;padding:10px;border-radius:8px;
+        border:1px solid rgba(255,255,255,.12);background:#0d1a1e;color:#fff;font-size:12px;
+        font-family:monospace" placeholder="<!DOCTYPE html>..."></textarea>
+      <button onclick="saveCustomHtml()">Save custom HTML</button>
+      <button class="secondary" onclick="revertCustomHtml()">Revert to default portal</button>
+    </div>
+  </div>
 </div>
 
 <!-- STEP 3: Packages -->
@@ -128,7 +229,10 @@
 
   <div id="gwFields-paystack" class="gw-fields">
     <label>Secret key</label>
-    <input id="gwPaystackSecret" type="password" placeholder="sk_live_...">
+    <div class="pwd-wrap">
+      <input id="gwPaystackSecret" type="password" placeholder="sk_live_...">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('gwPaystackSecret')" aria-label="Show password">👁</button>
+    </div>
     <label>Public key</label>
     <input id="gwPaystackPublic" placeholder="pk_live_...">
   </div>
@@ -137,14 +241,20 @@
     <label>Client ID</label>
     <input id="gwHubtelClientId" placeholder="Client ID">
     <label>Client secret</label>
-    <input id="gwHubtelClientSecret" type="password" placeholder="Client secret">
+    <div class="pwd-wrap">
+      <input id="gwHubtelClientSecret" type="password" placeholder="Client secret">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('gwHubtelClientSecret')" aria-label="Show password">👁</button>
+    </div>
     <label>Merchant account number</label>
     <input id="gwHubtelMerchant" placeholder="e.g. 11334">
   </div>
 
   <div id="gwFields-flutterwave" class="gw-fields hidden">
     <label>Secret key</label>
-    <input id="gwFlutterwaveSecret" type="password" placeholder="FLWSECK-...">
+    <div class="pwd-wrap">
+      <input id="gwFlutterwaveSecret" type="password" placeholder="FLWSECK-...">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('gwFlutterwaveSecret')" aria-label="Show password">👁</button>
+    </div>
     <label>Public key</label>
     <input id="gwFlutterwavePublic" placeholder="FLWPUBK-...">
   </div>
@@ -165,6 +275,20 @@
     const el = document.getElementById(id);
     el.textContent = text;
     el.className = 'msg show ' + type;
+  }
+
+  function togglePwd(id) {
+    const input = document.getElementById(id);
+    const btn = input.nextElementSibling;
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = '🙈';
+      btn.setAttribute('aria-label', 'Hide password');
+    } else {
+      input.type = 'password';
+      btn.textContent = '👁';
+      btn.setAttribute('aria-label', 'Show password');
+    }
   }
 
   async function api(path, method, body) {
@@ -213,27 +337,53 @@
     localStorage.setItem('yournet_token', token);
     showMsg('auth-msg', 'Logged in as ' + (tenant.businessName || tenant.business_name), 'ok');
     document.getElementById('site-card').classList.remove('hidden');
+    document.getElementById('portal-card').classList.remove('hidden');
     document.getElementById('package-card').classList.remove('hidden');
     document.getElementById('voucher-card').classList.remove('hidden');
     document.getElementById('gateway-card').classList.remove('hidden');
     loadSitesAndPackages();
     loadGateways();
-    loadVouchers();
+  }
+
+  function renderSiteTypeFields() {
+    document.querySelectorAll('.site-fields').forEach(el => el.classList.add('hidden'));
+    const type = document.getElementById('siteType').value;
+    document.getElementById('siteFields-' + type).classList.remove('hidden');
+  }
+
+  function buildSitePayload() {
+    const type = document.getElementById('siteType').value;
+    const payload = { name: document.getElementById('siteName').value, type };
+    if (type === 'mikrotik') {
+      payload.mikrotik = {
+        host: document.getElementById('mkHost').value,
+        port: Number(document.getElementById('mkPort').value) || 8728,
+        hotspotProfile: document.getElementById('mkProfile').value,
+        username: document.getElementById('mkUser').value,
+        password: document.getElementById('mkPass').value,
+      };
+    } else if (type === 'omada') {
+      payload.omada = {
+        baseUrl: document.getElementById('omBaseUrl').value,
+        omadacId: document.getElementById('omOmadacId').value,
+        siteId: document.getElementById('omSiteId').value,
+        clientId: document.getElementById('omClientId').value,
+        clientSecret: document.getElementById('omClientSecret').value,
+      };
+    } else if (type === 'unifi') {
+      payload.unifi = {
+        baseUrl: document.getElementById('ufBaseUrl').value,
+        site: document.getElementById('ufSite').value || 'default',
+        username: document.getElementById('ufUser').value,
+        password: document.getElementById('ufPass').value,
+      };
+    }
+    return payload;
   }
 
   async function addSite() {
     try {
-      await api('/api/sites', 'POST', {
-        name: document.getElementById('siteName').value,
-        type: 'mikrotik',
-        mikrotik: {
-          host: document.getElementById('mkHost').value,
-          port: Number(document.getElementById('mkPort').value) || 8728,
-          hotspotProfile: document.getElementById('mkProfile').value,
-          username: document.getElementById('mkUser').value,
-          password: document.getElementById('mkPass').value,
-        },
-      });
+      await api('/api/sites', 'POST', buildSitePayload());
       showMsg('site-msg', 'Site saved. Click "Test connection" to verify.', 'ok');
       loadSitesAndPackages();
     } catch (err) {
@@ -290,23 +440,86 @@
       const siteSelect = document.getElementById('voucherSite');
       siteSelect.innerHTML = sites.map(s => `<option value="${s.id}">${s.name} (${s.status})</option>`).join('');
 
+      const portalSiteSelect = document.getElementById('portalSite');
+      portalSiteSelect.innerHTML = sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+      if (sites.length) loadPortalBranding();
+
       const packages = await api('/api/packages', 'GET');
       const pkgSelect = document.getElementById('voucherPackage');
       pkgSelect.innerHTML = packages.map(p => `<option value="${p.id}">${p.label} - GHS ${p.price}</option>`).join('');
     } catch (err) { /* not logged in yet */ }
   }
 
-  async function loadVouchers() {
+  async function loadPortalBranding() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return;
     try {
-      const vouchers = await api('/api/vouchers', 'GET');
-      const table = document.getElementById('voucherTable');
-      if (!vouchers.length) {
-        table.innerHTML = '<tr><td style="color:#6b8a91">No vouchers yet.</td></tr>';
-        return;
-      }
-      table.innerHTML = '<tr><th>Code</th><th>Status</th></tr>' +
-        vouchers.map(v => `<tr><td class="code">${v.code}</td><td><span class="pill">${v.status}</span></td></tr>`).join('');
-    } catch (err) { /* not logged in yet */ }
+      const branding = await api(`/api/sites/${siteId}/portal`, 'GET');
+      document.getElementById('portalBusinessName').value = branding.portal_business_name || '';
+      document.getElementById('portalLogoUrl').value = branding.portal_logo_url || '';
+      document.getElementById('portalPrimaryColor').value = branding.portal_primary_color || '#e8a33d';
+      document.getElementById('portalCustomHtml').value = branding.portal_custom_html || '';
+      document.getElementById('portalAdvancedToggle').checked = !!branding.portal_custom_html;
+      toggleAdvancedPortal();
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function savePortalBranding() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
+    try {
+      await api(`/api/sites/${siteId}/portal`, 'PATCH', {
+        businessName: document.getElementById('portalBusinessName').value || null,
+        logoUrl: document.getElementById('portalLogoUrl').value || null,
+        primaryColor: document.getElementById('portalPrimaryColor').value || null,
+      });
+      showMsg('portal-msg', 'Branding saved.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function saveCustomHtml() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
+    const html = document.getElementById('portalCustomHtml').value;
+    if (!html.trim()) return showMsg('portal-msg', 'Paste your HTML first, or use "Revert to default portal" instead.', 'err');
+    try {
+      await api(`/api/sites/${siteId}/portal`, 'PATCH', { customHtml: html });
+      showMsg('portal-msg', 'Custom portal saved. Preview it to confirm redemption works.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function revertCustomHtml() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return;
+    try {
+      await fetch(`/api/sites/${siteId}/portal/custom-html`, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      document.getElementById('portalCustomHtml').value = '';
+      document.getElementById('portalAdvancedToggle').checked = false;
+      toggleAdvancedPortal();
+      showMsg('portal-msg', 'Reverted to the default portal.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  function toggleAdvancedPortal() {
+    const on = document.getElementById('portalAdvancedToggle').checked;
+    document.getElementById('portal-advanced').classList.toggle('hidden', !on);
+  }
+
+  function previewPortal() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
+    window.open(`/p/${siteId}`, '_blank');
   }
 
   async function generateVouchers() {
@@ -317,10 +530,9 @@
         quantity: Number(document.getElementById('voucherQty').value) || 1,
       });
       showMsg('voucher-msg', `Generated ${data.count} vouchers.`, 'ok');
-      // Reload from the server instead of only rendering this batch's
-      // response - this is what was making vouchers disappear on refresh,
-      // since nothing ever re-fetched the saved list from the database.
-      loadVouchers();
+      const table = document.getElementById('voucherTable');
+      table.innerHTML = '<tr><th>Code</th><th>Status</th></tr>' +
+        data.vouchers.map(v => `<tr><td class="code">${v.code}</td><td><span class="pill">${v.status}</span></td></tr>`).join('');
     } catch (err) {
       showMsg('voucher-msg', err.message, 'err');
     }
@@ -329,12 +541,12 @@
   // Auto-resume session if already logged in
   if (token) {
     document.getElementById('site-card').classList.remove('hidden');
+    document.getElementById('portal-card').classList.remove('hidden');
     document.getElementById('package-card').classList.remove('hidden');
     document.getElementById('voucher-card').classList.remove('hidden');
     document.getElementById('gateway-card').classList.remove('hidden');
     loadSitesAndPackages();
     loadGateways();
-    loadVouchers();
   }
 
   function renderGatewayFields() {
@@ -390,6 +602,7 @@
     } catch (err) { /* not logged in yet */ }
   }
 
+  renderSiteTypeFields();
   renderGatewayFields();
 </script>
 </body>

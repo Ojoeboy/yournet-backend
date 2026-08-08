@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS sites (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('mikrotik', 'omada')),
+  type TEXT NOT NULL CHECK (type IN ('mikrotik', 'omada', 'unifi')),
 
   mk_host TEXT,
   mk_api_port INTEGER DEFAULT 8728,
@@ -61,10 +61,52 @@ CREATE TABLE IF NOT EXISTS sites (
   omada_omadac_id TEXT,
   omada_site_id TEXT,
 
+  unifi_base_url TEXT,
+  unifi_username TEXT,
+  unifi_password_encrypted TEXT,
+  unifi_site TEXT DEFAULT 'default',
+  unifi_auth_mode TEXT DEFAULT 'classic', -- 'classic' (self-hosted/Cloud Key) or 'unifios' (UDM/UDM-Pro/UDR API key)
+  unifi_api_key_encrypted TEXT, -- only used when unifi_auth_mode = 'unifios'
+
   status TEXT NOT NULL DEFAULT 'unconfigured',
   last_checked_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  -- Portal branding: NULL means "use the default YourNet portal look".
+  -- portal_custom_html, if set, is served as the ENTIRE captive portal page
+  -- for this site instead of the built-in template - an advanced escape
+  -- hatch for installers who want full control. It must still POST to
+  -- /portal/:siteId/redeem itself (documented in the admin UI) since that
+  -- endpoint doesn't change.
+  portal_business_name TEXT,
+  portal_logo_url TEXT,
+  portal_primary_color TEXT,
+  portal_custom_html TEXT
 );
+
+-- Safe to re-run: adds the portal branding columns above to a sites table
+-- that already existed before this feature (CREATE TABLE IF NOT EXISTS
+-- alone won't add columns to an existing table).
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_business_name TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_logo_url TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_primary_color TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_custom_html TEXT;
+
+-- Safe to re-run: adds UniFi support to a sites table that predates it.
+-- The type CHECK constraint has to be dropped and recreated to allow the
+-- new 'unifi' value - ADD COLUMN IF NOT EXISTS alone can't widen a CHECK.
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS unifi_base_url TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS unifi_username TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS unifi_password_encrypted TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS unifi_site TEXT DEFAULT 'default';
+ALTER TABLE sites DROP CONSTRAINT IF EXISTS sites_type_check;
+ALTER TABLE sites ADD CONSTRAINT sites_type_check CHECK (type IN ('mikrotik', 'omada', 'unifi'));
+
+-- Safe to re-run: adds UniFi OS Console (API-key) auth mode support to a
+-- sites table that predates it. Existing rows default to 'classic' so
+-- they keep working unchanged.
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS unifi_auth_mode TEXT DEFAULT 'classic';
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS unifi_api_key_encrypted TEXT;
 
 CREATE TABLE IF NOT EXISTS packages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

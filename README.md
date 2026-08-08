@@ -140,26 +140,34 @@ No automated backup is configured yet. Until one is:
   Task Scheduler on Windows) to a separate location is the minimum viable
   approach - not glamorous, but real data safety beats none.
 
-## Email (Resend)
-Password reset and account verification emails now send for real, via
-[Resend](https://resend.com) (free for 3,000 emails/month, 100/day). Set
-`RESEND_API_KEY` in `.env` after signing up.
+## Email (Gmail SMTP)
+Password reset and account verification emails send for real, via Gmail
+SMTP (through `nodemailer`) - free, and no domain purchase required. Set
+`GMAIL_USER` and `GMAIL_APP_PASSWORD` in `.env` (see `.env.example` for
+how to generate an app password).
 
-**Real limit to know before relying on this**: sending to actual customers
-(not just the email you signed up to Resend with) requires verifying a
-domain you own in Resend's dashboard - a couple of DNS records they give
-you. Without a verified domain, Resend will only deliver to your own
-account email, which is fine for testing but not for real users.
+**Real limits to know before relying on this**: emails send from a Gmail
+address (e.g. `yournet.control@gmail.com`), not a branded
+`no-reply@yourdomain.com` - less polished, but works for real customers
+today, unlike the domain-gated alternative. Gmail's free sending cap is
+roughly 500/day, which is plenty for testing and early real usage but
+won't scale indefinitely.
 
-If `RESEND_API_KEY` isn't set, the app falls back to logging the email
-content to the console instead of crashing - useful while developing
-locally, not something to rely on once real people are signing up.
+If `GMAIL_USER` / `GMAIL_APP_PASSWORD` aren't set, the app falls back to
+logging the email content to the console instead of crashing - useful
+while developing locally, not something to rely on once real people are
+signing up.
+
+When there's revenue to justify it, swapping to Resend (or similar) + a
+purchased/verified domain (~$10-15/year) gets you branded sending
+addresses - `emailService.js` is written so that swap doesn't require
+touching any other file.
 
 ## Honest gaps / what still needs attention
 **Fixed since the last review:**
-- ~~No real email sending~~ - now uses Resend (see above); still needs a
-  verified domain before it can reach real customers, not just your own
-  Resend account email
+- ~~No real email sending~~ - now uses Gmail SMTP (see above); sends from
+  a Gmail address rather than a branded domain, which is a cosmetic
+  limit, not a delivery one - real customers receive real emails today
 **Fixed since the last review:**
 - ~~Plaintext router/API credentials~~ - now encrypted (see above)
 - ~~Static shared secret for owner actions~~ - now a real login (see above)
@@ -173,8 +181,8 @@ locally, not something to rely on once real people are signing up.
   `IF NOT EXISTS` everywhere, safe to run again on a partially-migrated DB
 
 **Still genuinely open:**
-- **Real email delivery to actual customers still needs a verified domain**
-  in Resend (see above) - works today for testing, not yet for strangers.
+- **Email sends from a Gmail address, not a branded domain** - works for
+  real customers today (see above), purely a polish/scale item for later.
 - **Omada External Portal endpoint** is still unverified against a real
   Controller - TP-Link's exact request path/params differ by firmware
   version (see comments in `omada.js`).
@@ -185,8 +193,8 @@ locally, not something to rely on once real people are signing up.
 ## Suggested build order from here
 1. Get Mikrotik redemption working end-to-end against your own BITTNET
    router first - it's the simpler, non-version-fragmented integration.
-2. Verify a domain in Resend so real customers (not just you) can receive
-   password resets and verification emails.
-3. Verify the Omada flow against your real Controller version.
-4. Add plan-expiry enforcement for tenant subscriptions.
+2. Verify the Omada flow against your real Controller version.
+3. Add plan-expiry enforcement for tenant subscriptions.
+4. Once there's revenue, buy a real domain and swap to Resend for branded
+   email sending (see "Email" above) - not blocking before then.
 5. Only then think about onboarding other WiFi owners as paying tenants.

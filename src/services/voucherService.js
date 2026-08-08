@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
 const mikrotik = require('../integrations/mikrotik');
 const omada = require('../integrations/omada');
+const unifi = require('../integrations/unifi');
 const { decrypt } = require('../utils/credentialCrypto');
 
 function randomCode() {
@@ -9,6 +10,23 @@ function randomCode() {
   let s = '';
   for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
   return `${s.slice(0, 4)}-${s.slice(4)}`;
+}
+
+// Package rate limits are stored as RouterOS-style strings like "4M" or
+// "512k" (matching what the Mikrotik rsc-wizard/admin form use). UniFi's
+// API instead wants a plain number in kbps, so this converts one to the
+// other. Returns null (no limit applied) if the value is missing or not
+// parseable, rather than guessing.
+function parseRateToKbps(rateStr) {
+  if (!rateStr) return null;
+  const match = String(rateStr).trim().match(/^(\d+(?:\.\d+)?)\s*([kKmMgG]?)/);
+  if (!match) return null;
+  const num = parseFloat(match[1]);
+  const unit = match[2].toLowerCase();
+  if (unit === 'g') return Math.round(num * 1000000);
+  if (unit === 'm') return Math.round(num * 1000);
+  if (unit === 'k') return Math.round(num);
+  return Math.round(num); // no unit - assume already kbps
 }
 
 /**
@@ -67,7 +85,9 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
        s.id AS site_id_full, s.type AS site_type,
        s.mk_host, s.mk_api_port, s.mk_username, s.mk_password_encrypted, s.mk_hotspot_profile,
        s.omada_base_url, s.omada_client_id, s.omada_client_secret_encrypted,
-       s.omada_omadac_id, s.omada_site_id
+       s.omada_omadac_id, s.omada_site_id,
+       s.unifi_base_url, s.unifi_username, s.unifi_password_encrypted, s.unifi_site,
+       s.unifi_auth_mode, s.unifi_api_key_encrypted
      FROM vouchers v
      JOIN packages p ON p.id = v.package_id
      JOIN sites s ON s.id = v.site_id
@@ -88,6 +108,8 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
     ...v,
     mk_password_decrypted: decrypt(v.mk_password_encrypted),
     omada_client_secret_decrypted: decrypt(v.omada_client_secret_encrypted),
+    unifi_password_decrypted: decrypt(v.unifi_password_encrypted),
+    unifi_api_key_decrypted: decrypt(v.unifi_api_key_encrypted),
   };
 
   let providerResult;
@@ -106,6 +128,17 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
       ssidName: redeemContext.ssidName,
       radioId: redeemContext.radioId,
       siteParam: v.omada_site_id,
+    });
+  } else if (v.site_type === 'unifi') {
+    providerResult = await unifi.authorizeClient(site, {
+      clientMac: redeemContext.clientMac,
+      durationMinutes: v.duration_minutes,
+      // RouterOS-style rate limit strings are e.g. "4M/10M" (up/down) -
+      // UniFi's API wants separate up/down values in kbps, so these are
+      // parsed from the package's own rate limit fields rather than reused
+      // as-is. "4M" -> 4000 kbps; a bare number is assumed to already be kbps.
+      rateLimitKbpsDown: parseRateToKbps(v.rate_limit_down),
+      rateLimitKbpsUp: parseRateToKbps(v.rate_limit_up),
     });
   } else {
     return { ok: false, reason: 'unsupported_site_type' };
