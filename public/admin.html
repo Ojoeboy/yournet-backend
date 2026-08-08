@@ -218,6 +218,7 @@
     document.getElementById('gateway-card').classList.remove('hidden');
     loadSitesAndPackages();
     loadGateways();
+    loadVouchers();
   }
 
   async function addSite() {
@@ -295,6 +296,19 @@
     } catch (err) { /* not logged in yet */ }
   }
 
+  async function loadVouchers() {
+    try {
+      const vouchers = await api('/api/vouchers', 'GET');
+      const table = document.getElementById('voucherTable');
+      if (!vouchers.length) {
+        table.innerHTML = '<tr><td style="color:#6b8a91">No vouchers yet.</td></tr>';
+        return;
+      }
+      table.innerHTML = '<tr><th>Code</th><th>Status</th></tr>' +
+        vouchers.map(v => `<tr><td class="code">${v.code}</td><td><span class="pill">${v.status}</span></td></tr>`).join('');
+    } catch (err) { /* not logged in yet */ }
+  }
+
   async function generateVouchers() {
     try {
       const data = await api('/api/vouchers/generate', 'POST', {
@@ -303,9 +317,7 @@
         quantity: Number(document.getElementById('voucherQty').value) || 1,
       });
       showMsg('voucher-msg', `Generated ${data.count} vouchers.`, 'ok');
-      const table = document.getElementById('voucherTable');
-      table.innerHTML = '<tr><th>Code</th><th>Status</th></tr>' +
-        data.vouchers.map(v => `<tr><td class="code">${v.code}</td><td><span class="pill">${v.status}</span></td></tr>`).join('');
+      loadVouchers();
     } catch (err) {
       showMsg('voucher-msg', err.message, 'err');
     }
@@ -319,6 +331,8 @@
     document.getElementById('gateway-card').classList.remove('hidden');
     loadSitesAndPackages();
     loadGateways();
+    loadVouchers();
+  }
   }
 
   function renderGatewayFields() {
