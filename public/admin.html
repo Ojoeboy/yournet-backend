@@ -317,6 +317,9 @@
         quantity: Number(document.getElementById('voucherQty').value) || 1,
       });
       showMsg('voucher-msg', `Generated ${data.count} vouchers.`, 'ok');
+      // Reload from the server instead of only rendering this batch's
+      // response - this is what was making vouchers disappear on refresh,
+      // since nothing ever re-fetched the saved list from the database.
       loadVouchers();
     } catch (err) {
       showMsg('voucher-msg', err.message, 'err');
@@ -332,7 +335,6 @@
     loadSitesAndPackages();
     loadGateways();
     loadVouchers();
-  }
   }
 
   function renderGatewayFields() {
