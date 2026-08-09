@@ -43,12 +43,16 @@
 
 <h2>Issue a key manually</h2>
 <div class="card">
+  <select id="mKeyType" style="width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:#132228;color:#fff;margin-bottom:10px;box-sizing:border-box">
+    <option value="signup">New signup key (creates a brand-new account)</option>
+    <option value="reactivation">Monthly reactivation key (renews an existing account)</option>
+  </select>
   <input id="mEmail" type="email" placeholder="Buyer email">
   <input id="mPhone" placeholder="Buyer phone (optional - enables SMS delivery)">
   <input id="mNotes" placeholder="Notes (optional)">
   <button class="primary" onclick="issueManual()">Issue key</button>
   <div class="msg" id="manualMsg"></div>
-  <p class="note">If you enter an email, the key is sent to it automatically via Brevo.</p>
+  <p class="note">If you enter an email, the key is sent to it automatically via Brevo. A reactivation key only works for an email that already has an account - the tenant redeems it from the login page, not /signup.</p>
 </div>
 
 <h2>Resend a key by email</h2>
@@ -88,6 +92,7 @@
     list.innerHTML = keys.map(k => `
       <div class="card">
         <div class="row"><span>Status</span><span class="pill ${k.status}">${k.status}</span></div>
+        <div class="row"><span>Type</span><span class="pill">${k.key_type === 'reactivation' ? 'Reactivation' : 'Signup'}</span></div>
         <div class="row"><span>Buyer</span><span>${k.buyer_email || '-'}</span></div>
         <div class="row"><span>Phone</span><span>${k.buyer_phone || '-'}</span></div>
         <div class="row"><span>Payment method</span><span>${k.payment_method || '-'}</span></div>
@@ -127,6 +132,7 @@
           buyerEmail,
           buyerPhone: document.getElementById('mPhone').value,
           notes: document.getElementById('mNotes').value,
+          keyType: document.getElementById('mKeyType').value,
         }),
       });
       const data = await res.json();

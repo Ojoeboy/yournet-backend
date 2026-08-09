@@ -33,6 +33,21 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMPTZ;
 -- background unless the tenant turns this on.
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS admin_use_rotating_backgrounds BOOLEAN NOT NULL DEFAULT false;
 
+-- Monthly platform license/subscription (replaces the old one-time
+-- "licensed forever" model). subscription_status drives whether the
+-- tenant's own auto-renewal is currently expected to succeed each month:
+--   active     - billing_authorization on file, auto-charge will be attempted
+--   past_due   - most recent auto-charge failed; plan_expires_at/grace
+--                period (see routes/auth.js login) decides lockout, not this
+--   manual     - owner-managed (e.g. legacy/offline account), never auto-charged
+--   canceled   - tenant is done; no further charge attempts
+-- billing_authorization stores the gateway's reusable charge token
+-- (Paystack authorization_code) - NOT raw card data, never logged.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_status TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_provider TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_authorization TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS next_billing_at TIMESTAMPTZ;
+
 -- Staff/kiosk logins belonging to a tenant (agents who sell vouchers)
 CREATE TABLE IF NOT EXISTS tenant_users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -191,6 +206,16 @@ CREATE TABLE IF NOT EXISTS license_keys (
 
 CREATE INDEX IF NOT EXISTS idx_license_keys_code ON license_keys(key_code);
 
+-- 'signup' keys create a brand-new tenant (original behavior). 'reactivation'
+-- keys instead attach to an EXISTING tenant (found by buyer_email at
+-- redemption) and just extend/restart their subscription - used for
+-- migrating old one-time-license accounts onto the monthly plan, or for a
+-- lapsed subscriber who paid again without their gateway authorization
+-- still on file (e.g. they used a different card).
+ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS key_type TEXT NOT NULL DEFAULT 'signup';
+ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS billing_provider TEXT;
+ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS billing_authorization TEXT;
+
 -- Tracks a license purchase from "checkout started" through "key issued",
 -- across whichever gateway the buyer picked on /license (Paystack,
 -- Flutterwave, or Hubtel). Needed because Hubtel confirms via an async
@@ -211,6 +236,17 @@ CREATE TABLE IF NOT EXISTS license_purchase_orders (
 );
 
 CREATE INDEX IF NOT EXISTS idx_license_purchase_orders_ref ON license_purchase_orders(provider, provider_reference);
+
+-- purpose='signup' (default): paying issues a fresh signup key, same as
+-- before. purpose='reactivate': this order belongs to an EXISTING tenant
+-- (tenant_id set) - on success we extend/restart their subscription
+-- directly instead of minting a signup key. billing_authorization/
+-- billing_provider capture whatever reusable charge token the gateway
+-- returned, so subscriptionBilling.js can auto-charge next month.
+ALTER TABLE license_purchase_orders ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'signup';
+ALTER TABLE license_purchase_orders ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
+ALTER TABLE license_purchase_orders ADD COLUMN IF NOT EXISTS billing_provider TEXT;
+ALTER TABLE license_purchase_orders ADD COLUMN IF NOT EXISTS billing_authorization TEXT;
 
 -- LEGACY - kept only so historical data stays queryable directly in the
 -- database if you ever need it. The old direct-MoMo-transfer-with-manual-
@@ -234,15 +270,30 @@ CREATE TABLE IF NOT EXISTS momo_payment_claims (
 
 CREATE INDEX IF NOT EXISTS idx_momo_claims_status ON momo_payment_claims(status);
 
+-- One row per monthly platform-license charge attempt (first payment at
+-- signup/reactivation, plus every automatic renewal after that). provider/
+-- provider_reference is the generalized pair used going forward;
+-- paystack_reference is kept only so old rows written before this column
+-- existed stay valid (it was UNIQUE on its own before - not anymore, since
+-- a NULL paystack_reference on every Flutterwave/manual row would otherwise
+-- collide under a naive unique constraint).
 CREATE TABLE IF NOT EXISTS subscription_payments (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   amount NUMERIC(10,2) NOT NULL,
   currency TEXT NOT NULL DEFAULT 'GHS',
-  paystack_reference TEXT UNIQUE,
+  paystack_reference TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE subscription_payments ADD COLUMN IF NOT EXISTS provider TEXT;
+ALTER TABLE subscription_payments ADD COLUMN IF NOT EXISTS provider_reference TEXT;
+-- kind: 'initial' (first payment, at signup or reactivation) vs 'renewal'
+-- (unattended monthly auto-charge) - lets /license-admin distinguish them.
+ALTER TABLE subscription_payments ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'initial';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_payments_provider_ref
+  ON subscription_payments(provider, provider_reference) WHERE provider_reference IS NOT NULL;
 
 -- Each tenant links their OWN payment gateway credentials (same pattern as
 -- their Mikrotik/Omada site credentials) so customer payments land directly

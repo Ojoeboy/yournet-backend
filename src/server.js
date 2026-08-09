@@ -285,3 +285,19 @@ setInterval(snapshotAllSites, SNAPSHOT_INTERVAL_MS);
 // First snapshot shortly after startup, staggered after the quick status
 // poll above so they don't both hammer every site at the exact same second.
 setTimeout(snapshotAllSites, 45 * 1000);
+
+// --- Monthly license auto-renewal ---
+// Charges every tenant whose Paystack authorization is due for its monthly
+// hit. Checked a few times a day (not once a day) so a tenant whose card
+// only just became due doesn't wait up to 24h before the first attempt -
+// runMonthlyBilling()'s own `next_billing_at <= now()` filter is what
+// actually gates who gets charged, this interval just controls how often
+// that check runs.
+const subscriptionBilling = require('./services/subscriptionBilling');
+const BILLING_INTERVAL_MS = 4 * 60 * 60 * 1000; // every 4 hours
+setInterval(() => {
+  subscriptionBilling.runMonthlyBilling().catch((err) => logger.error('Monthly billing run failed', { message: err.message }));
+}, BILLING_INTERVAL_MS);
+setTimeout(() => {
+  subscriptionBilling.runMonthlyBilling().catch((err) => logger.error('Monthly billing run failed', { message: err.message }));
+}, 60 * 1000);

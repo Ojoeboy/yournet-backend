@@ -16,12 +16,12 @@ function generateKeyCode() {
  * payment, or manually by the platform owner after confirming a direct
  * MoMo transfer.
  */
-async function issueKey({ amount, paymentMethod, paymentReference, buyerEmail, buyerPhone, notes }) {
+async function issueKey({ amount, paymentMethod, paymentReference, buyerEmail, buyerPhone, notes, keyType, billingProvider, billingAuthorization }) {
   const keyCode = generateKeyCode();
   const { rows } = await pool.query(
-    `INSERT INTO license_keys (key_code, amount, payment_method, payment_reference, buyer_email, buyer_phone, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-    [keyCode, amount, paymentMethod, paymentReference || null, buyerEmail || null, buyerPhone || null, notes || null]
+    `INSERT INTO license_keys (key_code, amount, payment_method, payment_reference, buyer_email, buyer_phone, notes, key_type, billing_provider, billing_authorization)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+    [keyCode, amount, paymentMethod, paymentReference || null, buyerEmail || null, buyerPhone || null, notes || null, keyType || 'signup', billingProvider || null, billingAuthorization || null]
   );
   return rows[0];
 }

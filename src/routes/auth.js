@@ -9,6 +9,8 @@ const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
 
+const LICENSE_GRACE_DAYS = Number(process.env.LICENSE_GRACE_DAYS || 2);
+
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
@@ -38,20 +40,31 @@ router.post('/signup', asyncHandler(async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'That license key has already been used or is no longer valid.' });
     }
+    // A 'reactivation' key belongs to an EXISTING account (see
+    // /api/auth/reactivate below) - it can't be used to create a new one.
+    if (keyResult.rows[0].key_type === 'reactivation') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'That key is a reactivation key for an existing account - use it from the login page instead.' });
+    }
 
+    const licenseKey = keyResult.rows[0];
     const passwordHash = await bcrypt.hash(password, 10);
     const verifyToken = crypto.randomBytes(32).toString('hex');
+    const nextBillingAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const subscriptionStatus = licenseKey.billing_authorization ? 'active' : 'manual';
     const { rows } = await client.query(
-      `INSERT INTO tenants (business_name, owner_email, owner_phone, password_hash, currency, plan, plan_expires_at, verify_token_hash)
-       VALUES ($1,$2,$3,$4,$5,'licensed', NULL, $6)
+      `INSERT INTO tenants (business_name, owner_email, owner_phone, password_hash, currency, plan, plan_expires_at,
+                             verify_token_hash, subscription_status, billing_provider, billing_authorization, next_billing_at)
+       VALUES ($1,$2,$3,$4,$5,'licensed',$6,$7,$8,$9,$10,$6)
        RETURNING id, business_name, owner_email, plan, plan_expires_at`,
-      [businessName, email, phone || null, passwordHash, currency || 'GHS', hashToken(verifyToken)]
+      [businessName, email, phone || null, passwordHash, currency || 'GHS', nextBillingAt,
+       hashToken(verifyToken), subscriptionStatus, licenseKey.billing_provider || null, licenseKey.billing_authorization || null]
     );
     const tenant = rows[0];
 
     await client.query(
       `UPDATE license_keys SET status='activated', tenant_id=$1, activated_at=now() WHERE id=$2`,
-      [tenant.id, keyResult.rows[0].id]
+      [tenant.id, licenseKey.id]
     );
 
     await client.query('COMMIT');
@@ -88,13 +101,81 @@ router.post('/login', asyncHandler(async (req, res) => {
   const valid = await bcrypt.compare(password, tenant.password_hash);
   if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
+  // Monthly license lockout - deliberately checked AFTER the password is
+  // confirmed correct, and blocks the dashboard even so. plan_expires_at
+  // being NULL means "never had a monthly cycle start" (shouldn't happen
+  // for any tenant created after this went live, but guards old rows) -
+  // treated as not-yet-locked rather than expired.
+  let daysPastGrace = null;
+  if (tenant.plan_expires_at) {
+    const lockoutAt = new Date(new Date(tenant.plan_expires_at).getTime() + LICENSE_GRACE_DAYS * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    if (now > lockoutAt) {
+      return res.status(402).json({
+        error: 'Your YourNet Control subscription has expired and the grace period has ended. Renew at /license to restore access.',
+        locked: true,
+      });
+    }
+    if (now > new Date(tenant.plan_expires_at)) {
+      daysPastGrace = Math.ceil((lockoutAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
+    }
+  }
+
   const token = jwt.sign({ tenantId: tenant.id, role: 'owner' }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
   res.json({
     token,
     tenant: { id: tenant.id, businessName: tenant.business_name, email: tenant.owner_email, plan: tenant.plan },
+    // Present only while in the grace window - lets the dashboard show
+    // "renew within N day(s)" instead of the tenant finding out by being
+    // locked out with no warning.
+    graceDaysRemaining: daysPastGrace,
   });
+}));
+
+// PUBLIC: redeem a 'reactivation' key (owner-issued, e.g. for migrating an
+// old one-time-license account, or an offline renewal) against an EXISTING
+// account. Distinct from /signup, which only accepts 'signup' keys and
+// creates a brand-new tenant.
+router.post('/reactivate', asyncHandler(async (req, res) => {
+  const { email, licenseKey } = req.body;
+  const missingError = validate.required(req.body, ['email', 'licenseKey']);
+  if (missingError) return res.status(400).json({ error: missingError });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const keyResult = await client.query(`SELECT * FROM license_keys WHERE key_code=$1 FOR UPDATE`, [licenseKey.trim().toUpperCase()]);
+    if (!keyResult.rows.length || keyResult.rows[0].status !== 'unused' || keyResult.rows[0].key_type !== 'reactivation') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'That reactivation key was not found, already used, or is not a reactivation key.' });
+    }
+    const tenantResult = await client.query('SELECT id FROM tenants WHERE owner_email=$1', [email]);
+    if (!tenantResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'No account found with that email.' });
+    }
+    const tenantId = tenantResult.rows[0].id;
+    const key = keyResult.rows[0];
+    const nextBillingAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const subscriptionStatus = key.billing_authorization ? 'active' : 'manual';
+
+    await client.query(
+      `UPDATE tenants SET plan='licensed', plan_expires_at=$1, next_billing_at=$1,
+              subscription_status=$2, billing_provider=$3, billing_authorization=$4
+       WHERE id=$5`,
+      [nextBillingAt, subscriptionStatus, key.billing_provider || null, key.billing_authorization || null, tenantId]
+    );
+    await client.query(`UPDATE license_keys SET status='activated', tenant_id=$1, activated_at=now() WHERE id=$2`, [tenantId, key.id]);
+    await client.query('COMMIT');
+    res.json({ ok: true, planExpiresAt: nextBillingAt });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
 }));
 
 router.get('/verify-email', asyncHandler(async (req, res) => {

@@ -64,7 +64,7 @@ window.YOURNET_I18N = {
     quantityLabel: 'How many?', generateBtn: 'Generate',
 
     // License purchase
-    ownIt: 'Own YourNet Control', oneTime: 'one time',
+    ownIt: 'Get YourNet Control', oneTime: 'to activate',
     chooseHowToPay: 'Choose how to pay', payNowBtn: 'Pay now',
     autoKeyNote: "Your activation key is generated automatically the moment payment is confirmed.",
     noPaymentMethodsYet: 'No payment methods available yet',
@@ -124,7 +124,7 @@ window.YOURNET_I18N = {
     step4Title: 'Étape 4 - Générer des bons', packageLabel: 'Forfait', siteLabel: 'Site',
     quantityLabel: 'Combien ?', generateBtn: 'Générer',
 
-    ownIt: 'Possédez YourNet Control', oneTime: 'paiement unique',
+    ownIt: 'Obtenez YourNet Control', oneTime: 'pour activer',
     chooseHowToPay: 'Choisissez comment payer', payNowBtn: 'Payer maintenant',
     autoKeyNote: 'Votre clé d\'activation est générée automatiquement dès la confirmation du paiement.',
     noPaymentMethodsYet: 'Aucun moyen de paiement disponible pour le moment',
@@ -180,7 +180,7 @@ window.YOURNET_I18N = {
     step4Title: 'Aketesia 4 - Yɛ vouchers', packageLabel: 'Package', siteLabel: 'Site',
     quantityLabel: 'Ahe na wopɛ?', generateBtn: 'Yɛ',
 
-    ownIt: 'Fa YourNet Control yɛ wo dea', oneTime: 'pɛnkoro pɛ',
+    ownIt: 'Nya YourNet Control', oneTime: 'ma nkabom',
     chooseHowToPay: 'Paw sɛnea wobɛtua ka', payNowBtn: 'Tua ka seesei',
     autoKeyNote: 'Wo activation key no ba wo nsa mu ankasa bere a wɔahu sɛ woatua ka.',
     noPaymentMethodsYet: 'Ɔkwan biara nni hɔ a wode betua ka seesei',
@@ -236,7 +236,7 @@ window.YOURNET_I18N = {
     step4Title: 'Paso 4 - Generar vouchers', packageLabel: 'Paquete', siteLabel: 'Sitio',
     quantityLabel: '¿Cuántos?', generateBtn: 'Generar',
 
-    ownIt: 'Adquiere YourNet Control', oneTime: 'pago único',
+    ownIt: 'Obtén YourNet Control', oneTime: 'para activar',
     chooseHowToPay: 'Elige cómo pagar', payNowBtn: 'Pagar ahora',
     autoKeyNote: 'Tu clave de activación se genera automáticamente al confirmarse el pago.',
     noPaymentMethodsYet: 'Aún no hay métodos de pago disponibles',
@@ -292,7 +292,7 @@ window.YOURNET_I18N = {
     step4Title: 'Passo 4 - Gerar vouchers', packageLabel: 'Pacote', siteLabel: 'Site',
     quantityLabel: 'Quantos?', generateBtn: 'Gerar',
 
-    ownIt: 'Adquira o YourNet Control', oneTime: 'pagamento único',
+    ownIt: 'Obtenha o YourNet Control', oneTime: 'para ativar',
     chooseHowToPay: 'Escolha como pagar', payNowBtn: 'Pagar agora',
     autoKeyNote: 'Sua chave de ativação é gerada automaticamente assim que o pagamento é confirmado.',
     noPaymentMethodsYet: 'Ainda não há métodos de pagamento disponíveis',
@@ -348,7 +348,7 @@ window.YOURNET_I18N = {
     step4Title: 'Hatua 4 - Tengeneza voucha', packageLabel: 'Kifurushi', siteLabel: 'Tovuti',
     quantityLabel: 'Ngapi?', generateBtn: 'Tengeneza',
 
-    ownIt: 'Miliki YourNet Control', oneTime: 'malipo ya mara moja',
+    ownIt: 'Pata YourNet Control', oneTime: 'kuamilisha',
     chooseHowToPay: 'Chagua jinsi ya kulipa', payNowBtn: 'Lipa sasa',
     autoKeyNote: 'Ufunguo wako wa uanzishaji unatengenezwa moja kwa moja mara malipo yanapothibitishwa.',
     noPaymentMethodsYet: 'Hakuna njia za malipo zinazopatikana bado',

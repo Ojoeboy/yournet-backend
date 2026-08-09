@@ -46,4 +46,28 @@ async function sendLicenseKeyEmail(toEmail, keyCode) {
   return { sent: true };
 }
 
-module.exports = { sendLicenseKeyEmail };
+async function sendRenewalFailedEmail(toEmail, graceDays) {
+  const from = senderEmail();
+  if (!process.env.BREVO_API_KEY || !from) {
+    console.log(`[BREVO STUB - not configured] Renewal-failed notice to: ${toEmail}`);
+    return { sent: false, reason: 'Brevo is not configured.' };
+  }
+
+  await axios.post(
+    'https://api.brevo.com/v3/smtp/email',
+    {
+      sender: { email: from, name: process.env.BREVO_SENDER_NAME || 'YourNet Control' },
+      to: [{ email: toEmail }],
+      subject: 'Your YourNet Control monthly payment did not go through',
+      htmlContent: `
+        <p>We tried to renew your YourNet Control monthly license and the charge did not go through.</p>
+        <p>You have <strong>${graceDays} day(s)</strong> to update your payment details before dashboard access is locked.</p>
+        <p>Visit /license to renew, or contact support if you believe this is an error.</p>
+      `,
+    },
+    { headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json' } }
+  );
+  return { sent: true };
+}
+
+module.exports = { sendLicenseKeyEmail, sendRenewalFailedEmail };

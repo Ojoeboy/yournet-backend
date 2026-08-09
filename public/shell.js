@@ -17,7 +17,13 @@
     const active = window.YOURNET_ACTIVE_NAV || '';
 
     el.innerHTML = `
-      <div class="brand"><span class="dot"></span> YourNet Control</div>
+      <div class="app-topbar">
+        <div class="app-topbar-side"></div>
+        <div class="app-brand"><span class="dot"></span> YourNet Control</div>
+        <div class="app-topbar-side right">
+          <a href="#" class="logout-btn" onclick="localStorage.removeItem('yournet_token');window.location.href='/admin';return false;">Log out</a>
+        </div>
+      </div>
       <nav class="app-nav">
         ${NAV_ITEMS.map((item) => `
           <a href="${item.href}" class="${item.key === active ? 'active' : ''}">
@@ -25,7 +31,6 @@
           </a>
         `).join('')}
       </nav>
-      <div class="foot-link"><a href="#" onclick="localStorage.removeItem('yournet_token');window.location.href='/admin';return false;">Log out</a></div>
     `;
   }
 
