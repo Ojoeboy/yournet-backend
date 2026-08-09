@@ -105,4 +105,29 @@ async function ping(site) {
   }
 }
 
-module.exports = { authorizeClient, ping, buildGrantUrl };
+/**
+ * List clients seen on this network recently, via the Dashboard API
+ * (entirely separate from the grant-URL flow above - see file header).
+ * timespan is in seconds; Meraki caps this at 2678400 (31 days). Default
+ * to 5 minutes so this reads as "currently connected", matching what
+ * listActiveClients/listClients return for the other three vendors.
+ */
+async function listClients(site, { timespanSeconds = 300 } = {}) {
+  if (!site.meraki_network_id) {
+    throw new Error('No Meraki network ID configured for this site.');
+  }
+  const res = await axios.get(
+    `${DASHBOARD_BASE}/networks/${site.meraki_network_id}/clients`,
+    {
+      headers: { Authorization: `Bearer ${site.meraki_dashboard_api_key_decrypted}` },
+      params: { timespan: timespanSeconds, perPage: 200 },
+      validateStatus: () => true,
+    }
+  );
+  if (res.status !== 200) {
+    throw new Error(`Meraki client list failed (HTTP ${res.status}): ${res.data?.errors?.[0] || 'check Dashboard API key / network ID'}`);
+  }
+  return res.data || [];
+}
+
+module.exports = { authorizeClient, ping, buildGrantUrl, listClients };

@@ -251,10 +251,12 @@ ${profileLines.join('\n') || '# No active packages yet - create some in /admin f
 // Portal branding - separate from the router-credentials PATCH above on
 // purpose: saving a logo/color shouldn't reset the site's connection
 // status to 'unconfigured' the way a credentials change should.
+const PORTAL_FIELDS = `id, portal_business_name, portal_logo_url, portal_primary_color, portal_custom_html,
+     portal_background_image_url, portal_caution_text, portal_whatsapp_number, portal_momo_number, portal_momo_name`;
+
 router.get('/:id/portal', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, portal_business_name, portal_logo_url, portal_primary_color, portal_custom_html
-     FROM sites WHERE id=$1 AND tenant_id=$2`,
+    `SELECT ${PORTAL_FIELDS} FROM sites WHERE id=$1 AND tenant_id=$2`,
     [req.params.id, req.tenantId]
   );
   if (!rows.length) return res.status(404).json({ error: 'Site not found' });
@@ -267,7 +269,10 @@ router.patch('/:id/portal', asyncHandler(async (req, res) => {
   ]);
   if (!existing.length) return res.status(404).json({ error: 'Site not found' });
 
-  const { businessName, logoUrl, primaryColor, customHtml } = req.body;
+  const {
+    businessName, logoUrl, primaryColor, customHtml,
+    backgroundImageUrl, cautionText, whatsappNumber, momoNumber, momoName,
+  } = req.body;
 
   // Basic sanity check on the color so a typo doesn't silently break the
   // portal page's CSS - not full validation, just catches the obvious case.
@@ -280,11 +285,40 @@ router.patch('/:id/portal', asyncHandler(async (req, res) => {
        portal_business_name = COALESCE($1, portal_business_name),
        portal_logo_url = COALESCE($2, portal_logo_url),
        portal_primary_color = COALESCE($3, portal_primary_color),
-       portal_custom_html = COALESCE($4, portal_custom_html)
-     WHERE id=$5 AND tenant_id=$6
-     RETURNING id, portal_business_name, portal_logo_url, portal_primary_color, portal_custom_html`,
-    [businessName, logoUrl, primaryColor, customHtml, req.params.id, req.tenantId]
+       portal_custom_html = COALESCE($4, portal_custom_html),
+       portal_background_image_url = COALESCE($5, portal_background_image_url),
+       portal_caution_text = COALESCE($6, portal_caution_text),
+       portal_whatsapp_number = COALESCE($7, portal_whatsapp_number),
+       portal_momo_number = COALESCE($8, portal_momo_number),
+       portal_momo_name = COALESCE($9, portal_momo_name)
+     WHERE id=$10 AND tenant_id=$11
+     RETURNING ${PORTAL_FIELDS}`,
+    [businessName, logoUrl, primaryColor, customHtml,
+      backgroundImageUrl, cautionText, whatsappNumber, momoNumber, momoName,
+      req.params.id, req.tenantId]
   );
+  res.json(rows[0]);
+}));
+
+// Clear a single optional portal field back to "not shown" (NULL) - the
+// PATCH above uses COALESCE so it can only set values, never blank one out.
+// Body: { field: 'backgroundImageUrl' | 'cautionText' | 'whatsappNumber' | 'momoNumber' | 'momoName' }
+const CLEARABLE_PORTAL_FIELDS = {
+  backgroundImageUrl: 'portal_background_image_url',
+  cautionText: 'portal_caution_text',
+  whatsappNumber: 'portal_whatsapp_number',
+  momoNumber: 'portal_momo_number',
+  momoName: 'portal_momo_name',
+};
+router.post('/:id/portal/clear-field', asyncHandler(async (req, res) => {
+  const column = CLEARABLE_PORTAL_FIELDS[req.body.field];
+  if (!column) return res.status(400).json({ error: `field must be one of: ${Object.keys(CLEARABLE_PORTAL_FIELDS).join(', ')}` });
+
+  const { rows } = await pool.query(
+    `UPDATE sites SET ${column} = NULL WHERE id=$1 AND tenant_id=$2 RETURNING ${PORTAL_FIELDS}`,
+    [req.params.id, req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Site not found' });
   res.json(rows[0]);
 }));
 

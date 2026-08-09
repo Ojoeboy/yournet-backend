@@ -84,7 +84,16 @@ CREATE TABLE IF NOT EXISTS sites (
   portal_business_name TEXT,
   portal_logo_url TEXT,
   portal_primary_color TEXT,
-  portal_custom_html TEXT
+  portal_custom_html TEXT,
+
+  -- Extra default-template fields (all optional, NULL = not shown on the
+  -- portal page). These only affect the built-in template's rendering -
+  -- a tenant using portal_custom_html controls all of this themselves.
+  portal_background_image_url TEXT,
+  portal_caution_text TEXT,        -- shown as a warning/notice box on the portal page
+  portal_whatsapp_number TEXT,     -- shown as a "Need help?" tap-to-chat link, digits only incl. country code
+  portal_momo_number TEXT,         -- manual MoMo fallback: number to display for direct transfer
+  portal_momo_name TEXT            -- manual MoMo fallback: registered account name shown alongside the number
 );
 
 -- Safe to re-run: adds the portal branding columns above to a sites table
@@ -94,6 +103,11 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_business_name TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_logo_url TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_primary_color TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_custom_html TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_background_image_url TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_caution_text TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_whatsapp_number TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_momo_number TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_momo_name TEXT;
 
 -- Safe to re-run: adds UniFi support to a sites table that predates it.
 -- The type CHECK constraint has to be dropped and recreated to allow the
@@ -238,3 +252,25 @@ CREATE TABLE IF NOT EXISTS voucher_orders (
 );
 
 CREATE INDEX IF NOT EXISTS idx_voucher_orders_reference ON voucher_orders(provider, provider_reference);
+
+-- Historical site snapshots, sampled roughly once an hour by the poller in
+-- src/server.js (the same loop that already updates sites.status every 5
+-- minutes now also writes one row here on its hourly pass). This is what
+-- powers the "connected clients over time" and "uptime history" charts on
+-- the dashboard - sites/vouchers/packages only ever hold CURRENT state, so
+-- without this table there'd be no history to chart at all.
+-- Revenue-over-time and voucher-sales-over-time charts do NOT need this
+-- table - they're computed directly from vouchers.created_at/redeemed_at,
+-- which already carry real timestamps.
+CREATE TABLE IF NOT EXISTS site_status_snapshots (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  site_id UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  online BOOLEAN NOT NULL,
+  client_count INTEGER,     -- NULL if the client count call itself failed/errored (online can still be true)
+  error TEXT                -- set when online=false, the ping error message (helps "why was it down" later)
+);
+
+CREATE INDEX IF NOT EXISTS idx_site_snapshots_site_time ON site_status_snapshots(site_id, checked_at);
+CREATE INDEX IF NOT EXISTS idx_site_snapshots_tenant_time ON site_status_snapshots(tenant_id, checked_at);

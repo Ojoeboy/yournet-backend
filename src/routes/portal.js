@@ -10,6 +10,45 @@ const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
 
+// PUBLIC: everything the default portal template needs to render itself -
+// branding, the optional extras (background image / caution notice /
+// WhatsApp / manual MoMo), the tenant's active package list, and whether
+// online payment is available. Deliberately excludes gateway credentials -
+// only a boolean + provider name, so this is safe to call with no auth.
+router.get('/:siteId/config', asyncHandler(async (req, res) => {
+  const { siteId } = req.params;
+  const { rows } = await pool.query(
+    `SELECT tenant_id, portal_business_name, portal_logo_url, portal_primary_color,
+            portal_background_image_url, portal_caution_text, portal_whatsapp_number,
+            portal_momo_number, portal_momo_name
+     FROM sites WHERE id=$1`,
+    [siteId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Unknown site' });
+  const site = rows[0];
+
+  const { rows: packages } = await pool.query(
+    `SELECT id, label, price, duration_minutes AS "durationMinutes"
+     FROM packages WHERE tenant_id=$1 AND active=true ORDER BY price ASC`,
+    [site.tenant_id]
+  );
+
+  const activeGateway = await gatewayService.getActiveGateway(site.tenant_id);
+
+  res.json({
+    businessName: site.portal_business_name,
+    logoUrl: site.portal_logo_url,
+    primaryColor: site.portal_primary_color,
+    backgroundImageUrl: site.portal_background_image_url,
+    cautionText: site.portal_caution_text,
+    whatsappNumber: site.portal_whatsapp_number,
+    momoNumber: site.portal_momo_number,
+    momoName: site.portal_momo_name,
+    packages,
+    onlinePaymentAvailable: !!activeGateway,
+  });
+}));
+
 // Public, no JWT required - this is what the captive portal page (served to
 // a customer's phone the moment they join the WiFi) calls after they type
 // in their voucher code. siteId is embedded in the portal page's URL so we

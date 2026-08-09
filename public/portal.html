@@ -47,29 +47,72 @@
   .success h2{margin:0 0 6px;font-size:18px}
   .success p{color:var(--muted);font-size:13px;margin:0}
   .footer{margin-top:18px;font-size:11px;color:var(--muted);text-align:center}
+
+  /* Optional extras - all hidden by default, shown only if the site has
+     set the corresponding field (see /portal/:siteId/config). */
+  .caution-box{display:none;margin-bottom:16px;padding:12px 14px;border-radius:12px;font-size:12.5px;line-height:1.5;
+    background:rgba(255,167,38,0.1);border:1px solid rgba(255,167,38,0.3);color:#FFC876}
+  .caution-box.show{display:block}
+  .wrap-outer{width:100%;max-width:380px}
+  .packages-section{display:none;margin-top:18px}
+  .packages-section.show{display:block}
+  .packages-section h3{font-size:13px;margin:0 0 10px;text-align:center;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+  .pkg-card{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;margin-bottom:8px;
+    background:rgba(0,0,0,0.25);border:1px solid var(--line);border-radius:12px}
+  .pkg-card .pkg-info{text-align:left}
+  .pkg-card .pkg-label{font-weight:700;font-size:13.5px}
+  .pkg-card .pkg-price{font-size:12px;color:var(--muted);margin-top:2px}
+  .pkg-buy{width:auto;margin:0;padding:9px 16px;font-size:12.5px;border-radius:9px;flex-shrink:0}
+  .momo-box{display:none;margin-top:14px;padding:14px;border-radius:12px;background:rgba(46,196,182,0.08);
+    border:1px solid rgba(46,196,182,0.25);font-size:12.5px;line-height:1.5;text-align:center}
+  .momo-box.show{display:block}
+  .momo-box .momo-number{font-size:17px;font-weight:800;letter-spacing:1px;margin:4px 0;color:var(--teal)}
+  .help-link{display:none;margin-top:10px;text-align:center}
+  .help-link.show{display:block}
+  .help-link a{color:var(--teal);font-size:12.5px;text-decoration:none;font-weight:600}
+  .phone-input{margin-top:10px}
+  .phone-input input{text-transform:none;letter-spacing:normal;font-size:14px;font-weight:400;text-align:left}
 </style>
 </head>
 <body>
-  <div class="card">
-    <div style="display:flex;justify-content:flex-end;margin-bottom:6px" id="yournetLangSwitcherContainer"></div>
-    <div class="logo">{{LOGO_HTML}}<div style="font-weight:700">{{BUSINESS_NAME}}</div></div>
+  <div class="wrap-outer">
+    <div class="caution-box" id="caution-box"></div>
 
-    <div id="form-view">
-      <h1 data-i18n="enterCode">Enter your voucher code</h1>
-      <p class="sub" data-i18n="typeCodeHint">Type the code from your card or receipt to get online.</p>
-      <label for="code" data-i18n="voucherCodeLabel">Voucher Code</label>
-      <input id="code" type="text" placeholder="XXXX-XXXX" maxlength="9" autocomplete="off" autocapitalize="characters">
-      <button id="submitBtn" onclick="redeem()" data-i18n="connectBtn">Connect</button>
-      <div class="msg" id="msg"></div>
+    <div class="card">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:6px" id="yournetLangSwitcherContainer"></div>
+      <div class="logo">{{LOGO_HTML}}<div style="font-weight:700">{{BUSINESS_NAME}}</div></div>
+
+      <div id="form-view">
+        <h1 data-i18n="enterCode">Enter your voucher code</h1>
+        <p class="sub" data-i18n="typeCodeHint">Type the code from your card or receipt to get online.</p>
+        <label for="code" data-i18n="voucherCodeLabel">Voucher Code</label>
+        <input id="code" type="text" placeholder="XXXX-XXXX" maxlength="9" autocomplete="off" autocapitalize="characters">
+        <button id="submitBtn" onclick="redeem()" data-i18n="connectBtn">Connect</button>
+        <div class="msg" id="msg"></div>
+      </div>
+
+      <div class="success" id="success-view">
+        <div class="tick">✅</div>
+        <h2 data-i18n="connectedTitle">You're connected!</h2>
+        <p id="expiry-text" data-i18n="connectedSub">Enjoy your internet access.</p>
+      </div>
+
+      <div class="packages-section" id="packages-section">
+        <h3 data-i18n="buyVoucherHeading">Don't have a code? Buy one now</h3>
+        <div id="packages-list"></div>
+        <div class="phone-input" id="phone-input-wrap" style="display:none">
+          <label for="buyerPhone" data-i18n="phoneForVoucher">Phone number (to receive your code)</label>
+          <input id="buyerPhone" type="tel" placeholder="024xxxxxxx" autocomplete="tel">
+        </div>
+        <div class="msg" id="buy-msg"></div>
+      </div>
+
+      <div class="momo-box" id="momo-box"></div>
+      <div class="help-link" id="help-link"></div>
+
+      <div class="footer" data-i18n="poweredBy">Powered by YourNet Control</div>
     </div>
-
-    <div class="success" id="success-view">
-      <div class="tick">✅</div>
-      <h2 data-i18n="connectedTitle">You're connected!</h2>
-      <p id="expiry-text" data-i18n="connectedSub">Enjoy your internet access.</p>
-    </div>
-
-    <div class="footer" data-i18n="poweredBy">Powered by YourNet Control</div>
   </div>
 
 <script src="/i18n/translations.js"></script>
@@ -176,6 +219,99 @@
   }
 
   codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') redeem(); });
+
+  // Load optional extras (background image, caution notice, packages,
+  // manual MoMo, WhatsApp help link) - all off by default until the site's
+  // config says otherwise. Failing silently here is intentional: the core
+  // voucher-redeem flow above must keep working even if this call fails.
+  let portalPackages = [];
+  let onlinePaymentAvailable = false;
+
+  async function loadPortalExtras() {
+    try {
+      const res = await fetch(`/portal/${siteId}/config`);
+      if (!res.ok) return;
+      const cfg = await res.json();
+
+      if (cfg.backgroundImageUrl) {
+        document.body.style.backgroundImage =
+          `linear-gradient(rgba(8,15,18,0.72),rgba(8,15,18,0.82)), url("${cfg.backgroundImageUrl}")`;
+        document.body.style.backgroundSize = 'cover';
+        document.body.style.backgroundPosition = 'center';
+        document.body.style.backgroundAttachment = 'fixed';
+      }
+
+      if (cfg.cautionText) {
+        const box = document.getElementById('caution-box');
+        box.textContent = cfg.cautionText;
+        box.classList.add('show');
+      }
+
+      onlinePaymentAvailable = !!cfg.onlinePaymentAvailable;
+      portalPackages = cfg.packages || [];
+      if (portalPackages.length) renderPackages();
+
+      if (cfg.momoNumber) {
+        const box = document.getElementById('momo-box');
+        box.innerHTML = `<div>${t('momoManualTitle')}</div>` +
+          `<div class="momo-number">${cfg.momoNumber}</div>` +
+          (cfg.momoName ? `<div>${cfg.momoName}</div>` : '') +
+          `<div style="margin-top:6px;color:var(--muted)">${t('momoManualInstructions')}</div>`;
+        box.classList.add('show');
+      }
+
+      if (cfg.whatsappNumber) {
+        const digits = cfg.whatsappNumber.replace(/[^0-9]/g, '');
+        const link = document.getElementById('help-link');
+        link.innerHTML = `<a href="https://wa.me/${digits}" target="_blank" rel="noopener">${t('needHelp')}</a>`;
+        link.classList.add('show');
+      }
+    } catch (err) { /* extras are optional - never block redemption on this */ }
+  }
+
+  function renderPackages() {
+    const section = document.getElementById('packages-section');
+    const list = document.getElementById('packages-list');
+    list.innerHTML = portalPackages.map((p) => `
+      <div class="pkg-card">
+        <div class="pkg-info">
+          <div class="pkg-label">${p.label}</div>
+          <div class="pkg-price">GHS ${p.price}</div>
+        </div>
+        ${onlinePaymentAvailable
+          ? `<button class="pkg-buy" onclick="buyVoucher('${p.id}')">${t('buyBtn')}</button>`
+          : ''}
+      </div>
+    `).join('');
+    if (onlinePaymentAvailable) document.getElementById('phone-input-wrap').style.display = 'block';
+    section.classList.add('show');
+  }
+
+  async function buyVoucher(packageId) {
+    const buyMsg = document.getElementById('buy-msg');
+    const phone = document.getElementById('buyerPhone').value.trim();
+    buyMsg.className = 'msg show';
+    buyMsg.textContent = t('buying');
+    try {
+      const res = await fetch(`/portal/${siteId}/buy-voucher`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ packageId, phone: phone || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.checkoutUrl) {
+        buyMsg.className = 'msg show err';
+        buyMsg.textContent = data.error || t('errBuyFailed');
+        return;
+      }
+      window.location.href = data.checkoutUrl;
+    } catch (err) {
+      buyMsg.className = 'msg show err';
+      buyMsg.textContent = t('errBuyFailed');
+    }
+  }
+
+  loadPortalExtras();
 
   // PWA install support. Registered defensively - a captive portal device
   // often has no real internet yet (only a path to this server), and some

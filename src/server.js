@@ -146,6 +146,7 @@ app.listen(port, () => console.log(`YourNet backend running on port ${port}`));
 const mikrotik = require('./integrations/mikrotik');
 const omada = require('./integrations/omada');
 const unifi = require('./integrations/unifi');
+const meraki = require('./integrations/meraki');
 const { decrypt } = require('./utils/credentialCrypto');
 const logger = require('./utils/logger');
 
@@ -162,7 +163,13 @@ async function pollAllSites() {
           const token = await omada.getAccessToken({ ...site, omada_client_secret_decrypted: decrypt(site.omada_client_secret_encrypted) });
           online = !!token;
         } else if (site.type === 'unifi') {
-          const result = await unifi.ping({ ...site, unifi_password_decrypted: decrypt(site.unifi_password_encrypted) });
+          const result = await unifi.ping({ ...site, unifi_password_decrypted: decrypt(site.unifi_password_encrypted), unifi_api_key_decrypted: decrypt(site.unifi_api_key_encrypted) });
+          online = result.online;
+        } else if (site.type === 'meraki') {
+          // This branch was missing before - Meraki sites always showed
+          // "error"/offline on the dashboard regardless of real status,
+          // since no case matched and `online` stayed false by default.
+          const result = await meraki.ping({ ...site, meraki_dashboard_api_key_decrypted: decrypt(site.meraki_dashboard_api_key_encrypted) });
           online = result.online;
         }
         await pool.query('UPDATE sites SET status=$1, last_checked_at=now() WHERE id=$2', [
@@ -183,3 +190,80 @@ const HEALTH_POLL_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 setInterval(pollAllSites, HEALTH_POLL_INTERVAL_MS);
 // Run once shortly after startup too, rather than waiting a full interval.
 setTimeout(pollAllSites, 10 * 1000);
+
+// --- Historical snapshots (powers the dashboard trend charts) ---
+// pollAllSites above is deliberately lightweight (ping only) and runs every
+// 5 minutes just to keep the "online/offline" pill fresh. This is a
+// separate, heavier pass - it also asks each router/controller for its
+// current client list - and only runs about once an hour, which is all the
+// resolution the 24h/30d charts need. Kept as its own function/interval
+// rather than folded into pollAllSites so a slow/rate-limited client-list
+// call (Meraki and Omada both involve extra API round-trips) never delays
+// the frequent status poll the rest of the admin UI depends on.
+async function snapshotAllSites() {
+  try {
+    const { rows: sites } = await pool.query('SELECT * FROM sites');
+    for (const site of sites) {
+      let online = false;
+      let error = null;
+      let clientCount = null;
+      try {
+        if (site.type === 'mikrotik') {
+          const decorated = { ...site, mk_password_decrypted: decrypt(site.mk_password_encrypted) };
+          const result = await mikrotik.ping(decorated);
+          online = result.online;
+          error = result.error || null;
+          if (online) {
+            try { clientCount = (await mikrotik.listActiveClients(decorated)).length; } catch (_) { /* status still valid without a count */ }
+          }
+        } else if (site.type === 'omada') {
+          const decorated = { ...site, omada_client_secret_decrypted: decrypt(site.omada_client_secret_encrypted) };
+          try {
+            clientCount = (await omada.listClients(decorated)).length;
+            online = true;
+          } catch (e) {
+            online = false;
+            error = e.message;
+          }
+        } else if (site.type === 'unifi') {
+          const decorated = { ...site, unifi_password_decrypted: decrypt(site.unifi_password_encrypted), unifi_api_key_decrypted: decrypt(site.unifi_api_key_encrypted) };
+          const result = await unifi.ping(decorated);
+          online = result.online;
+          error = result.error || null;
+          if (online) {
+            try { clientCount = (await unifi.listClients(decorated)).length; } catch (_) { /* status still valid without a count */ }
+          }
+        } else if (site.type === 'meraki') {
+          const decorated = { ...site, meraki_dashboard_api_key_decrypted: decrypt(site.meraki_dashboard_api_key_encrypted) };
+          const result = await meraki.ping(decorated);
+          online = result.online;
+          error = result.error || null;
+          if (online) {
+            try { clientCount = (await meraki.listClients(decorated)).length; } catch (_) { /* status still valid without a count */ }
+          }
+        } else {
+          continue; // unconfigured/unknown type - nothing to snapshot yet
+        }
+      } catch (err) {
+        online = false;
+        error = err.message;
+      }
+      await pool.query(
+        `INSERT INTO site_status_snapshots (site_id, tenant_id, online, client_count, error)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [site.id, site.tenant_id, online, clientCount, error]
+      ).catch((e) => logger.error('Snapshot insert failed', { site_id: site.id, message: e.message }));
+    }
+    // Keep the table bounded - 35 days of ~hourly rows per site is enough
+    // to serve both the 24h and 30d chart views with room to spare.
+    await pool.query(`DELETE FROM site_status_snapshots WHERE checked_at < now() - interval '35 days'`).catch(() => {});
+  } catch (err) {
+    logger.error('Site snapshot failed', { message: err.message });
+  }
+}
+
+const SNAPSHOT_INTERVAL_MS = 60 * 60 * 1000; // roughly once an hour
+setInterval(snapshotAllSites, SNAPSHOT_INTERVAL_MS);
+// First snapshot shortly after startup, staggered after the quick status
+// poll above so they don't both hammer every site at the exact same second.
+setTimeout(snapshotAllSites, 45 * 1000);

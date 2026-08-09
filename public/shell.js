@@ -1,0 +1,78 @@
+// YourNet Control - shared sidebar nav. Include after shell.css, and put
+// <div id="app-sidebar"></div> as the first child of a .app-shell wrapper.
+// Each page passes its own key (matching NAV_ITEMS below) as
+// window.YOURNET_ACTIVE_NAV before this script runs, so the right item
+// gets highlighted.
+(function () {
+  const NAV_ITEMS = [
+    { key: 'dashboard', href: '/dashboard.html', icon: '\u25C9', label: 'Dashboard' },
+    { key: 'setup', href: '/admin', icon: '\u2699', label: 'Setup' },
+    { key: 'vouchers', href: '/print.html', icon: '\u2637', label: 'Vouchers' },
+    { key: 'billing', href: '/billing.html', icon: '\u26A1', label: 'Billing' },
+  ];
+
+  function render() {
+    const el = document.getElementById('app-sidebar');
+    if (!el) return;
+    const active = window.YOURNET_ACTIVE_NAV || '';
+
+    el.innerHTML = `
+      <div class="brand"><span class="dot"></span> YourNet Control</div>
+      <nav class="app-nav">
+        ${NAV_ITEMS.map((item) => `
+          <a href="${item.href}" class="${item.key === active ? 'active' : ''}">
+            <span class="ico">${item.icon}</span><span>${item.label}</span>
+          </a>
+        `).join('')}
+      </nav>
+      <div class="foot-link"><a href="#" onclick="localStorage.removeItem('yournet_token');window.location.href='/admin';return false;">Log out</a></div>
+    `;
+  }
+
+  // Connectivity mesh background - ported from the Bitnet captive-portal
+  // design (uploaded by Ojoe) so the admin/dashboard/billing/vouchers pages
+  // share the same "network mesh" visual identity as the client-facing
+  // portal, just recolored to the app shell's teal instead of Bitnet's cyan.
+  function renderMeshBg() {
+    if (document.getElementById('yn-mesh-bg')) return; // don't double-inject
+    const wrap = document.createElement('div');
+    wrap.id = 'yn-mesh-bg';
+    wrap.className = 'mesh-bg';
+    wrap.setAttribute('aria-hidden', 'true');
+    wrap.innerHTML = '<svg viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid slice"><g id="yn-mesh-group"></g></svg>';
+    document.body.insertBefore(wrap, document.body.firstChild);
+
+    const g = wrap.querySelector('#yn-mesh-group');
+    const W = 1000, H = 700, count = 26, maxDist = 140;
+    const pts = [];
+    for (let i = 0; i < count; i++) {
+      pts.push({ x: Math.random() * W, y: Math.random() * H });
+    }
+    let linesSVG = '';
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const dx = pts[i].x - pts[j].x;
+        const dy = pts[i].y - pts[j].y;
+        if (Math.sqrt(dx * dx + dy * dy) < maxDist) {
+          linesSVG += `<line class="mesh-line" x1="${pts[i].x}" y1="${pts[i].y}" x2="${pts[j].x}" y2="${pts[j].y}"/>`;
+        }
+      }
+    }
+    let nodesSVG = '';
+    pts.forEach((p) => {
+      nodesSVG += `<circle class="mesh-node" cx="${p.x}" cy="${p.y}" r="2.2"/>`;
+    });
+    g.innerHTML = linesSVG + nodesSVG;
+  }
+
+  function init() {
+    render();
+    renderMeshBg();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();

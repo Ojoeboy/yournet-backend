@@ -4,22 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Billing</title>
+<link rel="stylesheet" href="/shell.css">
 <style>
-  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
-    margin:0;padding:20px;max-width:480px;margin-inline:auto}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--yn-ink);color:var(--yn-cream);margin:0}
   h1{font-size:20px}
-  .plan{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px;margin-bottom:14px}
-  .plan h2{margin:0 0 4px;color:#2ec4b6;font-size:16px}
-  .plan .price{font-size:22px;font-weight:800;color:#ffc55a;margin:6px 0}
-  button{padding:10px 16px;border:none;border-radius:8px;background:#e8a33d;color:#0d1a1e;
+  .plan{background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:14px;padding:18px;margin-bottom:14px}
+  .plan h2{margin:0 0 4px;color:var(--yn-teal);font-size:16px}
+  .plan .price{font-size:22px;font-weight:800;color:var(--yn-gold2);margin:6px 0}
+  button{padding:10px 16px;border:none;border-radius:8px;background:var(--yn-gold);color:var(--yn-ink);
     font-weight:700;cursor:pointer;font-size:14px}
   .msg{margin-top:14px;font-size:13px;padding:10px;border-radius:8px;display:none}
   .msg.show{display:block}
-  .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
-  .note{font-size:12px;color:#6b8a91;margin-top:20px;line-height:1.5}
+  .msg.err{background:rgba(255,107,107,.12);color:var(--yn-danger)}
+  .note{font-size:12px;color:var(--yn-muted);margin-top:20px;line-height:1.5;max-width:480px}
 </style>
 </head>
 <body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
 <div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
 <h1 data-i18n="choosePlan">Choose a plan</h1>
 
@@ -41,7 +44,11 @@
   Paystack supports card payments and Mobile Money (MTN, Vodafone, AirtelTigo) -
   you'll choose your payment method on the next screen after clicking Pay.
 </div>
+  </main>
+</div>
 
+<script>window.YOURNET_ACTIVE_NAV = 'billing';</script>
+<script src="/shell.js"></script>
 <script src="/i18n/translations.js"></script>
 <script src="/i18n/i18n-loader.js"></script>
 <script>

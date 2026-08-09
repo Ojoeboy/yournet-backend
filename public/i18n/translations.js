@@ -35,6 +35,10 @@ window.YOURNET_I18N = {
     errNetwork: 'Could not reach the network device. Please try again shortly.',
     errMerakiNoGrantUrl: 'This connection did not come through the WiFi login page properly. Please reconnect to the WiFi and try again.',
     enterFullCode: 'Enter your full voucher code.', poweredBy: 'Powered by YourNet Control',
+    buyVoucherHeading: "Don't have a code? Buy one now", phoneForVoucher: 'Phone number (to receive your code)',
+    buyBtn: 'Buy', buying: 'Redirecting to payment...', errBuyFailed: 'Could not start payment. Please try again.',
+    momoManualTitle: 'Or pay by Mobile Money transfer', momoManualInstructions: 'After sending payment, contact us via WhatsApp with your payment reference to receive your voucher code.',
+    needHelp: 'Need help? Chat with us on WhatsApp',
 
     // Admin - signup/login
     step1Title: 'Step 1 - Your account', licenseKeyLabel: 'License key',

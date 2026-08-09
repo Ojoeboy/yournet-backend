@@ -156,4 +156,22 @@ async function ping(site) {
   }
 }
 
-module.exports = { authorizeClient, ping };
+/**
+ * List currently connected clients on this site. Uses the same stat/sta
+ * endpoint the classic controller UI itself calls; works for both auth
+ * modes since getAuthContext already resolves the right base path/headers.
+ */
+async function listClients(site) {
+  const { basePath, headers } = await getAuthContext(site);
+  const unifiSite = site.unifi_site || 'default';
+  const res = await axios.get(
+    `${site.unifi_base_url}${basePath}/api/s/${unifiSite}/stat/sta`,
+    { httpsAgent: insecureAgent, headers, validateStatus: () => true }
+  );
+  if (res.status !== 200) {
+    throw new Error(`UniFi client list failed (HTTP ${res.status}): ${res.data?.meta?.msg || 'check base URL / credentials'}`);
+  }
+  return res.data?.data || [];
+}
+
+module.exports = { authorizeClient, ping, listClients };

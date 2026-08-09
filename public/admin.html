@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>YourNet Admin</title>
+<link rel="stylesheet" href="/shell.css">
 <style>
   *{box-sizing:border-box}
-  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
-    margin:0;padding:20px;max-width:640px;margin-inline:auto}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;margin:0}
   h1{font-size:20px;margin-bottom:4px}
   .sub{color:#6b8a91;font-size:13px;margin-bottom:20px}
   .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px;margin-bottom:16px}
@@ -35,12 +35,45 @@
   td,th{padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
   .code{font-family:monospace;font-weight:700;color:#ffc55a}
   .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:rgba(255,255,255,.08)}
+
+  /* ---------- quick-setup tabs (replaces the old straight scroll-through-everything layout) ---------- */
+  .setup-tabs{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    margin-bottom:18px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .setup-tab{flex:0 0 auto;background:none;border:none;color:#6b8a91;font-size:12.5px;font-weight:700;
+    padding:10px 14px;margin:0 0 -1px;cursor:pointer;white-space:nowrap;
+    border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+  .setup-tab:hover:not(.locked){color:#e8f0f1}
+  .setup-tab.active{color:#2ec4b6;border-bottom-color:#2ec4b6}
+  .setup-tab.locked{color:#3d4f54;cursor:not-allowed}
+  .setup-tab .lock{margin-left:3px;font-size:10px;opacity:.7}
+
+  /* ---------- toggle switch (replaces the plain checkbox) ---------- */
+  .switch{position:relative;display:inline-block;width:38px;height:21px;flex-shrink:0}
+  .switch input{opacity:0;width:0;height:0;position:absolute}
+  .switch .slider{position:absolute;inset:0;background:#1a363e;border:1px solid rgba(255,255,255,.14);
+    border-radius:22px;cursor:pointer;transition:background .2s,border-color .2s}
+  .switch .slider:before{content:"";position:absolute;height:15px;width:15px;left:2px;top:2px;
+    background:#6b8a91;border-radius:50%;transition:transform .2s,background .2s}
+  .switch input:checked+.slider{background:rgba(46,196,182,.25);border-color:#2ec4b6}
+  .switch input:checked+.slider:before{transform:translateX(17px);background:#2ec4b6}
 </style>
 </head>
 <body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
 <div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
 <h1>YourNet Admin</h1>
 <div class="sub">Click-through setup - no raw API calls needed</div>
+
+<div class="setup-tabs" id="setup-tabs">
+  <button type="button" class="setup-tab active" id="tab-auth" onclick="switchTab('auth')">1. Account</button>
+  <button type="button" class="setup-tab locked" id="tab-site" onclick="switchTab('site')">2. Router<span class="lock">🔒</span></button>
+  <button type="button" class="setup-tab locked" id="tab-portal" onclick="switchTab('portal')">Portal<span class="lock">🔒</span></button>
+  <button type="button" class="setup-tab locked" id="tab-package" onclick="switchTab('package')">3. Packages<span class="lock">🔒</span></button>
+  <button type="button" class="setup-tab locked" id="tab-voucher" onclick="switchTab('voucher')">4. Vouchers<span class="lock">🔒</span></button>
+  <button type="button" class="setup-tab locked" id="tab-gateway" onclick="switchTab('gateway')">5. Payment<span class="lock">🔒</span></button>
+</div>
 
 <!-- STEP 1: Login/Signup -->
 <div class="card" id="auth-card">
@@ -195,14 +228,32 @@
   <input id="portalLogoUrl" placeholder="https://...">
   <label>Brand color</label>
   <input id="portalPrimaryColor" type="color" value="#e8a33d" style="height:42px;padding:4px">
+  <label>Background image URL (optional)</label>
+  <input id="portalBackgroundImageUrl" placeholder="https://...">
+  <label>Caution / notice text shown to customers (optional)</label>
+  <input id="portalCautionText" placeholder="e.g. Do not share your voucher code with anyone.">
+  <label>WhatsApp help number (optional - shown as a "Need help?" chat link)</label>
+  <input id="portalWhatsappNumber" placeholder="e.g. 233241234567 (with country code, no + or spaces)">
+  <label>MoMo number for manual payments (optional)</label>
+  <input id="portalMomoNumber" placeholder="e.g. 024 123 4567">
+  <label>MoMo registered account name (optional)</label>
+  <input id="portalMomoName" placeholder="e.g. Kwame Mensah">
 
   <button onclick="savePortalBranding()">Save branding</button>
   <button class="secondary" onclick="previewPortal()">Preview portal</button>
   <div class="msg" id="portal-msg"></div>
+  <p style="font-size:11px;color:#6b8a91;margin-top:6px">
+    Background image, caution notice, WhatsApp link, and MoMo details only appear on the
+    portal once you've set up online payment (for automatic voucher purchase) and/or filled
+    these fields. Leave any field blank to hide that section on the portal page.
+  </p>
 
   <div style="margin-top:18px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px">
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-      <input type="checkbox" id="portalAdvancedToggle" style="width:auto" onchange="toggleAdvancedPortal()">
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+      <span class="switch">
+        <input type="checkbox" id="portalAdvancedToggle" onchange="toggleAdvancedPortal()">
+        <span class="slider"></span>
+      </span>
       <span style="text-transform:none;font-size:13px;color:#e8f0f1">Advanced: use my own custom HTML page instead</span>
     </label>
     <div id="portal-advanced" class="hidden" style="margin-top:10px">
@@ -305,11 +356,37 @@
   <div class="table-scroll"><table id="gatewayTable"></table></div>
 </div>
 
+  </main>
+</div>
+
+<script>window.YOURNET_ACTIVE_NAV = 'setup';</script>
+<script src="/shell.js"></script>
 <script src="/i18n/translations.js"></script>
 <script src="/i18n/i18n-loader.js"></script>
 <script>
   let token = localStorage.getItem('yournet_token') || null;
   let tenant = null;
+
+  // ---------- quick-setup tabs ----------
+  const SETUP_TAB_CARDS = {
+    auth: 'auth-card', site: 'site-card', portal: 'portal-card',
+    package: 'package-card', voucher: 'voucher-card', gateway: 'gateway-card'
+  };
+
+  function switchTab(key) {
+    const tabEl = document.getElementById('tab-' + key);
+    if (!tabEl || tabEl.classList.contains('locked')) return;
+    Object.keys(SETUP_TAB_CARDS).forEach(function (k) {
+      document.getElementById(SETUP_TAB_CARDS[k]).classList.toggle('hidden', k !== key);
+      document.getElementById('tab-' + k).classList.toggle('active', k === key);
+    });
+  }
+
+  function unlockTabs() {
+    ['site', 'portal', 'package', 'voucher', 'gateway'].forEach(function (k) {
+      document.getElementById('tab-' + k).classList.remove('locked');
+    });
+  }
 
   function showMsg(id, text, type) {
     const el = document.getElementById(id);
@@ -376,11 +453,8 @@
     tenant = data.tenant;
     localStorage.setItem('yournet_token', token);
     showMsg('auth-msg', 'Logged in as ' + (tenant.businessName || tenant.business_name), 'ok');
-    document.getElementById('site-card').classList.remove('hidden');
-    document.getElementById('portal-card').classList.remove('hidden');
-    document.getElementById('package-card').classList.remove('hidden');
-    document.getElementById('voucher-card').classList.remove('hidden');
-    document.getElementById('gateway-card').classList.remove('hidden');
+    unlockTabs();
+    switchTab('site');
     loadSitesAndPackages();
     loadGateways();
   }
@@ -514,6 +588,11 @@
       document.getElementById('portalBusinessName').value = branding.portal_business_name || '';
       document.getElementById('portalLogoUrl').value = branding.portal_logo_url || '';
       document.getElementById('portalPrimaryColor').value = branding.portal_primary_color || '#e8a33d';
+      document.getElementById('portalBackgroundImageUrl').value = branding.portal_background_image_url || '';
+      document.getElementById('portalCautionText').value = branding.portal_caution_text || '';
+      document.getElementById('portalWhatsappNumber').value = branding.portal_whatsapp_number || '';
+      document.getElementById('portalMomoNumber').value = branding.portal_momo_number || '';
+      document.getElementById('portalMomoName').value = branding.portal_momo_name || '';
       document.getElementById('portalCustomHtml').value = branding.portal_custom_html || '';
       document.getElementById('portalAdvancedToggle').checked = !!branding.portal_custom_html;
       toggleAdvancedPortal();
@@ -530,7 +609,28 @@
         businessName: document.getElementById('portalBusinessName').value || null,
         logoUrl: document.getElementById('portalLogoUrl').value || null,
         primaryColor: document.getElementById('portalPrimaryColor').value || null,
+        backgroundImageUrl: document.getElementById('portalBackgroundImageUrl').value || null,
+        cautionText: document.getElementById('portalCautionText').value || null,
+        whatsappNumber: document.getElementById('portalWhatsappNumber').value || null,
+        momoNumber: document.getElementById('portalMomoNumber').value || null,
+        momoName: document.getElementById('portalMomoName').value || null,
       });
+      // PATCH only sets values (COALESCE) - any of these five fields left
+      // blank in the form needs an explicit clear so an admin can actually
+      // remove a background image / caution note / WhatsApp / MoMo detail
+      // once set, instead of it being stuck forever.
+      const clearable = {
+        backgroundImageUrl: 'portalBackgroundImageUrl',
+        cautionText: 'portalCautionText',
+        whatsappNumber: 'portalWhatsappNumber',
+        momoNumber: 'portalMomoNumber',
+        momoName: 'portalMomoName',
+      };
+      for (const [field, inputId] of Object.entries(clearable)) {
+        if (!document.getElementById(inputId).value) {
+          await api(`/api/sites/${siteId}/portal/clear-field`, 'POST', { field }).catch(() => {});
+        }
+      }
       showMsg('portal-msg', 'Branding saved.', 'ok');
     } catch (err) {
       showMsg('portal-msg', err.message, 'err');
@@ -596,11 +696,8 @@
 
   // Auto-resume session if already logged in
   if (token) {
-    document.getElementById('site-card').classList.remove('hidden');
-    document.getElementById('portal-card').classList.remove('hidden');
-    document.getElementById('package-card').classList.remove('hidden');
-    document.getElementById('voucher-card').classList.remove('hidden');
-    document.getElementById('gateway-card').classList.remove('hidden');
+    unlockTabs();
+    switchTab('site');
     loadSitesAndPackages();
     loadGateways();
   }
