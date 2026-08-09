@@ -29,10 +29,28 @@ app.use(express.json());
 app.use('/p', express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.use('/i18n', express.static(path.join(__dirname, '..', 'public', 'i18n')));
 app.use('/icons', express.static(path.join(__dirname, '..', 'public', 'icons')));
+// Root-level static assets (shell.js, shell.css, bg-rotate.js, etc.) - only
+// serves files that actually exist in public/, so it never shadows the
+// explicit page/API routes below (e.g. GET /admin has no file called
+// "admin" without an extension to match against).
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const pool = require('./db/pool');
 const { renderPortal, renderManifest, renderServiceWorker } = require('./utils/portalRenderer');
 const asyncHandler = require('./utils/asyncHandler');
+const freeStockPhotos = require('./integrations/freeStockPhotos');
+
+// PUBLIC: rotating background photos for pages that aren't tied to a
+// logged-in tenant (license.html, license-admin.html, owner-login.html) -
+// the per-tenant equivalent for portal/admin/dashboard pages lives behind
+// auth in routes/dashboard.js and routes/portal.js instead. Same
+// fail-quiet behavior as those: no key configured, or the Pexels call
+// itself fails, just means an empty list and the page keeps its plain
+// background rather than erroring.
+app.get('/api/public/rotating-backgrounds', asyncHandler(async (req, res) => {
+  const backgrounds = await freeStockPhotos.getRotatingBackgrounds().catch(() => []);
+  res.json({ backgrounds });
+}));
 
 // Serves the captive portal page for a site - either the built-in template
 // with that tenant's branding (business name / logo / color) injected, or,

@@ -12,6 +12,13 @@
   .sub{color:#6b8a91;font-size:13px;margin-bottom:20px}
   .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px;margin-bottom:16px}
   .card h2{font-size:15px;margin:0 0 12px;color:#2ec4b6}
+  /* Glass mode: shell.js adds this class to <body> once a rotating photo
+     background is actually on, so the card goes see-through only then. */
+  body.yn-glass .card{background:rgba(19,34,40,.35);backdrop-filter:blur(16px) saturate(150%);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);border-color:rgba(255,255,255,.16)}
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    body.yn-glass .card{background:#132228}
+  }
   label{display:block;font-size:11px;color:#6b8a91;text-transform:uppercase;margin:10px 0 4px}
   input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);
     background:#0d1a1e;color:#fff;font-size:14px}

@@ -20,6 +20,13 @@
   .msg.show{display:block}
   .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
   .note{font-size:12px;color:#6b8a91;line-height:1.6}
+  /* Glass mode: bg-rotate.js adds this to <body> once a rotating photo
+     background is actually showing, so the card goes see-through only then. */
+  body.yn-glass .card{background:rgba(19,34,40,.35);backdrop-filter:blur(16px) saturate(150%);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);border-color:rgba(255,255,255,.16)}
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    body.yn-glass .card{background:#132228}
+  }
 </style>
 </head>
 <body>
@@ -37,6 +44,7 @@
   <p class="note" data-i18n="autoKeyNote">Your activation key is generated automatically the moment payment is confirmed.</p>
 </div>
 
+<script src="/bg-rotate.js"></script>
 <script src="/i18n/translations.js"></script>
 <script src="/i18n/i18n-loader.js"></script>
 <script>

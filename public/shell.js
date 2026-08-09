@@ -69,9 +69,13 @@
   // tenants who turned this on (Account tab in /admin). Off by default -
   // most pages using shell.js aren't logged in yet (or the toggle fetch
   // fails), so silently doing nothing here is the correct default.
+  // Overlay is intentionally light (not the near-opaque scrim this used to
+  // have) so the photo actually shows through the glass panels - see the
+  // body.yn-glass rules in shell.css, which is what keeps text readable
+  // instead of the overlay having to do all the work.
   function setAppBackground(url) {
     document.body.style.backgroundImage =
-      `linear-gradient(rgba(13,26,30,.82),rgba(13,26,30,.9)), url("${url}")`;
+      `linear-gradient(rgba(13,26,30,.45),rgba(13,26,30,.55)), url("${url}")`;
     document.body.style.backgroundSize = 'cover';
     document.body.style.backgroundPosition = 'center';
     document.body.style.backgroundAttachment = 'fixed';
@@ -81,6 +85,7 @@
   function startAdminBackgroundRotation(urls) {
     const meshBg = document.getElementById('yn-mesh-bg');
     if (meshBg) meshBg.remove(); // photos replace the mesh, not layer under it
+    document.body.classList.add('yn-glass');
 
     let i = 0;
     setAppBackground(urls[i]);

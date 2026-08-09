@@ -106,3 +106,36 @@
   .app-nav a .ico{font-size:16px}
   .app-main{padding:16px 14px 90px}
 }
+
+/* ---------- glass mode ----------
+   shell.js adds body.yn-glass only once a rotating (or custom) photo
+   background is actually showing - without a photo behind them, "glass"
+   panels would just look like a slightly different flat dark color, so
+   this never applies against the plain mesh/solid background. Cards stay
+   readable at every blur level since setAppBackground() in shell.js keeps
+   a dark gradient under the photo regardless. */
+body.yn-glass .kpi-card,
+body.yn-glass .site-card,
+body.yn-glass .card{
+  background:rgba(19,34,40,.35);
+  backdrop-filter:blur(16px) saturate(150%);
+  -webkit-backdrop-filter:blur(16px) saturate(150%);
+  border:1px solid rgba(255,255,255,.16);
+}
+body.yn-glass .app-sidebar{
+  background:rgba(8,19,22,.55);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+}
+/* Browsers without backdrop-filter support (older Safari/Firefox, some
+   captive-portal mini-browsers) fall back to a more opaque flat panel
+   instead of a half-transparent one with no blur, which would be
+   unreadable over a busy photo. */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  body.yn-glass .kpi-card,
+  body.yn-glass .site-card,
+  body.yn-glass .card,
+  body.yn-glass .app-sidebar{
+    background:var(--yn-panel);
+  }
+}
