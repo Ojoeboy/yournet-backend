@@ -191,6 +191,33 @@ CREATE TABLE IF NOT EXISTS license_keys (
 
 CREATE INDEX IF NOT EXISTS idx_license_keys_code ON license_keys(key_code);
 
+-- Tracks a license purchase from "checkout started" through "key issued",
+-- across whichever gateway the buyer picked on /license (Paystack,
+-- Flutterwave, or Hubtel). Needed because Hubtel confirms via an async
+-- webhook - there's no browser redirect carrying the buyer's details at
+-- that point, so they have to be looked up by provider_reference instead.
+CREATE TABLE IF NOT EXISTS license_purchase_orders (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  provider TEXT NOT NULL CHECK (provider IN ('paystack','hubtel','flutterwave')),
+  provider_reference TEXT NOT NULL,
+  buyer_email TEXT NOT NULL,
+  buyer_phone TEXT,
+  amount NUMERIC(10,2),
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | paid | failed
+  issued_key_id UUID REFERENCES license_keys(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  UNIQUE(provider, provider_reference)
+);
+
+CREATE INDEX IF NOT EXISTS idx_license_purchase_orders_ref ON license_purchase_orders(provider, provider_reference);
+
+-- LEGACY - kept only so historical data stays queryable directly in the
+-- database if you ever need it. The old direct-MoMo-transfer-with-manual-
+-- approval flow (momo-claim / admin/momo-claims routes, momo-admin.html)
+-- has been fully removed from the app in favor of the multi-provider
+-- checkout above - nothing in the app reads from or writes to this table
+-- anymore.
 CREATE TABLE IF NOT EXISTS momo_payment_claims (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   buyer_name TEXT,

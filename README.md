@@ -64,22 +64,37 @@ permanently consumed the moment it activates a tenant (locked with a
 row-level `FOR UPDATE` to prevent two people racing to use the same key),
 so a single purchase cannot be shared across multiple WiFi businesses.
 
-Two ways a key gets issued:
-1. **Paystack** (`/license` page, "Pay with Paystack") - fully automatic.
-   Payment is verified server-side before a key is generated and shown to
-   the buyer.
-2. **Direct MoMo transfer** to the number shown on `/license` - the buyer
-   submits a claim (name, email, phone, MoMo reference) right on that page,
-   which lands in a real pending queue. You review it against your actual
-   MoMo transaction history at `/license-admin` after logging in at
-   `/owner-login` (real username/password, hashed - not a shared secret
-   pasted into every request) and click Approve to generate a real key, or
-   Reject if nothing matches. This is deliberately manual - raw peer-to-peer
-   MoMo transfers can't be verified via API without a paid aggregator - but
-   it's now a proper queue instead of a WhatsApp message you might lose.
+Keys are issued in one of two ways:
+1. **Online checkout** (`/license` page) - the buyer picks whichever
+   gateway is configured: **Paystack** (card or Mobile Money), **Flutterwave**,
+   or **Hubtel**. The dropdown only ever shows providers that actually have
+   credentials set in `.env` (`PAYSTACK_SECRET_KEY`, `FLUTTERWAVE_SECRET_KEY`,
+   or the `HUBTEL_*` trio) - see `.env.example`. Payment is verified
+   server-side (Paystack/Flutterwave via a browser-redirect callback,
+   Hubtel via an async webhook + a polling status page, since Hubtel
+   confirms server-to-server rather than on redirect) before a real key is
+   generated and shown to the buyer, with a Copy button.
+2. **Manual issue** - the platform owner can issue a key by hand from
+   `/license-admin` (after logging in at `/owner-login`) for a sale made
+   outside the three gateways above. Every key issued this way or online is
+   listed on that same page.
+
+These platform-level gateway credentials are separate from the per-tenant
+ones each WiFi business links from their own `/admin` (see
+`routes/paymentGateways.js`) to receive their *own* customers' voucher
+payments.
 
 Price is set via `LICENSE_PRICE_GHS` in `.env` - change it to whatever
 you're actually charging.
+
+**Note on the old direct-MoMo-transfer flow:** an earlier version of this
+app let a buyer submit a claim after a manual peer-to-peer MoMo transfer,
+which the owner then approved by hand against their own MoMo transaction
+history. That flow (and its `/license-admin` review page) has been removed
+now that Paystack/Flutterwave/Hubtel cover Mobile Money automatically -
+the old claims data is still sitting in the `momo_payment_claims` table if
+you ever need to look back at it, but nothing in the app queries it anymore.
+
 
 **Security note on a prototype you may have seen elsewhere:** an earlier
 version of this idea generated and checked license keys entirely in

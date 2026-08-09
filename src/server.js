@@ -101,7 +101,7 @@ app.get('/license', (req, res) => {
 });
 
 app.get('/license-admin', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'momo-admin.html'));
+  res.sendFile(path.join(__dirname, '..', 'public', 'license-admin.html'));
 });
 
 app.get('/settlement', (req, res) => {
