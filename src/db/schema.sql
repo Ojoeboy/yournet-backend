@@ -29,6 +29,10 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS verify_token_hash TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reset_token_hash TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMPTZ;
 
+-- OFF by default (opt-in) - admin/dashboard pages keep the SVG mesh
+-- background unless the tenant turns this on.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS admin_use_rotating_backgrounds BOOLEAN NOT NULL DEFAULT false;
+
 -- Staff/kiosk logins belonging to a tenant (agents who sell vouchers)
 CREATE TABLE IF NOT EXISTS tenant_users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -93,7 +97,13 @@ CREATE TABLE IF NOT EXISTS sites (
   portal_caution_text TEXT,        -- shown as a warning/notice box on the portal page
   portal_whatsapp_number TEXT,     -- shown as a "Need help?" tap-to-chat link, digits only incl. country code
   portal_momo_number TEXT,         -- manual MoMo fallback: number to display for direct transfer
-  portal_momo_name TEXT            -- manual MoMo fallback: registered account name shown alongside the number
+  portal_momo_name TEXT,           -- manual MoMo fallback: registered account name shown alongside the number
+
+  -- ON by default: a tenant with no custom portal_background_image_url gets
+  -- a free rotating photo background out of the box, no setup required.
+  -- Setting a custom background_image_url takes priority over this
+  -- regardless of the flag's value - see routes/portal.js.
+  portal_use_rotating_backgrounds BOOLEAN NOT NULL DEFAULT true
 );
 
 -- Safe to re-run: adds the portal branding columns above to a sites table
@@ -108,6 +118,7 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_caution_text TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_whatsapp_number TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_momo_number TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_momo_name TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_use_rotating_backgrounds BOOLEAN NOT NULL DEFAULT true;
 
 -- Safe to re-run: adds UniFi support to a sites table that predates it.
 -- The type CHECK constraint has to be dropped and recreated to allow the

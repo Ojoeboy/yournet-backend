@@ -252,7 +252,8 @@ ${profileLines.join('\n') || '# No active packages yet - create some in /admin f
 // purpose: saving a logo/color shouldn't reset the site's connection
 // status to 'unconfigured' the way a credentials change should.
 const PORTAL_FIELDS = `id, portal_business_name, portal_logo_url, portal_primary_color, portal_custom_html,
-     portal_background_image_url, portal_caution_text, portal_whatsapp_number, portal_momo_number, portal_momo_name`;
+     portal_background_image_url, portal_caution_text, portal_whatsapp_number, portal_momo_number, portal_momo_name,
+     portal_use_rotating_backgrounds`;
 
 router.get('/:id/portal', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
@@ -272,6 +273,7 @@ router.patch('/:id/portal', asyncHandler(async (req, res) => {
   const {
     businessName, logoUrl, primaryColor, customHtml,
     backgroundImageUrl, cautionText, whatsappNumber, momoNumber, momoName,
+    useRotatingBackgrounds,
   } = req.body;
 
   // Basic sanity check on the color so a typo doesn't silently break the
@@ -290,11 +292,16 @@ router.patch('/:id/portal', asyncHandler(async (req, res) => {
        portal_caution_text = COALESCE($6, portal_caution_text),
        portal_whatsapp_number = COALESCE($7, portal_whatsapp_number),
        portal_momo_number = COALESCE($8, portal_momo_number),
-       portal_momo_name = COALESCE($9, portal_momo_name)
-     WHERE id=$10 AND tenant_id=$11
+       portal_momo_name = COALESCE($9, portal_momo_name),
+       portal_use_rotating_backgrounds = COALESCE($10, portal_use_rotating_backgrounds)
+     WHERE id=$11 AND tenant_id=$12
      RETURNING ${PORTAL_FIELDS}`,
     [businessName, logoUrl, primaryColor, customHtml,
       backgroundImageUrl, cautionText, whatsappNumber, momoNumber, momoName,
+      // COALESCE only substitutes on NULL, not on false, so an explicit
+      // `false` here correctly turns the toggle off - only a genuinely
+      // missing field (undefined -> null) leaves the existing value alone.
+      typeof useRotatingBackgrounds === 'boolean' ? useRotatingBackgrounds : null,
       req.params.id, req.tenantId]
   );
   res.json(rows[0]);

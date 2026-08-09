@@ -65,9 +65,60 @@
     g.innerHTML = linesSVG + nodesSVG;
   }
 
+  // Optional rotating-photo background, in place of the SVG mesh, for
+  // tenants who turned this on (Account tab in /admin). Off by default -
+  // most pages using shell.js aren't logged in yet (or the toggle fetch
+  // fails), so silently doing nothing here is the correct default.
+  function setAppBackground(url) {
+    document.body.style.backgroundImage =
+      `linear-gradient(rgba(13,26,30,.82),rgba(13,26,30,.9)), url("${url}")`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundAttachment = 'fixed';
+    document.body.style.transition = 'background-image 1.2s ease-in-out';
+  }
+
+  function startAdminBackgroundRotation(urls) {
+    const meshBg = document.getElementById('yn-mesh-bg');
+    if (meshBg) meshBg.remove(); // photos replace the mesh, not layer under it
+
+    let i = 0;
+    setAppBackground(urls[i]);
+    setInterval(() => {
+      i = (i + 1) % urls.length;
+      const preload = new Image();
+      preload.onload = () => setAppBackground(urls[i]);
+      preload.src = urls[i];
+    }, 2 * 60 * 1000);
+  }
+
+  async function maybeStartRotatingBackground() {
+    const token = localStorage.getItem('yournet_token');
+    if (!token) return;
+    try {
+      const settingsRes = await fetch('/api/dashboard/background-settings', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!settingsRes.ok) return;
+      const settings = await settingsRes.json();
+      if (!settings.useRotatingBackgrounds) return;
+
+      const bgRes = await fetch('/api/dashboard/rotating-backgrounds', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!bgRes.ok) return;
+      const { backgrounds } = await bgRes.json();
+      if (backgrounds && backgrounds.length) startAdminBackgroundRotation(backgrounds);
+    } catch (err) {
+      // Silently keep the default mesh background - this is a cosmetic
+      // preference, never worth surfacing an error over.
+    }
+  }
+
   function init() {
     render();
     renderMeshBg();
+    maybeStartRotatingBackground();
   }
 
   if (document.readyState === 'loading') {

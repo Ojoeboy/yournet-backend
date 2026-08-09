@@ -82,10 +82,17 @@ router.post('/momo-claim', asyncHandler(async (req, res) => {
 // actual MoMo transaction history before approving.
 router.get('/admin/momo-claims', requireOwnerAuth, asyncHandler(async (req, res) => {
   const { status } = req.query;
+  // LEFT JOIN so approved claims carry their key_code permanently - without
+  // this, the key was only ever visible in the approve() response, gone on
+  // the next list refresh or page reload.
   const { rows } = await pool.query(
     status
-      ? `SELECT * FROM momo_payment_claims WHERE status=$1 ORDER BY created_at DESC`
-      : `SELECT * FROM momo_payment_claims ORDER BY created_at DESC LIMIT 200`,
+      ? `SELECT c.*, k.key_code FROM momo_payment_claims c
+         LEFT JOIN license_keys k ON k.id = c.issued_key_id
+         WHERE c.status=$1 ORDER BY c.created_at DESC`
+      : `SELECT c.*, k.key_code FROM momo_payment_claims c
+         LEFT JOIN license_keys k ON k.id = c.issued_key_id
+         ORDER BY c.created_at DESC LIMIT 200`,
     status ? [status] : []
   );
   res.json(rows);

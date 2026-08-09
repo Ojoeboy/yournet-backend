@@ -21,7 +21,8 @@
   .pill.pending{background:rgba(255,193,7,.15);color:#ffc107}
   .pill.approved{background:rgba(46,196,182,.15);color:#2ec4b6}
   .pill.rejected{background:rgba(255,107,107,.15);color:#ff6b6b}
-  .keyBox{font-family:monospace;color:#ffc55a;font-weight:700;margin-top:8px}
+  .keyBox{font-family:monospace;color:#ffc55a;font-weight:700;margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .copyBtn{background:rgba(255,255,255,.1);color:#e8f0f1;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600}
 </style>
 </head>
 <body>
@@ -66,9 +67,21 @@
             <button class="approve" onclick="approve('${c.id}')">Approve & issue key</button>
             <button class="reject" onclick="reject('${c.id}')">Reject</button>
           </div>` : ''}
-        <div class="keyBox" id="key-${c.id}"></div>
+        ${c.key_code ? `
+          <div class="keyBox">
+            <span>Key: ${c.key_code}</span>
+            <button class="copyBtn" onclick="copyKey('${c.key_code}', this)">Copy</button>
+          </div>` : ''}
       </div>
     `).join('');
+  }
+
+  function copyKey(code, btn) {
+    navigator.clipboard.writeText(code).then(() => {
+      const original = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    });
   }
 
   async function approve(id) {
@@ -78,7 +91,8 @@
     });
     const data = await res.json();
     if (!res.ok) return alert(data.error || 'Failed');
-    document.getElementById(`key-${id}`).textContent = 'Key: ' + data.key.key_code + ' - send this to the buyer.';
+    // Re-fetch so the card now renders with its key_code from the join -
+    // permanent, not a one-time toast that a refresh wipes out.
     loadClaims();
   }
 

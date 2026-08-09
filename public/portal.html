@@ -227,6 +227,33 @@
   let portalPackages = [];
   let onlinePaymentAvailable = false;
 
+  function setBodyBackground(url) {
+    document.body.style.backgroundImage =
+      `linear-gradient(rgba(8,15,18,0.72),rgba(8,15,18,0.82)), url("${url}")`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundAttachment = 'fixed';
+  }
+
+  // Cycles through a set of free stock photos (default portal background
+  // when the tenant hasn't uploaded their own) every 2 minutes, with a
+  // brief opacity fade so the swap doesn't look like a jump-cut. Preloads
+  // the next image before switching to it, so there's never a blank/broken
+  // frame if a URL is slow to load.
+  function startBackgroundRotation(urls) {
+    let i = 0;
+    setBodyBackground(urls[i]);
+    document.body.style.transition = 'background-image 1.2s ease-in-out';
+
+    setInterval(() => {
+      i = (i + 1) % urls.length;
+      const preload = new Image();
+      preload.onload = () => setBodyBackground(urls[i]);
+      preload.onerror = () => { /* skip a broken URL, keep the current background */ };
+      preload.src = urls[i];
+    }, 2 * 60 * 1000);
+  }
+
   async function loadPortalExtras() {
     try {
       const res = await fetch(`/portal/${siteId}/config`);
@@ -234,11 +261,9 @@
       const cfg = await res.json();
 
       if (cfg.backgroundImageUrl) {
-        document.body.style.backgroundImage =
-          `linear-gradient(rgba(8,15,18,0.72),rgba(8,15,18,0.82)), url("${cfg.backgroundImageUrl}")`;
-        document.body.style.backgroundSize = 'cover';
-        document.body.style.backgroundPosition = 'center';
-        document.body.style.backgroundAttachment = 'fixed';
+        setBodyBackground(cfg.backgroundImageUrl);
+      } else if (cfg.rotatingBackgrounds && cfg.rotatingBackgrounds.length) {
+        startBackgroundRotation(cfg.rotatingBackgrounds);
       }
 
       if (cfg.cautionText) {

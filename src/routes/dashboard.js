@@ -7,9 +7,40 @@ const unifi = require('../integrations/unifi');
 const meraki = require('../integrations/meraki');
 const { decrypt } = require('../utils/credentialCrypto');
 const asyncHandler = require('../utils/asyncHandler');
+const freeStockPhotos = require('../integrations/freeStockPhotos');
 
 const router = express.Router();
 router.use(requireAuth);
+
+// Owner's opt-in toggle for a rotating photo background on admin/dashboard/
+// billing/vouchers pages, in place of the default SVG connectivity mesh -
+// OFF by default (see schema.sql), so a tenant only gets it by explicitly
+// asking for it here.
+router.get('/background-settings', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT admin_use_rotating_backgrounds FROM tenants WHERE id=$1',
+    [req.tenantId]
+  );
+  res.json({ useRotatingBackgrounds: rows[0]?.admin_use_rotating_backgrounds || false });
+}));
+
+router.patch('/background-settings', asyncHandler(async (req, res) => {
+  const { useRotatingBackgrounds } = req.body;
+  if (typeof useRotatingBackgrounds !== 'boolean') {
+    return res.status(400).json({ error: 'useRotatingBackgrounds must be true or false' });
+  }
+  await pool.query('UPDATE tenants SET admin_use_rotating_backgrounds=$1 WHERE id=$2', [
+    useRotatingBackgrounds, req.tenantId,
+  ]);
+  res.json({ ok: true, useRotatingBackgrounds });
+}));
+
+// Authenticated version of the same rotating photo list the public portal
+// config route serves - shell.js calls this only when the toggle above is on.
+router.get('/rotating-backgrounds', asyncHandler(async (req, res) => {
+  const backgrounds = await freeStockPhotos.getRotatingBackgrounds();
+  res.json({ backgrounds });
+}));
 
 router.get('/summary', asyncHandler(async (req, res) => {
   const { rows: totals } = await pool.query(

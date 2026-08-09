@@ -98,6 +98,19 @@
     <span data-i18n="forgotPasswordText">Forgot your password?</span>
     <a href="/forgot-password" style="color:#2ec4b6" data-i18n="resetIt">Reset it</a>.
   </p>
+
+  <div id="account-prefs" class="hidden" style="margin-top:18px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px">
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+      <span class="switch">
+        <input type="checkbox" id="adminUseRotatingBackgrounds" onchange="saveAdminBackgroundSetting()">
+        <span class="slider"></span>
+      </span>
+      <span style="text-transform:none;font-size:13px;color:#e8f0f1">
+        Use free rotating photo backgrounds on these admin/dashboard pages (instead of the default mesh, changes every 2 min)
+      </span>
+    </label>
+    <div class="msg" id="account-prefs-msg"></div>
+  </div>
 </div>
 
 <!-- STEP 2: Add Site -->
@@ -239,13 +252,24 @@
   <label>MoMo registered account name (optional)</label>
   <input id="portalMomoName" placeholder="e.g. Kwame Mensah">
 
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:14px">
+    <span class="switch">
+      <input type="checkbox" id="portalUseRotatingBackgrounds" checked>
+      <span class="slider"></span>
+    </span>
+    <span style="text-transform:none;font-size:13px;color:#e8f0f1">
+      Use free rotating photo backgrounds when no background image URL is set (changes every 2 min) - click "Save branding" below to apply
+    </span>
+  </label>
+
   <button onclick="savePortalBranding()">Save branding</button>
   <button class="secondary" onclick="previewPortal()">Preview portal</button>
   <div class="msg" id="portal-msg"></div>
   <p style="font-size:11px;color:#6b8a91;margin-top:6px">
     Background image, caution notice, WhatsApp link, and MoMo details only appear on the
     portal once you've set up online payment (for automatic voucher purchase) and/or filled
-    these fields. Leave any field blank to hide that section on the portal page.
+    these fields. Leave any field blank to hide that section on the portal page. Setting a
+    background image URL above takes priority over the rotating photos.
   </p>
 
   <div style="margin-top:18px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px">
@@ -457,6 +481,27 @@
     switchTab('site');
     loadSitesAndPackages();
     loadGateways();
+    document.getElementById('account-prefs').classList.remove('hidden');
+    loadAdminBackgroundSetting();
+  }
+
+  async function loadAdminBackgroundSetting() {
+    try {
+      const settings = await api('/api/dashboard/background-settings', 'GET');
+      document.getElementById('adminUseRotatingBackgrounds').checked = !!settings.useRotatingBackgrounds;
+    } catch (err) {
+      // Non-critical - leave the checkbox at its default (unchecked) if this fails.
+    }
+  }
+
+  async function saveAdminBackgroundSetting() {
+    const useRotatingBackgrounds = document.getElementById('adminUseRotatingBackgrounds').checked;
+    try {
+      await api('/api/dashboard/background-settings', 'PATCH', { useRotatingBackgrounds });
+      showMsg('account-prefs-msg', 'Saved. Refresh any open admin page to see it take effect.', 'ok');
+    } catch (err) {
+      showMsg('account-prefs-msg', err.message, 'err');
+    }
   }
 
   function renderSiteTypeFields() {
@@ -595,6 +640,7 @@
       document.getElementById('portalMomoName').value = branding.portal_momo_name || '';
       document.getElementById('portalCustomHtml').value = branding.portal_custom_html || '';
       document.getElementById('portalAdvancedToggle').checked = !!branding.portal_custom_html;
+      document.getElementById('portalUseRotatingBackgrounds').checked = branding.portal_use_rotating_backgrounds !== false;
       toggleAdvancedPortal();
     } catch (err) {
       showMsg('portal-msg', err.message, 'err');
@@ -614,6 +660,7 @@
         whatsappNumber: document.getElementById('portalWhatsappNumber').value || null,
         momoNumber: document.getElementById('portalMomoNumber').value || null,
         momoName: document.getElementById('portalMomoName').value || null,
+        useRotatingBackgrounds: document.getElementById('portalUseRotatingBackgrounds').checked,
       });
       // PATCH only sets values (COALESCE) - any of these five fields left
       // blank in the form needs an explicit clear so an admin can actually
@@ -700,6 +747,8 @@
     switchTab('site');
     loadSitesAndPackages();
     loadGateways();
+    document.getElementById('account-prefs').classList.remove('hidden');
+    loadAdminBackgroundSetting();
   }
 
   function renderGatewayFields() {

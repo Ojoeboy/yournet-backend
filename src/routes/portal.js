@@ -5,6 +5,7 @@ const voucherService = require('../services/voucherService');
 const gatewayService = require('../services/paymentGatewayService');
 const hubtelGateway = require('../integrations/gateways/hubtelGateway');
 const sms = require('../integrations/smsService');
+const freeStockPhotos = require('../integrations/freeStockPhotos');
 const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -20,7 +21,7 @@ router.get('/:siteId/config', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT tenant_id, portal_business_name, portal_logo_url, portal_primary_color,
             portal_background_image_url, portal_caution_text, portal_whatsapp_number,
-            portal_momo_number, portal_momo_name
+            portal_momo_number, portal_momo_name, portal_use_rotating_backgrounds
      FROM sites WHERE id=$1`,
     [siteId]
   );
@@ -35,6 +36,13 @@ router.get('/:siteId/config', asyncHandler(async (req, res) => {
 
   const activeGateway = await gatewayService.getActiveGateway(site.tenant_id);
 
+  // A tenant's own custom background always wins over the rotating set -
+  // only fetch/send the rotating list when there's no custom image AND the
+  // tenant hasn't turned this off.
+  const rotatingBackgrounds = (!site.portal_background_image_url && site.portal_use_rotating_backgrounds)
+    ? await freeStockPhotos.getRotatingBackgrounds()
+    : [];
+
   res.json({
     businessName: site.portal_business_name,
     logoUrl: site.portal_logo_url,
@@ -46,6 +54,7 @@ router.get('/:siteId/config', asyncHandler(async (req, res) => {
     momoName: site.portal_momo_name,
     packages,
     onlinePaymentAvailable: !!activeGateway,
+    rotatingBackgrounds,
   });
 }));
 
