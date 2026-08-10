@@ -185,4 +185,195 @@ async function listAccessPoints(site) {
   }
 }
 
-module.exports = { createHotspotUser, removeHotspotUser, ping, listActiveClients, listAccessPoints };
+// ---------------------------------------------------------------------------
+// PPPoE subscriber management (/ppp/secret, /ppp/active) - recurring
+// ISP-style accounts, distinct from the one-time /ip/hotspot/user vouchers
+// above. Every function here re-validates its identifier/rate-limit inputs
+// with the same patterns routes/pppoe.js already enforces before calling in
+// - defense in depth, so this module is safe to call from anywhere later
+// without silently trusting whatever the caller passed.
+// ---------------------------------------------------------------------------
+
+const SAFE_IDENTIFIER = /^[A-Za-z0-9_.-]{1,64}$/;
+const SAFE_ROUTER_IDENTIFIER = /^[A-Za-z0-9_.\- ]{1,64}$/;
+const SAFE_RATE_LIMIT = /^[0-9]{1,5}[kKmMgG]?\/[0-9]{1,5}[kKmMgG]?$/;
+const NO_CONTROL_CHARS = /^[^\x00-\x1F\x7F]*$/;
+
+function assertSafe(value, pattern, label) {
+  if (typeof value !== 'string' || !pattern.test(value)) {
+    throw new Error(`Refusing to send unsafe ${label} to router.`);
+  }
+}
+
+/**
+ * Create a PPPoE subscriber account (/ppp/secret) on the router.
+ * `profile` (an existing /ppp/profile name) takes priority over `rateLimit`
+ * (a direct rate-limit string on the secret itself) if both are given -
+ * mirrors how routes/pppoe.js resolves a plan's router_profile vs rate_limit.
+ */
+async function createPppoeSecret(site, { username, password, profile, rateLimit, comment }) {
+  assertSafe(username, SAFE_IDENTIFIER, 'PPPoE username');
+  if (typeof password !== 'string' || !NO_CONTROL_CHARS.test(password) || password.length < 8) {
+    throw new Error('Refusing to send unsafe/weak PPPoE password to router.');
+  }
+  if (profile) assertSafe(profile, SAFE_ROUTER_IDENTIFIER, 'PPP profile name');
+  if (rateLimit) assertSafe(rateLimit, SAFE_RATE_LIMIT, 'rate-limit string');
+  if (comment && !NO_CONTROL_CHARS.test(comment)) throw new Error('Refusing to send unsafe comment to router.');
+
+  const conn = await connect(site);
+  try {
+    await conn.write('/ppp/secret/add', [
+      `=name=${username}`,
+      `=password=${password}`,
+      `=service=pppoe`,
+      `=profile=${profile || 'default'}`,
+      ...(!profile && rateLimit ? [`=rate-limit=${rateLimit}`] : []),
+      ...(comment ? [`=comment=${comment}`] : []),
+    ]);
+    return { ok: true };
+  } finally {
+    conn.close();
+  }
+}
+
+/**
+ * Remove a PPPoE subscriber account and kick any active session for it.
+ */
+async function removePppoeSecret(site, username) {
+  assertSafe(username, SAFE_IDENTIFIER, 'PPPoE username');
+  const conn = await connect(site);
+  try {
+    const found = await conn.write('/ppp/secret/print', [`?name=${username}`]);
+    if (found.length) {
+      await conn.write('/ppp/secret/remove', [`=.id=${found[0]['.id']}`]);
+    }
+    await disconnectActiveInternal(conn, username);
+    return { ok: true };
+  } finally {
+    conn.close();
+  }
+}
+
+/**
+ * Enable/disable a PPPoE subscriber without deleting their account - used
+ * for suspend (overdue/non-payment) vs reactivate, so the plan/history
+ * stays intact. Disabling alone doesn't drop an already-connected session,
+ * so this also kicks any active session when disabling.
+ */
+async function setPppoeSecretEnabled(site, username, enabled) {
+  assertSafe(username, SAFE_IDENTIFIER, 'PPPoE username');
+  const conn = await connect(site);
+  try {
+    const found = await conn.write('/ppp/secret/print', [`?name=${username}`]);
+    if (!found.length) throw new Error('PPPoE secret not found on router.');
+    await conn.write('/ppp/secret/set', [`=.id=${found[0]['.id']}`, `=disabled=${enabled ? 'no' : 'yes'}`]);
+    if (!enabled) await disconnectActiveInternal(conn, username);
+    return { ok: true };
+  } finally {
+    conn.close();
+  }
+}
+
+/**
+ * Change a PPPoE subscriber's password (used by the reset-password
+ * endpoint) - kicks their active session too, since RouterOS doesn't
+ * re-validate an already-connected PPP session against the new password.
+ */
+async function changePppoeSecretPassword(site, username, newPassword) {
+  assertSafe(username, SAFE_IDENTIFIER, 'PPPoE username');
+  if (typeof newPassword !== 'string' || !NO_CONTROL_CHARS.test(newPassword) || newPassword.length < 8) {
+    throw new Error('Refusing to send unsafe/weak PPPoE password to router.');
+  }
+  const conn = await connect(site);
+  try {
+    const found = await conn.write('/ppp/secret/print', [`?name=${username}`]);
+    if (!found.length) throw new Error('PPPoE secret not found on router.');
+    await conn.write('/ppp/secret/set', [`=.id=${found[0]['.id']}`, `=password=${newPassword}`]);
+    await disconnectActiveInternal(conn, username);
+    return { ok: true };
+  } finally {
+    conn.close();
+  }
+}
+
+/**
+ * Kick a specific subscriber's active PPP session (does not touch the
+ * /ppp/secret account itself - use setPppoeSecretEnabled to actually block
+ * future reconnects).
+ */
+async function disconnectPppoeSession(site, username) {
+  assertSafe(username, SAFE_IDENTIFIER, 'PPPoE username');
+  const conn = await connect(site);
+  try {
+    await disconnectActiveInternal(conn, username);
+    return { ok: true };
+  } finally {
+    conn.close();
+  }
+}
+
+async function disconnectActiveInternal(conn, username) {
+  const active = await conn.write('/ppp/active/print', [`?name=${username}`]);
+  for (const session of active) {
+    await conn.write('/ppp/active/remove', [`=.id=${session['.id']}`]);
+  }
+}
+
+/**
+ * Live status for one subscriber - used by the admin UI to show
+ * connected/idle plus current session stats without listing every session
+ * on the router.
+ */
+async function getPppoeSessionStatus(site, username) {
+  assertSafe(username, SAFE_IDENTIFIER, 'PPPoE username');
+  const conn = await connect(site);
+  try {
+    const active = await conn.write('/ppp/active/print', [`?name=${username}`]);
+    if (!active.length) return { connected: false };
+    const s = active[0];
+    return {
+      connected: true,
+      address: s.address,
+      uptime: s.uptime,
+      callerId: s['caller-id'],
+      service: s.service,
+    };
+  } finally {
+    conn.close();
+  }
+}
+
+/**
+ * List every active PPP session on a site (admin overview, not
+ * per-subscriber) - separate from listActiveClients, which is hotspot-only.
+ */
+async function listActivePppoeSessions(site) {
+  const conn = await connect(site);
+  try {
+    const active = await conn.write('/ppp/active/print');
+    return active.map((s) => ({
+      name: s.name,
+      address: s.address,
+      uptime: s.uptime,
+      callerId: s['caller-id'],
+      service: s.service,
+    }));
+  } finally {
+    conn.close();
+  }
+}
+
+module.exports = {
+  createHotspotUser,
+  removeHotspotUser,
+  ping,
+  listActiveClients,
+  listAccessPoints,
+  createPppoeSecret,
+  removePppoeSecret,
+  setPppoeSecretEnabled,
+  changePppoeSecretPassword,
+  disconnectPppoeSession,
+  getPppoeSessionStatus,
+  listActivePppoeSessions,
+};

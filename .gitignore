@@ -1,2 +1,21 @@
-node_modules
+# Secrets - never commit real credentials. Only .env.example (which has
+# no real values) should ever be tracked.
 .env
+.env.local
+.env.*.local
+
+# Dependencies - reinstalled from package.json, not tracked
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Test/coverage output
+coverage/

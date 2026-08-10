@@ -9,6 +9,7 @@ const hubtelGateway = require('../integrations/gateways/hubtelGateway');
 const brevo = require('../integrations/brevo');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
+const webhookToken = require('../utils/webhookToken');
 const { requireOwnerAuth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -73,6 +74,7 @@ router.post('/purchase/initialize', asyncHandler(async (req, res) => {
   const amountGHS = orderPurpose === 'reactivate' ? LICENSE_REACTIVATION_PRICE_GHS : LICENSE_SIGNUP_PRICE_GHS;
   const reference = `LIC-${uuidv4().slice(0, 12)}`;
   const base = process.env.APP_BASE_URL;
+  const hubtelToken = provider === 'hubtel' ? webhookToken.generateToken() : null;
 
   try {
     let checkoutUrl;
@@ -104,7 +106,10 @@ router.post('/purchase/initialize', asyncHandler(async (req, res) => {
         merchantAccountNumber: process.env.HUBTEL_MERCHANT_ACCOUNT_NUMBER,
         amountGHS,
         reference,
-        callbackUrl: `${base}/license/purchase/webhook/hubtel`,
+        // Same forged-webhook concern as portal.js's buy-voucher - see
+        // utils/webhookToken.js. Here it's worse than a free voucher: it's
+        // a free license key, so this token is non-negotiable.
+        callbackUrl: `${base}/license/purchase/webhook/hubtel?wt=${hubtelToken.raw}`,
         returnUrl: `${base}/license/purchase/status/${reference}`,
         description: 'YourNet Control license',
       });
@@ -112,9 +117,9 @@ router.post('/purchase/initialize', asyncHandler(async (req, res) => {
     }
 
     await pool.query(
-      `INSERT INTO license_purchase_orders (provider, provider_reference, buyer_email, buyer_phone, amount, purpose, tenant_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [provider, reference, email, phone || null, amountGHS, orderPurpose, tenantId]
+      `INSERT INTO license_purchase_orders (provider, provider_reference, buyer_email, buyer_phone, amount, purpose, tenant_id, webhook_token_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [provider, reference, email, phone || null, amountGHS, orderPurpose, tenantId, hubtelToken?.hash || null]
     );
 
     res.json({ checkoutUrl, provider, reference });
@@ -225,6 +230,11 @@ router.get('/purchase/callback/:provider', asyncHandler(async (req, res) => {
 // redirect - see integrations/gateways/hubtelGateway.js for why. There's no
 // page to show the buyer here; /purchase/status/:reference (their return
 // URL) picks the key up once this has run.
+//
+// SECURITY: see utils/webhookToken.js - the `wt` param is what stops
+// anyone who's ever called purchase/initialize from POSTing a fake
+// "success" here and getting a free license key using the reference that
+// same call handed them back.
 router.post('/purchase/webhook/hubtel', asyncHandler(async (req, res) => {
   const interpreted = hubtelGateway.interpretWebhook(req.body);
   if (!interpreted.reference) return res.status(400).json({ error: 'No reference in webhook payload' });
@@ -235,6 +245,10 @@ router.post('/purchase/webhook/hubtel', asyncHandler(async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: 'Order not found' });
   const order = rows[0];
+
+  if (!webhookToken.tokensMatch(req.query.wt, order.webhook_token_hash)) {
+    return res.status(401).json({ error: 'Invalid or missing webhook token' });
+  }
 
   if (order.status === 'paid') return res.json({ ok: true, note: 'already fulfilled' });
 

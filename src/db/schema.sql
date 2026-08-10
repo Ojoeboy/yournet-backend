@@ -144,6 +144,15 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_use_rotating_backgrounds BOOLE
 -- mikrotik.js for that tradeoff.
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS mk_use_tls BOOLEAN NOT NULL DEFAULT false;
 
+-- Closes a real hole: Hubtel's webhook has no built-in signature, so
+-- without this an order's own `provider_reference` (handed straight back
+-- to whoever just called buy-voucher/purchase-initialize) was enough to
+-- forge a "payment succeeded" webhook and get a free voucher or license
+-- key. See utils/webhookToken.js for the fix - a one-time token embedded
+-- in the callback URL, only its hash stored here.
+ALTER TABLE voucher_orders ADD COLUMN IF NOT EXISTS webhook_token_hash TEXT;
+ALTER TABLE license_purchase_orders ADD COLUMN IF NOT EXISTS webhook_token_hash TEXT;
+
 -- Safe to re-run: adds UniFi support to a sites table that predates it.
 -- The type CHECK constraint has to be dropped and recreated to allow the
 -- new 'unifi' value - ADD COLUMN IF NOT EXISTS alone can't widen a CHECK.
@@ -239,6 +248,7 @@ CREATE TABLE IF NOT EXISTS license_purchase_orders (
   amount NUMERIC(10,2),
   status TEXT NOT NULL DEFAULT 'pending', -- pending | paid | failed
   issued_key_id UUID REFERENCES license_keys(id),
+  webhook_token_hash TEXT, -- Hubtel orders only, see utils/webhookToken.js
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at TIMESTAMPTZ,
   UNIQUE(provider, provider_reference)
@@ -344,6 +354,7 @@ CREATE TABLE IF NOT EXISTS voucher_orders (
   provider_reference TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending', -- pending | paid | failed
   voucher_id UUID REFERENCES vouchers(id),
+  webhook_token_hash TEXT, -- Hubtel orders only, see utils/webhookToken.js
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at TIMESTAMPTZ,
   UNIQUE(provider, provider_reference)
@@ -372,3 +383,91 @@ CREATE TABLE IF NOT EXISTS site_status_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_site_snapshots_site_time ON site_status_snapshots(site_id, checked_at);
 CREATE INDEX IF NOT EXISTS idx_site_snapshots_tenant_time ON site_status_snapshots(tenant_id, checked_at);
+
+-- ============================================================================
+-- PPPoE subscriber billing (recurring ISP-style accounts, distinct from the
+-- one-time hotspot vouchers above). A "plan" is a speed+monthly-price
+-- product; a "subscriber" is one customer's recurring account, mirrored as
+-- a real /ppp/secret on their site's Mikrotik router (see
+-- integrations/mikrotik.js createPppoeSecret/removePppoeSecret/etc).
+-- Everything here is tenant-scoped the same way sites/vouchers/packages
+-- are - every query in routes/pppoe.js filters on tenant_id, never trusts
+-- a client-supplied id alone.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS pppoe_plans (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  label TEXT NOT NULL,
+  price NUMERIC(10,2) NOT NULL,
+  billing_period_days INTEGER NOT NULL DEFAULT 30,
+  -- Either rate_limit (e.g. '5M/10M', applied directly on the /ppp/secret,
+  -- validated against a strict pattern in utils/validate.js before it ever
+  -- reaches the router) or router_profile (name of an existing /ppp/profile
+  -- already configured on the router) - router_profile wins if both are set.
+  rate_limit TEXT,
+  router_profile TEXT,
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pppoe_plans_tenant ON pppoe_plans(tenant_id);
+
+CREATE TABLE IF NOT EXISTS pppoe_subscribers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  site_id UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  plan_id UUID NOT NULL REFERENCES pppoe_plans(id),
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  -- PPPoE login name, mirrored as the /ppp/secret "name" on the router.
+  -- Restricted to a safe charset at the API layer (letters/digits/./_/-)
+  -- before ever being used - not just for the router call, but because it
+  -- doubles as a real login credential a customer's router will send in
+  -- plaintext over PPP, so keeping it unambiguous matters.
+  username TEXT NOT NULL,
+  -- Same AES-256-GCM envelope as router/gateway credentials elsewhere
+  -- (utils/credentialCrypto.js) - the plaintext is only ever generated or
+  -- accepted at creation/reset time, returned once, and never stored or
+  -- logged in plaintext anywhere.
+  ppp_password_encrypted TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','overdue','cancelled')),
+  start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  next_due_date DATE NOT NULL,
+  last_payment_at TIMESTAMPTZ,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Uniqueness is per-site (per-router), not per-tenant, since that's what
+  -- the router itself enforces on /ppp/secret names.
+  UNIQUE(site_id, username)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pppoe_subscribers_tenant ON pppoe_subscribers(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_pppoe_subscribers_site ON pppoe_subscribers(site_id);
+-- Powers the renewal/reminder job (next increment): "who's due or overdue".
+CREATE INDEX IF NOT EXISTS idx_pppoe_subscribers_due ON pppoe_subscribers(next_due_date) WHERE status IN ('active','overdue');
+
+-- Scaffolded now so the card-service/renewal-billing increment can slot in
+-- without another migration. Same provider/provider_reference + webhook
+-- token-hash shape as voucher_orders/subscription_payments, since that
+-- pattern is what closed the forgeable-webhook hole there - reusing it here
+-- means PPPoE payments get that protection from day one, not bolted on later.
+CREATE TABLE IF NOT EXISTS pppoe_payments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  subscriber_id UUID NOT NULL REFERENCES pppoe_subscribers(id) ON DELETE CASCADE,
+  amount NUMERIC(10,2) NOT NULL,
+  provider TEXT,
+  provider_reference TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  period_start DATE,
+  period_end DATE,
+  webhook_token_hash TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pppoe_payments_subscriber ON pppoe_payments(subscriber_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pppoe_payments_provider_ref
+  ON pppoe_payments(provider, provider_reference) WHERE provider_reference IS NOT NULL;

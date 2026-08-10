@@ -16,7 +16,7 @@
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
     "dotenv": "^16.4.5",
-    "axios": "^1.7.2",
+    "axios": "^1.15.1",
     "node-routeros": "^1.6.7",
     "nodemailer": "^6.9.14",
     "cors": "^2.8.5",

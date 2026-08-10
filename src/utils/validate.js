@@ -25,4 +25,49 @@ function isNonEmptyString(value, maxLength = 500) {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= maxLength;
 }
 
-module.exports = { required, isEmail, isPositiveNumber, isNonEmptyString };
+// PPPoE username -> becomes a real /ppp/secret "name" on the router, and is
+// also what a customer's router will send in plaintext PPP negotiation.
+// Deliberately restrictive (conventional login-name charset only) since
+// there's no legitimate reason for it to contain anything else, and this
+// closes off any weirdness from special characters reaching the router API.
+function isSafeUsername(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_.-]{3,64}$/.test(value);
+}
+
+// General guard for any value that ends up embedded in a RouterOS API call
+// (passwords, comments, profile names) - blocks control characters
+// (including NUL, which can truncate a string mid-buffer) without
+// restricting the character set otherwise, since e.g. a password is
+// allowed to contain punctuation.
+function hasNoControlChars(value) {
+  return typeof value === 'string' && !/[\x00-\x1F\x7F]/.test(value);
+}
+
+function isStrongEnoughPassword(value) {
+  return typeof value === 'string' && value.length >= 8 && value.length <= 64 && hasNoControlChars(value);
+}
+
+// RouterOS rate-limit string, e.g. "5M/10M" or "512k/2M" - up-rate/down-rate
+// only, validated against a strict pattern before it's ever concatenated
+// into a router command.
+function isSafeRateLimit(value) {
+  return typeof value === 'string' && /^[0-9]{1,5}[kKmMgG]?\/[0-9]{1,5}[kKmMgG]?$/.test(value);
+}
+
+// RouterOS object name (e.g. an existing /ppp/profile to reuse) - same
+// conventional charset as isSafeUsername, slightly more permissive length.
+function isSafeRouterIdentifier(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_.\- ]{1,64}$/.test(value);
+}
+
+module.exports = {
+  required,
+  isEmail,
+  isPositiveNumber,
+  isNonEmptyString,
+  isSafeUsername,
+  hasNoControlChars,
+  isStrongEnoughPassword,
+  isSafeRateLimit,
+  isSafeRouterIdentifier,
+};

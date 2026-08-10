@@ -16,6 +16,7 @@ const licenseRoutes = require('./routes/license');
 const ownerRoutes = require('./routes/owner');
 const paymentGatewayRoutes = require('./routes/paymentGateways');
 const portalRoutes = require('./routes/portal');
+const pppoeRoutes = require('./routes/pppoe');
 
 const app = express();
 // contentSecurityPolicy disabled: the captive portal page (public/portal.html)
@@ -24,7 +25,19 @@ const app = express();
 // device viewing it usually has no internet access yet. The rest of the
 // API returns JSON only, so this trade-off is scoped to that one page.
 app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cors());
+// Restricted to this app's own origin - every legitimate caller
+// (admin.html, dashboard.html, portal pages) is served from here and none
+// of them need cross-origin access. Requests with no Origin header (curl,
+// Postman, server-to-server calls, native mobile HTTP clients) are never
+// subject to CORS in the first place, so those still work unaffected -
+// this only blocks a browser page on some OTHER origin from calling this
+// API using a token it shouldn't have anyway.
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || origin === process.env.APP_BASE_URL) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
+}));
 app.use(express.json());
 app.use('/p', express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.use('/i18n', express.static(path.join(__dirname, '..', 'public', 'i18n')));
@@ -93,6 +106,7 @@ app.use('/api/packages', apiLimiter, packageRoutes);
 app.use('/api/agents', apiLimiter, agentRoutes);
 app.use('/api/dashboard', apiLimiter, dashboardRoutes);
 app.use('/api/payment-gateways', apiLimiter, paymentGatewayRoutes);
+app.use('/api/pppoe', apiLimiter, pppoeRoutes);
 app.use('/license', apiLimiter, licenseRoutes);
 app.use('/owner', ownerLoginLimiter, ownerRoutes);
 app.use('/billing', apiLimiter, billingRoutes);

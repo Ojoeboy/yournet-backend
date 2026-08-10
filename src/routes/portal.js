@@ -8,6 +8,7 @@ const sms = require('../integrations/smsService');
 const freeStockPhotos = require('../integrations/freeStockPhotos');
 const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
+const webhookToken = require('../utils/webhookToken');
 
 const router = express.Router();
 
@@ -138,10 +139,13 @@ router.post('/:siteId/buy-voucher', asyncHandler(async (req, res) => {
 
   const reference = `YN-${uuidv4().slice(0, 12)}`;
   const base = process.env.APP_BASE_URL;
-  // Hubtel confirms via a server-to-server webhook, not a browser redirect -
-  // it needs a different URL shape than Paystack/Flutterwave's callback.
+  // Hubtel's webhook has no built-in signature - see utils/webhookToken.js
+  // for why this token is appended to ITS callback URL specifically, and
+  // not needed for Paystack/Flutterwave (those are verified independently
+  // via gateway-callback below, never trusting the redirect/body alone).
+  const hubtelToken = activeGateway.provider === 'hubtel' ? webhookToken.generateToken() : null;
   const callbackUrl = activeGateway.provider === 'hubtel'
-    ? `${base}/portal/gateway-webhook/hubtel`
+    ? `${base}/portal/gateway-webhook/hubtel?wt=${hubtelToken.raw}`
     : `${base}/portal/gateway-callback/${activeGateway.provider}`;
 
   try {
@@ -156,9 +160,9 @@ router.post('/:siteId/buy-voucher', asyncHandler(async (req, res) => {
     });
 
     await pool.query(
-      `INSERT INTO voucher_orders (tenant_id, site_id, package_id, customer_email, customer_phone, provider, provider_reference)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [tenantId, siteId, packageId, email || null, phone || null, checkout.provider, checkout.reference]
+      `INSERT INTO voucher_orders (tenant_id, site_id, package_id, customer_email, customer_phone, provider, provider_reference, webhook_token_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [tenantId, siteId, packageId, email || null, phone || null, checkout.provider, checkout.reference, hubtelToken?.hash || null]
     );
 
     res.json({ checkoutUrl: checkout.checkoutUrl, provider: checkout.provider, reference: checkout.reference });
@@ -207,6 +211,12 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
 // SMS (handled in fulfillOrder) is the actual delivery channel for Hubtel
 // orders. Logging the raw payload since webhook field names are worth
 // double-checking against your live Hubtel account before fully trusting.
+//
+// SECURITY: Hubtel has no signature scheme on this webhook, so the `wt`
+// query param (see utils/webhookToken.js) is the only thing standing
+// between this endpoint and anyone who's ever called buy-voucher - which
+// hands the same `reference` this webhook keys off of straight back in
+// its own response. Reject outright if it's missing or doesn't match.
 router.post('/gateway-webhook/hubtel', asyncHandler(async (req, res) => {
   logger.info('Hubtel webhook received', { body: req.body });
   const interpreted = hubtelGateway.interpretWebhook(req.body);
@@ -221,6 +231,11 @@ router.post('/gateway-webhook/hubtel', asyncHandler(async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: 'Order not found' });
   const order = rows[0];
+
+  if (!webhookToken.tokensMatch(req.query.wt, order.webhook_token_hash)) {
+    logger.error('Hubtel webhook token mismatch - possible forged callback', { reference: interpreted.reference });
+    return res.status(401).json({ error: 'Invalid or missing webhook token' });
+  }
 
   if (order.status === 'paid') return res.json({ ok: true, note: 'already fulfilled' });
 

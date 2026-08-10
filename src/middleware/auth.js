@@ -6,7 +6,10 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Missing token' });
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    // algorithms pinned explicitly - defense in depth against algorithm-
+    // confusion style attacks, even though jsonwebtoken 9.x already
+    // rejects an unsigned/`none` token by default.
+    const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     req.tenantId = payload.tenantId;
     req.userId = payload.userId;
     req.role = payload.role;
@@ -26,7 +29,7 @@ function requireOwnerAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Not authorized' });
 
   try {
-    const payload = jwt.verify(token, process.env.OWNER_JWT_SECRET);
+    const payload = jwt.verify(token, process.env.OWNER_JWT_SECRET, { algorithms: ['HS256'] });
     if (payload.role !== 'owner') throw new Error('wrong role');
     next();
   } catch (err) {
