@@ -128,6 +128,10 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
 });
 
+app.get('/pppoe', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'pppoe.html'));
+});
+
 app.get('/license', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'license.html'));
 });
@@ -315,3 +319,19 @@ setInterval(() => {
 setTimeout(() => {
   subscriptionBilling.runMonthlyBilling().catch((err) => logger.error('Monthly billing run failed', { message: err.message }));
 }, 60 * 1000);
+
+// --- PPPoE overdue/suspension enforcement ---
+// Separate job, separate interval, from the platform-license billing above
+// - this one enforces individual PPPoE subscriber due dates (overdue ->
+// grace period -> router suspension), not the tenant's own platform
+// subscription. See services/pppoeBilling.js for what it does and does not
+// do yet (no auto-charge - reactivation is a manual/admin-recorded payment
+// for now).
+const pppoeBilling = require('./services/pppoeBilling');
+const PPPOE_BILLING_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours - daily granularity (due dates) doesn't need tighter polling
+setInterval(() => {
+  pppoeBilling.runPppoeBillingPass().catch((err) => logger.error('PPPoE billing pass failed', { message: err.message }));
+}, PPPOE_BILLING_INTERVAL_MS);
+setTimeout(() => {
+  pppoeBilling.runPppoeBillingPass().catch((err) => logger.error('PPPoE billing pass failed', { message: err.message }));
+}, 90 * 1000);

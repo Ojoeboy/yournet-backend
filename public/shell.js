@@ -8,6 +8,7 @@
     { key: 'dashboard', href: '/dashboard.html', icon: '\u25C9', label: 'Dashboard' },
     { key: 'setup', href: '/admin', icon: '\u2699', label: 'Setup' },
     { key: 'vouchers', href: '/print.html', icon: '\u2637', label: 'Vouchers' },
+    { key: 'pppoe', href: '/pppoe', icon: '\u21C4', label: 'PPPoE' },
     { key: 'billing', href: '/billing.html', icon: '\u26A1', label: 'Billing' },
   ];
 

@@ -73,6 +73,21 @@ async function listGateways(tenantId) {
   return rows;
 }
 
+/**
+ * Remove a tenant's saved credentials for one provider entirely (not just
+ * deactivate). If that provider was the active gateway, checkout is left
+ * with none active - callers should make this clear to the tenant, since
+ * their portal's "buy voucher" flow stops working until they activate
+ * another configured provider.
+ */
+async function deleteGatewayConfig(tenantId, provider) {
+  const { rows } = await pool.query(
+    `DELETE FROM payment_gateways WHERE tenant_id=$1 AND provider=$2 RETURNING id, provider, is_active`,
+    [tenantId, provider]
+  );
+  return rows[0] || null;
+}
+
 async function getActiveGateway(tenantId) {
   const { rows } = await pool.query(
     `SELECT * FROM payment_gateways WHERE tenant_id=$1 AND is_active=true LIMIT 1`,
@@ -142,4 +157,4 @@ async function verifyCheckout(tenantId, provider, reference) {
   throw new Error(`verifyCheckout not applicable for provider: ${provider}`);
 }
 
-module.exports = { saveGatewayConfig, setActiveGateway, listGateways, getActiveGateway, initializeCheckout, verifyCheckout };
+module.exports = { saveGatewayConfig, setActiveGateway, deleteGatewayConfig, listGateways, getActiveGateway, initializeCheckout, verifyCheckout };

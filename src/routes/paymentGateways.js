@@ -48,4 +48,14 @@ router.post('/:provider/activate', asyncHandler(async (req, res) => {
   res.json(result);
 }));
 
+router.delete('/:provider', asyncHandler(async (req, res) => {
+  const { provider } = req.params;
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    return res.status(400).json({ error: `provider must be one of: ${SUPPORTED_PROVIDERS.join(', ')}` });
+  }
+  const deleted = await gatewayService.deleteGatewayConfig(req.tenantId, provider);
+  if (!deleted) return res.status(404).json({ error: 'That provider is not configured.' });
+  res.json({ ok: true, provider, wasActive: deleted.is_active });
+}));
+
 module.exports = router;

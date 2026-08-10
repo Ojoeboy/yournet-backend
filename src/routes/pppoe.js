@@ -309,4 +309,79 @@ router.delete('/subscribers/:id', asyncHandler(async (req, res) => {
   res.json(toPublicSubscriber(rows[0]));
 }));
 
+router.post('/subscribers/:id/record-payment', asyncHandler(async (req, res) => {
+  const sub = await loadTenantSubscriber(req.tenantId, req.params.id);
+  if (!sub) return res.status(404).json({ error: 'Subscriber not found.' });
+  if (sub.status === 'cancelled') return res.status(400).json({ error: 'This subscriber was cancelled - create a new subscriber instead.' });
+
+  const { amount, method, reference, periodDays } = req.body;
+  const missingError = validate.required(req.body, ['amount']);
+  if (missingError) return res.status(400).json({ error: missingError });
+  if (!validate.isPositiveNumber(amount)) return res.status(400).json({ error: 'amount must be a positive number.' });
+  if (method !== undefined && !['cash', 'momo', 'bank', 'other'].includes(method)) {
+    return res.status(400).json({ error: "method must be one of 'cash', 'momo', 'bank', or 'other'." });
+  }
+  if (reference !== undefined && !validate.isNonEmptyString(reference, 100)) {
+    return res.status(400).json({ error: 'reference must be text, up to 100 characters.' });
+  }
+  if (periodDays !== undefined && !validate.isPositiveNumber(periodDays)) {
+    return res.status(400).json({ error: 'periodDays must be a positive number.' });
+  }
+
+  const plan = await loadTenantPlan(req.tenantId, sub.plan_id);
+  const days = periodDays || plan?.billing_period_days || 30;
+
+  // If the subscriber is caught up (or ahead), a renewal extends from their
+  // CURRENT due date, so the customer keeps whatever paid time they had left
+  // rather than losing it. If they're overdue, extend from today instead -
+  // renewing an overdue account shouldn't backdate the new period into the
+  // time they were already lapsed.
+  const { rows } = await pool.query(
+    `UPDATE pppoe_subscribers SET
+       next_due_date = GREATEST(next_due_date, CURRENT_DATE) + ($1 || ' days')::interval,
+       last_payment_at = now(),
+       updated_at = now()
+     WHERE id=$2 AND tenant_id=$3
+     RETURNING *`,
+    [days, req.params.id, req.tenantId]
+  );
+  const updated = rows[0];
+
+  await pool.query(
+    `INSERT INTO pppoe_payments (tenant_id, subscriber_id, amount, provider, provider_reference, status, period_start, period_end)
+     VALUES ($1,$2,$3,$4,$5,'paid',CURRENT_DATE,$6)`,
+    [req.tenantId, req.params.id, amount, method || 'manual', reference || null, updated.next_due_date]
+  );
+
+  // A suspended/overdue account that just paid should reconnect right
+  // away, not wait for the next billing pass to notice.
+  if (sub.status === 'suspended' || sub.status === 'overdue') {
+    const siteResult = await loadTenantMikrotikSite(req.tenantId, sub.site_id);
+    if (!siteResult.error) {
+      try {
+        await mikrotik.setPppoeSecretEnabled(siteResult.site, sub.username, true);
+      } catch (err) {
+        logger.error('Could not re-enable PPPoE secret after payment', { subscriber_id: sub.id, message: err.message });
+      }
+    }
+    const { rows: reactivated } = await pool.query(
+      `UPDATE pppoe_subscribers SET status='active', updated_at=now() WHERE id=$1 AND tenant_id=$2 RETURNING *`,
+      [req.params.id, req.tenantId]
+    );
+    return res.json(toPublicSubscriber(reactivated[0]));
+  }
+
+  res.json(toPublicSubscriber(updated));
+}));
+
+router.get('/subscribers/:id/payments', asyncHandler(async (req, res) => {
+  const sub = await loadTenantSubscriber(req.tenantId, req.params.id);
+  if (!sub) return res.status(404).json({ error: 'Subscriber not found.' });
+  const { rows } = await pool.query(
+    `SELECT * FROM pppoe_payments WHERE subscriber_id=$1 AND tenant_id=$2 ORDER BY created_at DESC LIMIT 200`,
+    [req.params.id, req.tenantId]
+  );
+  res.json(rows);
+}));
+
 module.exports = router;

@@ -326,7 +326,19 @@
   <input id="pkgLabel" placeholder="6 Hours">
   <div class="row">
     <div><label data-i18n="priceLabel">Price (GHS)</label><input id="pkgPrice" placeholder="5"></div>
-    <div><label data-i18n="durationLabel">Duration (minutes)</label><input id="pkgDuration" placeholder="360"></div>
+    <div>
+      <label data-i18n="durationLabel">Duration</label>
+      <div class="row" style="gap:6px">
+        <input id="pkgDurationValue" placeholder="6" style="flex:1;min-width:70px">
+        <select id="pkgDurationUnit" style="flex:1;min-width:110px">
+          <option value="minutes">Minutes</option>
+          <option value="hours" selected>Hours</option>
+          <option value="days">Days</option>
+          <option value="months">Months</option>
+          <option value="years">Years</option>
+        </select>
+      </div>
+    </div>
   </div>
   <div class="row">
     <div><label data-i18n="speedDownLabel">Speed down (e.g. 10M)</label><input id="pkgDown" placeholder="10M"></div>
@@ -334,6 +346,16 @@
   </div>
   <button onclick="addPackage()" data-i18n="savePackageBtn">Save package</button>
   <div class="msg" id="package-msg"></div>
+
+  <h2 style="margin-top:24px" data-i18n="existingPackagesTitle">Existing packages</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Label</th><th>Price</th><th>Duration</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="packageRows"></tbody>
+    </table>
+  </div>
 </div>
 
 <!-- STEP 4: Vouchers -->
@@ -630,20 +652,92 @@
     }
   }
 
+  const DURATION_MULTIPLIERS = { minutes: 1, hours: 60, days: 1440, months: 43200, years: 525600 };
+
   async function addPackage() {
     try {
+      const value = Number(document.getElementById('pkgDurationValue').value);
+      const unit = document.getElementById('pkgDurationUnit').value;
+      if (!value || value <= 0) throw new Error('Enter a duration greater than 0.');
+      const durationMinutes = Math.round(value * DURATION_MULTIPLIERS[unit]);
+
       await api('/api/packages', 'POST', {
         label: document.getElementById('pkgLabel').value,
         price: Number(document.getElementById('pkgPrice').value),
-        durationMinutes: Number(document.getElementById('pkgDuration').value),
+        durationMinutes,
         rateLimitDown: document.getElementById('pkgDown').value || null,
         rateLimitUp: document.getElementById('pkgUp').value || null,
       });
       showMsg('package-msg', 'Package saved.', 'ok');
+      document.getElementById('pkgLabel').value = '';
+      document.getElementById('pkgPrice').value = '';
+      document.getElementById('pkgDurationValue').value = '';
+      document.getElementById('pkgDown').value = '';
+      document.getElementById('pkgUp').value = '';
       loadSitesAndPackages();
     } catch (err) {
       showMsg('package-msg', err.message, 'err');
     }
+  }
+
+  // Renders duration back into whichever unit divides evenly and gives the
+  // smallest whole number - so a package saved as "2 days" shows as
+  // "2 days", not "2880 minutes".
+  function formatDuration(minutes) {
+    const units = [['years', 525600], ['months', 43200], ['days', 1440], ['hours', 60], ['minutes', 1]];
+    for (const [name, mult] of units) {
+      if (minutes % mult === 0 && minutes / mult >= 1 && (name === 'minutes' || minutes / mult < (name === 'hours' ? 48 : name === 'days' ? 62 : 100))) {
+        const n = minutes / mult;
+        return `${n} ${name === 'minutes' && n === 1 ? 'minute' : name}`;
+      }
+    }
+    return `${minutes} minutes`;
+  }
+
+  async function loadPackageList() {
+    try {
+      const packages = await api('/api/packages?all=true', 'GET');
+      const tbody = document.getElementById('packageRows');
+      if (!tbody) return;
+      tbody.innerHTML = packages.map(p => `
+        <tr${p.active ? '' : ' style="opacity:.5"'}>
+          <td>${escapeHtmlAdmin(p.label)}</td>
+          <td>GHS ${Number(p.price).toFixed(2)}</td>
+          <td>${formatDuration(p.duration_minutes)}</td>
+          <td>${p.active ? 'Active' : 'Inactive'}</td>
+          <td style="white-space:nowrap">
+            <button class="secondary" style="padding:6px 10px;font-size:12px" onclick="togglePackageActive('${p.id}', ${!p.active})">${p.active ? 'Deactivate' : 'Activate'}</button>
+            <button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" onclick="deletePackage('${p.id}')">Delete</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5">No packages yet.</td></tr>';
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  async function togglePackageActive(id, active) {
+    try {
+      await api(`/api/packages/${id}`, 'PATCH', { active });
+      loadSitesAndPackages();
+    } catch (err) {
+      showMsg('package-msg', err.message, 'err');
+    }
+  }
+
+  async function deletePackage(id) {
+    if (!confirm('Delete this package? This only works if it has never been used for a voucher.')) return;
+    try {
+      await api(`/api/packages/${id}`, 'DELETE');
+      showMsg('package-msg', 'Package deleted.', 'ok');
+      loadSitesAndPackages();
+    } catch (err) {
+      // Backend returns a clear 409 explaining to deactivate instead when
+      // the package is already in use - surface that message as-is.
+      showMsg('package-msg', err.message, 'err');
+    }
+  }
+
+  function escapeHtmlAdmin(str) {
+    return String(str ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   }
 
   async function loadSitesAndPackages() {
@@ -659,6 +753,7 @@
       const packages = await api('/api/packages', 'GET');
       const pkgSelect = document.getElementById('voucherPackage');
       pkgSelect.innerHTML = packages.map(p => `<option value="${p.id}">${p.label} - GHS ${p.price}</option>`).join('');
+      loadPackageList();
     } catch (err) { /* not logged in yet */ }
   }
 
@@ -828,6 +923,20 @@
     }
   }
 
+  async function deleteGateway(provider, wasActive) {
+    const warning = wasActive
+      ? `${provider} is your ACTIVE gateway - deleting it will stop customers from paying online until you set up another one. Delete anyway?`
+      : `Delete saved ${provider} credentials? You'll need to re-enter them to use it again.`;
+    if (!confirm(warning)) return;
+    try {
+      await api(`/api/payment-gateways/${provider}`, 'DELETE');
+      showMsg('gateway-msg', provider + ' credentials deleted.', 'ok');
+      loadGateways();
+    } catch (err) {
+      showMsg('gateway-msg', err.message, 'err');
+    }
+  }
+
   async function loadGateways() {
     try {
       const gateways = await api('/api/payment-gateways', 'GET');
@@ -842,8 +951,10 @@
         table.innerHTML = '<tr><td style="color:#6b8a91">No gateway linked yet.</td></tr>';
         return;
       }
-      table.innerHTML = '<tr><th>Provider</th><th>Status</th></tr>' +
-        gateways.map(g => `<tr><td>${g.provider}</td><td>${g.is_active ? '<span class="pill">Active</span>' : 'Configured'}</td></tr>`).join('');
+      table.innerHTML = '<tr><th>Provider</th><th>Status</th><th></th></tr>' +
+        gateways.map(g => `<tr><td>${g.provider}</td><td>${g.is_active ? '<span class="pill">Active</span>' : 'Configured'}</td>` +
+          `<td style="white-space:nowrap"><button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" ` +
+          `onclick="deleteGateway('${g.provider}', ${g.is_active})">Delete</button></td></tr>`).join('');
     } catch (err) { /* not logged in yet */ }
   }
 
