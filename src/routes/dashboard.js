@@ -275,4 +275,30 @@ router.get('/sites/:id/live', asyncHandler(async (req, res) => {
   }
 }));
 
+// Access-point list - CAPsMAN only, so only meaningful for Mikrotik sites.
+// See the big comment on mikrotik.listAccessPoints for why this can come
+// back empty even on a healthy site: it only sees real Mikrotik CAP
+// devices under a CAPsMAN manager, not generic APs bridged to the router.
+router.get('/sites/:id/access-points', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM sites WHERE id=$1 AND tenant_id=$2', [
+    req.params.id, req.tenantId,
+  ]);
+  if (!rows.length) return res.status(404).json({ error: 'Site not found' });
+  const site = rows[0];
+
+  if (site.type !== 'mikrotik') {
+    return res.status(400).json({ error: 'Access-point listing is only available for Mikrotik sites (CAPsMAN).' });
+  }
+
+  try {
+    const result = await mikrotik.listAccessPoints({
+      ...site,
+      mk_password_decrypted: decrypt(site.mk_password_encrypted),
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(502).json({ error: 'Could not reach the router.', detail: err.message });
+  }
+}));
+
 module.exports = router;

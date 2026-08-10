@@ -89,6 +89,15 @@
   </p>
   <label><input type="checkbox" id="routerHasWifi" style="width:auto;margin-right:6px"> This router has a built-in WiFi radio</label>
   <div id="wirelessLinksArea" class="hidden">
+    <label>Which wireless menu does this router use?</label>
+    <select id="wirelessSyntax">
+      <option value="legacy">Legacy "Wireless" (RouterOS 6, or RouterOS 7 on older/pre-Wi-Fi 6 chips)</option>
+      <option value="wifi6">WiFi 6/6E "WiFi" package (RouterOS 7, newer 802.11ax chips)</option>
+    </select>
+    <p class="note">
+      Not sure? In Winbox/WebFig, check the Interfaces menu: if it's labeled
+      "Wireless", pick Legacy; if it's labeled "WiFi", pick WiFi 6/6E.
+    </p>
     <div id="linkRows"></div>
     <button type="button" class="secondary" onclick="addLinkRow()">+ Add a wireless-connected AP</button>
   </div>
@@ -158,6 +167,7 @@
     const wiredPorts = document.getElementById('wiredPorts').value
       .split(',').map(s => s.trim()).filter(Boolean).map(Number);
     const routerHasWifi = document.getElementById('routerHasWifi').checked;
+    const wirelessSyntax = document.getElementById('wirelessSyntax').value;
     const wirelessLinks = routerHasWifi
       ? Array.from(document.querySelectorAll('#linkRows .link-row')).map(row => ({
           name: row.querySelector('.link-name').value,
@@ -175,6 +185,7 @@
       pppoePassword: document.getElementById('pppoePassword').value,
       wiredPorts,
       routerHasWifi,
+      wirelessSyntax,
       wirelessLinks,
     };
 

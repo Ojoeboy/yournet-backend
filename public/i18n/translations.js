@@ -15,6 +15,12 @@ window.YOURNET_I18N = {
     es: 'Español',
     pt: 'Português',
     sw: 'Kiswahili',
+    zh: '中文',
+    ru: 'Русский',
+    ja: '日本語',
+    de: 'Deutsch',
+    hi: 'हिन्दी',
+    ar: 'العربية',
   },
 
   en: {
@@ -52,6 +58,8 @@ window.YOURNET_I18N = {
     hotspotProfileLabel: 'Hotspot profile', routerUsernameLabel: 'Router API username',
     routerPasswordLabel: 'Router API password', saveSiteBtn: 'Save site',
     testConnectionBtn: 'Test connection', rscWizardBtn: 'Mikrotik config wizard',
+    mkUseTlsLabel: 'Connect over API-SSL (encrypted, port 8729) instead of the plain API',
+    mkUseTlsHint: "Only turn this on if API-SSL is enabled on the router and the plain API is disabled. The connection won't verify the router's certificate (RouterOS's API-SSL certs are self-signed), so this protects the traffic in transit but not against a swapped router.",
 
     // Admin - packages
     step3Title: 'Step 3 - Create a package', pkgLabelLabel: 'Label',
@@ -366,5 +374,341 @@ window.YOURNET_I18N = {
     resetYourPassword: 'Weka upya nenosiri lako', accountEmail: 'Barua pepe ya akaunti yako',
     sendResetLink: 'Tuma kiungo cha kuweka upya', setNewPassword: 'Weka nenosiri jipya',
     newPasswordPlaceholder: 'Nenosiri jipya', updatePassword: 'Sasisha nenosiri',
+  },
+
+  zh: {
+    connect: '连接', save: '保存', cancel: '取消', download: '下载',
+    print: '打印', refresh: '刷新', login: '登录', logout: '退出登录',
+    email: '电子邮箱', password: '密码', name: '姓名', phone: '电话号码',
+    businessName: '企业名称', submit: '提交', loading: '加载中...',
+
+    portalTitle: 'YourNet WiFi', enterCode: '请输入您的代金券代码',
+    typeCodeHint: '输入卡片或收据上的代码即可上网。',
+    voucherCodeLabel: '代金券代码', connectBtn: '连接',
+    connectedTitle: '已连接！', connectedSub: '尽情享受您的网络吧。',
+    errNotFound: '未识别该代码。',
+    errAlreadyUsed: '该代码已被使用。',
+    errUnsupportedSite: '此站点配置不正确，请联系WiFi运营商。',
+    errNetwork: '无法连接到网络设备，请稍后重试。',
+    errMerakiNoGrantUrl: '此连接未正确通过WiFi登录页面。请重新连接WiFi后再试。',
+    enterFullCode: '请输入完整的代金券代码。', poweredBy: '技术支持：YourNet Control',
+
+    step1Title: '第一步 - 您的账户', licenseKeyLabel: '许可证密钥',
+    createAccountBtn: '创建账户', loginInsteadBtn: '改为登录',
+    needKeyText: '需要密钥吗？', getOneHere: '点击这里获取',
+    forgotPasswordText: '忘记密码了吗？', resetIt: '重置密码',
+
+    step2Title: '第二步 - 添加您的Mikrotik路由器', siteNameLabel: '站点名称',
+    routerIpLabel: '路由器IP地址', apiPortLabel: 'API端口',
+    hotspotProfileLabel: '热点配置', routerUsernameLabel: '路由器API用户名',
+    routerPasswordLabel: '路由器API密码', saveSiteBtn: '保存站点',
+    testConnectionBtn: '测试连接', rscWizardBtn: 'Mikrotik配置向导',
+
+    step3Title: '第三步 - 创建套餐', pkgLabelLabel: '标签',
+    priceLabel: '价格（GHS）', durationLabel: '时长（分钟）',
+    speedDownLabel: '下载速度（例如10M）', speedUpLabel: '上传速度（例如4M）',
+    savePackageBtn: '保存套餐',
+
+    step4Title: '第四步 - 生成代金券', packageLabel: '套餐', siteLabel: '站点',
+    quantityLabel: '数量？', generateBtn: '生成',
+
+    ownIt: '获取YourNet Control', oneTime: '以激活',
+    chooseHowToPay: '选择支付方式', payNowBtn: '立即支付',
+    autoKeyNote: '付款确认后，您的激活密钥将自动生成。',
+    noPaymentMethodsYet: '暂无可用的支付方式',
+
+    dashboardTitle: '仪表盘', realNumbers: '来自您数据库的真实数据 - 随时刷新。',
+    totalRevenue: '总收入', vouchersSold: '已售代金券', unusedVouchers: '未使用代金券',
+    totalGenerated: '总生成量', topPackagesTitle: '热门套餐', sitesTitle: '站点',
+    agentsTitle: '代理商', agentNamePlaceholder: '代理商姓名', commissionPlaceholder: '佣金百分比',
+    addAgentBtn: '添加代理商',
+
+    choosePlan: '选择套餐', perMonth: '/月',
+
+    settlementTitle: '代理结算单', loadBtn: '加载',
+
+    resetYourPassword: '重置您的密码', accountEmail: '您的账户邮箱',
+    sendResetLink: '发送重置链接', setNewPassword: '设置新密码',
+    newPasswordPlaceholder: '新密码', updatePassword: '更新密码',
+  },
+
+  ru: {
+    connect: 'Подключиться', save: 'Сохранить', cancel: 'Отмена', download: 'Скачать',
+    print: 'Печать', refresh: 'Обновить', login: 'Войти', logout: 'Выйти',
+    email: 'Электронная почта', password: 'Пароль', name: 'Имя', phone: 'Номер телефона',
+    businessName: 'Название компании', submit: 'Отправить', loading: 'Загрузка...',
+
+    portalTitle: 'YourNet WiFi', enterCode: 'Введите код вашего вучера',
+    typeCodeHint: 'Введите код с карты или квитанции, чтобы подключиться к интернету.',
+    voucherCodeLabel: 'Код вучера', connectBtn: 'Подключиться',
+    connectedTitle: 'Вы подключены!', connectedSub: 'Наслаждайтесь доступом в интернет.',
+    errNotFound: 'Этот код не распознан.',
+    errAlreadyUsed: 'Этот код уже был использован.',
+    errUnsupportedSite: 'Этот сайт настроен неправильно. Обратитесь к оператору WiFi.',
+    errNetwork: 'Не удалось подключиться к сетевому устройству. Попробуйте снова через некоторое время.',
+    errMerakiNoGrantUrl: 'Это подключение не прошло правильно через страницу входа WiFi. Переподключитесь к WiFi и попробуйте снова.',
+    enterFullCode: 'Введите полный код вучера.', poweredBy: 'Работает на YourNet Control',
+
+    step1Title: 'Шаг 1 - Ваш аккаунт', licenseKeyLabel: 'Лицензионный ключ',
+    createAccountBtn: 'Создать аккаунт', loginInsteadBtn: 'Войти вместо этого',
+    needKeyText: 'Нужен ключ?', getOneHere: 'Получить здесь',
+    forgotPasswordText: 'Забыли пароль?', resetIt: 'Сбросить',
+
+    step2Title: 'Шаг 2 - Добавьте ваш роутер Mikrotik', siteNameLabel: 'Название сайта',
+    routerIpLabel: 'IP-адрес роутера', apiPortLabel: 'API-порт',
+    hotspotProfileLabel: 'Профиль хотспота', routerUsernameLabel: 'Имя пользователя API роутера',
+    routerPasswordLabel: 'Пароль API роутера', saveSiteBtn: 'Сохранить сайт',
+    testConnectionBtn: 'Проверить подключение', rscWizardBtn: 'Мастер настройки Mikrotik',
+
+    step3Title: 'Шаг 3 - Создайте пакет', pkgLabelLabel: 'Название',
+    priceLabel: 'Цена (GHS)', durationLabel: 'Продолжительность (минуты)',
+    speedDownLabel: 'Скорость загрузки (напр. 10M)', speedUpLabel: 'Скорость отдачи (напр. 4M)',
+    savePackageBtn: 'Сохранить пакет',
+
+    step4Title: 'Шаг 4 - Создать вучеры', packageLabel: 'Пакет', siteLabel: 'Сайт',
+    quantityLabel: 'Сколько?', generateBtn: 'Создать',
+
+    ownIt: 'Получить YourNet Control', oneTime: 'для активации',
+    chooseHowToPay: 'Выберите способ оплаты', payNowBtn: 'Оплатить сейчас',
+    autoKeyNote: 'Ваш ключ активации создаётся автоматически сразу после подтверждения оплаты.',
+    noPaymentMethodsYet: 'Способы оплаты пока недоступны',
+
+    dashboardTitle: 'Панель управления', realNumbers: 'Реальные данные из вашей базы данных - обновляйте в любой момент.',
+    totalRevenue: 'Общий доход', vouchersSold: 'Продано вучеров', unusedVouchers: 'Неиспользованные вучеры',
+    totalGenerated: 'Всего создано', topPackagesTitle: 'Популярные пакеты', sitesTitle: 'Сайты',
+    agentsTitle: 'Агенты', agentNamePlaceholder: 'Имя агента', commissionPlaceholder: 'Комиссия %',
+    addAgentBtn: 'Добавить агента',
+
+    choosePlan: 'Выберите план', perMonth: '/ месяц',
+
+    settlementTitle: 'Расчётный лист агента', loadBtn: 'Загрузить',
+
+    resetYourPassword: 'Сбросить пароль', accountEmail: 'Email вашего аккаунта',
+    sendResetLink: 'Отправить ссылку для сброса', setNewPassword: 'Установить новый пароль',
+    newPasswordPlaceholder: 'Новый пароль', updatePassword: 'Обновить пароль',
+  },
+
+  ja: {
+    connect: '接続', save: '保存', cancel: 'キャンセル', download: 'ダウンロード',
+    print: '印刷', refresh: '更新', login: 'ログイン', logout: 'ログアウト',
+    email: 'メールアドレス', password: 'パスワード', name: '名前', phone: '電話番号',
+    businessName: '事業者名', submit: '送信', loading: '読み込み中...',
+
+    portalTitle: 'YourNet WiFi', enterCode: 'バウチャーコードを入力してください',
+    typeCodeHint: 'カードまたはレシートに記載のコードを入力してインターネットに接続してください。',
+    voucherCodeLabel: 'バウチャーコード', connectBtn: '接続',
+    connectedTitle: '接続しました！', connectedSub: 'インターネットをお楽しみください。',
+    errNotFound: 'そのコードは認識されませんでした。',
+    errAlreadyUsed: 'このコードは既に使用されています。',
+    errUnsupportedSite: 'このサイトは正しく設定されていません。WiFi運営者にお問い合わせください。',
+    errNetwork: 'ネットワーク機器に接続できませんでした。しばらくしてから再度お試しください。',
+    errMerakiNoGrantUrl: 'この接続はWiFiログインページを正しく経由していません。WiFiに再接続してから再度お試しください。',
+    enterFullCode: 'バウチャーコードを全て入力してください。', poweredBy: 'Powered by YourNet Control',
+
+    step1Title: 'ステップ1 - アカウント', licenseKeyLabel: 'ライセンスキー',
+    createAccountBtn: 'アカウントを作成', loginInsteadBtn: '代わりにログイン',
+    needKeyText: 'キーが必要ですか？', getOneHere: 'こちらで取得',
+    forgotPasswordText: 'パスワードをお忘れですか？', resetIt: '再設定する',
+
+    step2Title: 'ステップ2 - Mikrotikルーターを追加', siteNameLabel: 'サイト名',
+    routerIpLabel: 'ルーターのIPアドレス', apiPortLabel: 'APIポート',
+    hotspotProfileLabel: 'ホットスポットプロファイル', routerUsernameLabel: 'ルーターAPIユーザー名',
+    routerPasswordLabel: 'ルーターAPIパスワード', saveSiteBtn: 'サイトを保存',
+    testConnectionBtn: '接続テスト', rscWizardBtn: 'Mikrotik設定ウィザード',
+
+    step3Title: 'ステップ3 - パッケージを作成', pkgLabelLabel: 'ラベル',
+    priceLabel: '価格（GHS）', durationLabel: '期間（分）',
+    speedDownLabel: 'ダウンロード速度（例：10M）', speedUpLabel: 'アップロード速度（例：4M）',
+    savePackageBtn: 'パッケージを保存',
+
+    step4Title: 'ステップ4 - バウチャーを生成', packageLabel: 'パッケージ', siteLabel: 'サイト',
+    quantityLabel: '数量は？', generateBtn: '生成',
+
+    ownIt: 'YourNet Controlを入手', oneTime: 'で有効化',
+    chooseHowToPay: '支払い方法を選択', payNowBtn: '今すぐ支払う',
+    autoKeyNote: 'お支払いが確認されると、アクティベーションキーが自動的に生成されます。',
+    noPaymentMethodsYet: '利用可能な支払い方法がまだありません',
+
+    dashboardTitle: 'ダッシュボード', realNumbers: 'データベースの実データです - いつでも更新できます。',
+    totalRevenue: '総収益', vouchersSold: '販売済みバウチャー', unusedVouchers: '未使用バウチャー',
+    totalGenerated: '総生成数', topPackagesTitle: '人気パッケージ', sitesTitle: 'サイト',
+    agentsTitle: '代理店', agentNamePlaceholder: '代理店名', commissionPlaceholder: '手数料 %',
+    addAgentBtn: '代理店を追加',
+
+    choosePlan: 'プランを選択', perMonth: '/ 月',
+
+    settlementTitle: '代理店決済シート', loadBtn: '読み込む',
+
+    resetYourPassword: 'パスワードを再設定', accountEmail: 'アカウントのメールアドレス',
+    sendResetLink: '再設定リンクを送信', setNewPassword: '新しいパスワードを設定',
+    newPasswordPlaceholder: '新しいパスワード', updatePassword: 'パスワードを更新',
+  },
+
+  de: {
+    connect: 'Verbinden', save: 'Speichern', cancel: 'Abbrechen', download: 'Herunterladen',
+    print: 'Drucken', refresh: 'Aktualisieren', login: 'Anmelden', logout: 'Abmelden',
+    email: 'E-Mail', password: 'Passwort', name: 'Name', phone: 'Telefonnummer',
+    businessName: 'Firmenname', submit: 'Absenden', loading: 'Wird geladen...',
+
+    portalTitle: 'YourNet WiFi', enterCode: 'Gib deinen Gutscheincode ein',
+    typeCodeHint: 'Gib den Code von deiner Karte oder Quittung ein, um online zu gehen.',
+    voucherCodeLabel: 'Gutscheincode', connectBtn: 'Verbinden',
+    connectedTitle: 'Du bist verbunden!', connectedSub: 'Viel Spaß mit deinem Internetzugang.',
+    errNotFound: 'Dieser Code wurde nicht erkannt.',
+    errAlreadyUsed: 'Dieser Code wurde bereits verwendet.',
+    errUnsupportedSite: 'Diese Website ist nicht korrekt konfiguriert. Wende dich an den WiFi-Betreiber.',
+    errNetwork: 'Das Netzwerkgerät konnte nicht erreicht werden. Bitte versuche es in Kürze erneut.',
+    errMerakiNoGrantUrl: 'Diese Verbindung ist nicht korrekt über die WiFi-Anmeldeseite erfolgt. Verbinde dich erneut mit dem WiFi und versuche es noch einmal.',
+    enterFullCode: 'Gib deinen vollständigen Gutscheincode ein.', poweredBy: 'Bereitgestellt von YourNet Control',
+
+    step1Title: 'Schritt 1 - Dein Konto', licenseKeyLabel: 'Lizenzschlüssel',
+    createAccountBtn: 'Konto erstellen', loginInsteadBtn: 'Stattdessen anmelden',
+    needKeyText: 'Brauchst du einen Schlüssel?', getOneHere: 'Hier bekommen',
+    forgotPasswordText: 'Passwort vergessen?', resetIt: 'Zurücksetzen',
+
+    step2Title: 'Schritt 2 - Füge deinen Mikrotik-Router hinzu', siteNameLabel: 'Standortname',
+    routerIpLabel: 'Router-IP-Adresse', apiPortLabel: 'API-Port',
+    hotspotProfileLabel: 'Hotspot-Profil', routerUsernameLabel: 'Router-API-Benutzername',
+    routerPasswordLabel: 'Router-API-Passwort', saveSiteBtn: 'Standort speichern',
+    testConnectionBtn: 'Verbindung testen', rscWizardBtn: 'Mikrotik-Konfigurationsassistent',
+
+    step3Title: 'Schritt 3 - Paket erstellen', pkgLabelLabel: 'Bezeichnung',
+    priceLabel: 'Preis (GHS)', durationLabel: 'Dauer (Minuten)',
+    speedDownLabel: 'Download-Geschwindigkeit (z. B. 10M)', speedUpLabel: 'Upload-Geschwindigkeit (z. B. 4M)',
+    savePackageBtn: 'Paket speichern',
+
+    step4Title: 'Schritt 4 - Gutscheine erstellen', packageLabel: 'Paket', siteLabel: 'Standort',
+    quantityLabel: 'Wie viele?', generateBtn: 'Erstellen',
+
+    ownIt: 'YourNet Control holen', oneTime: 'zur Aktivierung',
+    chooseHowToPay: 'Zahlungsart wählen', payNowBtn: 'Jetzt bezahlen',
+    autoKeyNote: 'Dein Aktivierungsschlüssel wird automatisch erstellt, sobald die Zahlung bestätigt ist.',
+    noPaymentMethodsYet: 'Noch keine Zahlungsmethoden verfügbar',
+
+    dashboardTitle: 'Dashboard', realNumbers: 'Echte Zahlen aus deiner Datenbank - jederzeit aktualisierbar.',
+    totalRevenue: 'Gesamtumsatz', vouchersSold: 'Verkaufte Gutscheine', unusedVouchers: 'Nicht verwendete Gutscheine',
+    totalGenerated: 'Gesamt erstellt', topPackagesTitle: 'Top-Pakete', sitesTitle: 'Standorte',
+    agentsTitle: 'Vertreter', agentNamePlaceholder: 'Name des Vertreters', commissionPlaceholder: 'Provision %',
+    addAgentBtn: 'Vertreter hinzufügen',
+
+    choosePlan: 'Plan wählen', perMonth: '/ Monat',
+
+    settlementTitle: 'Abrechnungsblatt für Vertreter', loadBtn: 'Laden',
+
+    resetYourPassword: 'Passwort zurücksetzen', accountEmail: 'E-Mail deines Kontos',
+    sendResetLink: 'Zurücksetzungslink senden', setNewPassword: 'Neues Passwort festlegen',
+    newPasswordPlaceholder: 'Neues Passwort', updatePassword: 'Passwort aktualisieren',
+  },
+
+  hi: {
+    connect: 'कनेक्ट करें', save: 'सहेजें', cancel: 'रद्द करें', download: 'डाउनलोड करें',
+    print: 'प्रिंट करें', refresh: 'रीफ्रेश करें', login: 'लॉग इन करें', logout: 'लॉग आउट करें',
+    email: 'ईमेल', password: 'पासवर्ड', name: 'नाम', phone: 'फ़ोन नंबर',
+    businessName: 'बिज़नेस का नाम', submit: 'सबमिट करें', loading: 'लोड हो रहा है...',
+
+    portalTitle: 'YourNet WiFi', enterCode: 'अपना वाउचर कोड दर्ज करें',
+    typeCodeHint: 'ऑनलाइन होने के लिए अपने कार्ड या रसीद पर दिया गया कोड डालें।',
+    voucherCodeLabel: 'वाउचर कोड', connectBtn: 'कनेक्ट करें',
+    connectedTitle: 'आप कनेक्ट हो गए हैं!', connectedSub: 'अपने इंटरनेट एक्सेस का आनंद लें।',
+    errNotFound: 'वह कोड मान्य नहीं है।',
+    errAlreadyUsed: 'यह कोड पहले ही इस्तेमाल किया जा चुका है।',
+    errUnsupportedSite: 'यह साइट सही तरीके से सेट नहीं है। WiFi ऑपरेटर से संपर्क करें।',
+    errNetwork: 'नेटवर्क डिवाइस से कनेक्ट नहीं हो सका। कृपया थोड़ी देर बाद फिर से कोशिश करें।',
+    errMerakiNoGrantUrl: 'यह कनेक्शन WiFi लॉगिन पेज से सही तरीके से नहीं हुआ। कृपया WiFi से फिर से जुड़ें और फिर कोशिश करें।',
+    enterFullCode: 'अपना पूरा वाउचर कोड दर्ज करें।', poweredBy: 'YourNet Control द्वारा संचालित',
+
+    step1Title: 'चरण 1 - आपका खाता', licenseKeyLabel: 'लाइसेंस कुंजी',
+    createAccountBtn: 'खाता बनाएं', loginInsteadBtn: 'इसके बजाय लॉग इन करें',
+    needKeyText: 'कुंजी चाहिए?', getOneHere: 'यहां से लें',
+    forgotPasswordText: 'पासवर्ड भूल गए?', resetIt: 'रीसेट करें',
+
+    step2Title: 'चरण 2 - अपना Mikrotik राउटर जोड़ें', siteNameLabel: 'साइट का नाम',
+    routerIpLabel: 'राउटर IP एड्रेस', apiPortLabel: 'API पोर्ट',
+    hotspotProfileLabel: 'हॉटस्पॉट प्रोफ़ाइल', routerUsernameLabel: 'राउटर API यूज़रनेम',
+    routerPasswordLabel: 'राउटर API पासवर्ड', saveSiteBtn: 'साइट सहेजें',
+    testConnectionBtn: 'कनेक्शन जांचें', rscWizardBtn: 'Mikrotik कॉन्फ़िग विज़ार्ड',
+
+    step3Title: 'चरण 3 - पैकेज बनाएं', pkgLabelLabel: 'लेबल',
+    priceLabel: 'कीमत (GHS)', durationLabel: 'अवधि (मिनट)',
+    speedDownLabel: 'डाउनलोड स्पीड (जैसे 10M)', speedUpLabel: 'अपलोड स्पीड (जैसे 4M)',
+    savePackageBtn: 'पैकेज सहेजें',
+
+    step4Title: 'चरण 4 - वाउचर बनाएं', packageLabel: 'पैकेज', siteLabel: 'साइट',
+    quantityLabel: 'कितने?', generateBtn: 'बनाएं',
+
+    ownIt: 'YourNet Control लें', oneTime: 'सक्रिय करने के लिए',
+    chooseHowToPay: 'भुगतान का तरीका चुनें', payNowBtn: 'अभी भुगतान करें',
+    autoKeyNote: 'भुगतान की पुष्टि होते ही आपकी सक्रियण कुंजी अपने आप बन जाती है।',
+    noPaymentMethodsYet: 'अभी तक कोई भुगतान तरीका उपलब्ध नहीं है',
+
+    dashboardTitle: 'डैशबोर्ड', realNumbers: 'आपके डेटाबेस से वास्तविक आंकड़े - कभी भी रीफ्रेश करें।',
+    totalRevenue: 'कुल आय', vouchersSold: 'बिके हुए वाउचर', unusedVouchers: 'इस्तेमाल न किए गए वाउचर',
+    totalGenerated: 'कुल बनाए गए', topPackagesTitle: 'टॉप पैकेज', sitesTitle: 'साइटें',
+    agentsTitle: 'एजेंट', agentNamePlaceholder: 'एजेंट का नाम', commissionPlaceholder: 'कमीशन %',
+    addAgentBtn: 'एजेंट जोड़ें',
+
+    choosePlan: 'प्लान चुनें', perMonth: '/ महीना',
+
+    settlementTitle: 'एजेंट सेटलमेंट शीट', loadBtn: 'लोड करें',
+
+    resetYourPassword: 'अपना पासवर्ड रीसेट करें', accountEmail: 'आपके खाते का ईमेल',
+    sendResetLink: 'रीसेट लिंक भेजें', setNewPassword: 'नया पासवर्ड सेट करें',
+    newPasswordPlaceholder: 'नया पासवर्ड', updatePassword: 'पासवर्ड अपडेट करें',
+  },
+
+  ar: {
+    connect: 'اتصال', save: 'حفظ', cancel: 'إلغاء', download: 'تحميل',
+    print: 'طباعة', refresh: 'تحديث', login: 'تسجيل الدخول', logout: 'تسجيل الخروج',
+    email: 'البريد الإلكتروني', password: 'كلمة المرور', name: 'الاسم', phone: 'رقم الهاتف',
+    businessName: 'اسم النشاط التجاري', submit: 'إرسال', loading: 'جارٍ التحميل...',
+
+    portalTitle: 'YourNet WiFi', enterCode: 'أدخل رمز القسيمة الخاص بك',
+    typeCodeHint: 'اكتب الرمز الموجود على بطاقتك أو إيصالك للاتصال بالإنترنت.',
+    voucherCodeLabel: 'رمز القسيمة', connectBtn: 'اتصال',
+    connectedTitle: 'أنت متصل الآن!', connectedSub: 'استمتع بالوصول إلى الإنترنت.',
+    errNotFound: 'لم يتم التعرف على هذا الرمز.',
+    errAlreadyUsed: 'تم استخدام هذا الرمز من قبل.',
+    errUnsupportedSite: 'هذا الموقع غير مُهيّأ بشكل صحيح. تواصل مع مشغّل الواي فاي.',
+    errNetwork: 'تعذّر الوصول إلى جهاز الشبكة. حاول مرة أخرى بعد قليل.',
+    errMerakiNoGrantUrl: 'لم يتم هذا الاتصال بشكل صحيح عبر صفحة تسجيل الدخول للواي فاي. أعد الاتصال بالواي فاي وحاول مرة أخرى.',
+    enterFullCode: 'أدخل رمز القسيمة الكامل.', poweredBy: 'بدعم من YourNet Control',
+
+    step1Title: 'الخطوة 1 - حسابك', licenseKeyLabel: 'مفتاح الترخيص',
+    createAccountBtn: 'إنشاء حساب', loginInsteadBtn: 'تسجيل الدخول بدلاً من ذلك',
+    needKeyText: 'تحتاج مفتاحاً؟', getOneHere: 'احصل عليه هنا',
+    forgotPasswordText: 'نسيت كلمة المرور؟', resetIt: 'إعادة تعيينها',
+
+    step2Title: 'الخطوة 2 - أضف جهاز Mikrotik الخاص بك', siteNameLabel: 'اسم الموقع',
+    routerIpLabel: 'عنوان IP للراوتر', apiPortLabel: 'منفذ API',
+    hotspotProfileLabel: 'ملف تعريف نقطة الاتصال', routerUsernameLabel: 'اسم مستخدم API للراوتر',
+    routerPasswordLabel: 'كلمة مرور API للراوتر', saveSiteBtn: 'حفظ الموقع',
+    testConnectionBtn: 'اختبار الاتصال', rscWizardBtn: 'معالج إعداد Mikrotik',
+
+    step3Title: 'الخطوة 3 - إنشاء باقة', pkgLabelLabel: 'التسمية',
+    priceLabel: 'السعر (GHS)', durationLabel: 'المدة (بالدقائق)',
+    speedDownLabel: 'سرعة التنزيل (مثال 10M)', speedUpLabel: 'سرعة الرفع (مثال 4M)',
+    savePackageBtn: 'حفظ الباقة',
+
+    step4Title: 'الخطوة 4 - إنشاء قسائم', packageLabel: 'الباقة', siteLabel: 'الموقع',
+    quantityLabel: 'كم العدد؟', generateBtn: 'إنشاء',
+
+    ownIt: 'احصل على YourNet Control', oneTime: 'للتفعيل',
+    chooseHowToPay: 'اختر طريقة الدفع', payNowBtn: 'ادفع الآن',
+    autoKeyNote: 'يتم إنشاء مفتاح التفعيل الخاص بك تلقائياً بمجرد تأكيد الدفع.',
+    noPaymentMethodsYet: 'لا توجد طرق دفع متاحة حالياً',
+
+    dashboardTitle: 'لوحة التحكم', realNumbers: 'أرقام حقيقية من قاعدة بياناتك - يمكنك التحديث في أي وقت.',
+    totalRevenue: 'الإيرادات الإجمالية', vouchersSold: 'القسائم المُباعة', unusedVouchers: 'القسائم غير المستخدمة',
+    totalGenerated: 'الإجمالي المُنشأ', topPackagesTitle: 'أفضل الباقات', sitesTitle: 'المواقع',
+    agentsTitle: 'الوكلاء', agentNamePlaceholder: 'اسم الوكيل', commissionPlaceholder: 'نسبة العمولة %',
+    addAgentBtn: 'إضافة وكيل',
+
+    choosePlan: 'اختر خطة', perMonth: '/ شهرياً',
+
+    settlementTitle: 'كشف تسوية الوكيل', loadBtn: 'تحميل',
+
+    resetYourPassword: 'إعادة تعيين كلمة المرور', accountEmail: 'البريد الإلكتروني لحسابك',
+    sendResetLink: 'إرسال رابط إعادة التعيين', setNewPassword: 'تعيين كلمة مرور جديدة',
+    newPasswordPlaceholder: 'كلمة مرور جديدة', updatePassword: 'تحديث كلمة المرور',
   },
 };

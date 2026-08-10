@@ -140,6 +140,21 @@
       <div><label data-i18n="apiPortLabel">API port</label><input id="mkPort" value="8728"></div>
       <div><label data-i18n="hotspotProfileLabel">Hotspot profile</label><input id="mkProfile" value="default"></div>
     </div>
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px">
+      <span class="switch">
+        <input type="checkbox" id="mkUseTls" onchange="onMkTlsToggle()">
+        <span class="slider"></span>
+      </span>
+      <span style="text-transform:none;font-size:13px;color:#e8f0f1" data-i18n="mkUseTlsLabel">
+        Connect over API-SSL (encrypted, port 8729) instead of the plain API
+      </span>
+    </label>
+    <p style="font-size:12px;color:#6b8a91" data-i18n="mkUseTlsHint">
+      Only turn this on if API-SSL is enabled on the router and the plain API
+      is disabled. The connection won't verify the router's certificate
+      (RouterOS's API-SSL certs are self-signed), so this protects the
+      traffic in transit but not against a swapped router.
+    </p>
     <label data-i18n="routerUsernameLabel">Router API username</label>
     <input id="mkUser" placeholder="admin">
     <label data-i18n="routerPasswordLabel">Router API password</label>
@@ -339,14 +354,14 @@
 <div class="card hidden" id="gateway-card">
   <h2>Step 5 - Accept online payments (optional)</h2>
   <p style="font-size:12px;color:#6b8a91;margin-bottom:10px">
-    Link your own Paystack, Hubtel, or Flutterwave account so customers can pay online and get a voucher instantly.
+    Link your own Paystack or Hubtel account so customers can pay online and get a voucher instantly.
     Payments go straight to YOUR account, not the platform's.
   </p>
   <label>Provider</label>
   <select id="gwProvider" onchange="renderGatewayFields()">
     <option value="paystack">Paystack</option>
     <option value="hubtel">Hubtel</option>
-    <option value="flutterwave">Flutterwave</option>
+    <option value="flutterwave" id="gwProviderFlutterwaveOpt" style="display:none">Flutterwave</option>
   </select>
 
   <div id="gwFields-paystack" class="gw-fields">
@@ -423,6 +438,18 @@
     const el = document.getElementById(id);
     el.textContent = text;
     el.className = 'msg show ' + type;
+  }
+
+  // Flip the API-port placeholder to match plain (8728) vs API-SSL (8729)
+  // when the TLS switch is toggled - but only if the port field still holds
+  // whichever default it started with, so we never clobber a value the
+  // installer typed in on purpose (e.g. a port-forwarded custom port).
+  function onMkTlsToggle() {
+    const portInput = document.getElementById('mkPort');
+    const useTls = document.getElementById('mkUseTls').checked;
+    if (portInput.value === '8728' || portInput.value === '8729' || portInput.value === '') {
+      portInput.value = useTls ? '8729' : '8728';
+    }
   }
 
   function togglePwd(id) {
@@ -530,12 +557,14 @@
     const type = document.getElementById('siteType').value;
     const payload = { name: document.getElementById('siteName').value, type };
     if (type === 'mikrotik') {
+      const mkUseTls = document.getElementById('mkUseTls').checked;
       payload.mikrotik = {
         host: document.getElementById('mkHost').value,
-        port: Number(document.getElementById('mkPort').value) || 8728,
+        port: Number(document.getElementById('mkPort').value) || (mkUseTls ? 8729 : 8728),
         hotspotProfile: document.getElementById('mkProfile').value,
         username: document.getElementById('mkUser').value,
         password: document.getElementById('mkPass').value,
+        useTls: mkUseTls,
       };
     } else if (type === 'omada') {
       payload.omada = {
@@ -802,6 +831,12 @@
     try {
       const gateways = await api('/api/payment-gateways', 'GET');
       const table = document.getElementById('gatewayTable');
+      // Flutterwave is no longer offered for new setups, but a tenant who
+      // already configured it should still see it as an option here so they
+      // can keep managing it (view status, reactivate, etc).
+      if (gateways.some(g => g.provider === 'flutterwave')) {
+        document.getElementById('gwProviderFlutterwaveOpt').style.display = '';
+      }
       if (!gateways.length) {
         table.innerHTML = '<tr><td style="color:#6b8a91">No gateway linked yet.</td></tr>';
         return;

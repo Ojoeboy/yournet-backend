@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS sites (
   mk_username TEXT,
   mk_password_encrypted TEXT,
   mk_hotspot_profile TEXT DEFAULT 'default',
+  mk_use_tls BOOLEAN NOT NULL DEFAULT false,
 
   omada_base_url TEXT,
   omada_client_id TEXT,
@@ -134,6 +135,14 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_whatsapp_number TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_momo_number TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_momo_name TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_use_rotating_backgrounds BOOLEAN NOT NULL DEFAULT true;
+
+-- Safe to re-run: lets a Mikrotik site connect over API-SSL (port 8729,
+-- encrypted) instead of the plaintext API (port 8728). Defaults to false so
+-- every existing site keeps connecting exactly as before this column
+-- existed. RouterOS's API-SSL certs are typically self-signed, so the
+-- connection code intentionally doesn't verify the cert chain - see
+-- mikrotik.js for that tradeoff.
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS mk_use_tls BOOLEAN NOT NULL DEFAULT false;
 
 -- Safe to re-run: adds UniFi support to a sites table that predates it.
 -- The type CHECK constraint has to be dropped and recreated to allow the

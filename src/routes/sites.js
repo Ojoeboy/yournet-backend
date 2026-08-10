@@ -23,15 +23,16 @@ router.post('/', asyncHandler(async (req, res) => {
 
   const { rows } = await pool.query(
     `INSERT INTO sites (tenant_id, name, type, mk_host, mk_api_port, mk_username,
-       mk_password_encrypted, mk_hotspot_profile, omada_base_url, omada_client_id,
+       mk_password_encrypted, mk_hotspot_profile, mk_use_tls, omada_base_url, omada_client_id,
        omada_client_secret_encrypted, omada_omadac_id, omada_site_id,
        unifi_base_url, unifi_username, unifi_password_encrypted, unifi_site,
        unifi_auth_mode, unifi_api_key_encrypted,
        meraki_dashboard_api_key_encrypted, meraki_network_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id, name, type, status`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id, name, type, status`,
     [
       req.tenantId, name, type,
-      mk?.host, mk?.port || 8728, mk?.username, encrypt(mk?.password), mk?.hotspotProfile,
+      mk?.host, mk?.port || (mk?.useTls ? 8729 : 8728), mk?.username, encrypt(mk?.password), mk?.hotspotProfile,
+      !!mk?.useTls,
       om?.baseUrl, om?.clientId, encrypt(om?.clientSecret), om?.omadacId, om?.siteId,
       uf?.baseUrl, uf?.username, encrypt(uf?.password), uf?.site || 'default',
       uf?.authMode || 'classic', encrypt(uf?.apiKey),
@@ -72,24 +73,26 @@ router.patch('/:id', asyncHandler(async (req, res) => {
        mk_username = COALESCE($4, mk_username),
        mk_password_encrypted = COALESCE($5, mk_password_encrypted),
        mk_hotspot_profile = COALESCE($6, mk_hotspot_profile),
-       omada_base_url = COALESCE($7, omada_base_url),
-       omada_client_id = COALESCE($8, omada_client_id),
-       omada_client_secret_encrypted = COALESCE($9, omada_client_secret_encrypted),
-       omada_omadac_id = COALESCE($10, omada_omadac_id),
-       omada_site_id = COALESCE($11, omada_site_id),
-       unifi_base_url = COALESCE($12, unifi_base_url),
-       unifi_username = COALESCE($13, unifi_username),
-       unifi_password_encrypted = COALESCE($14, unifi_password_encrypted),
-       unifi_site = COALESCE($15, unifi_site),
-       unifi_auth_mode = COALESCE($16, unifi_auth_mode),
-       unifi_api_key_encrypted = COALESCE($17, unifi_api_key_encrypted),
-       meraki_dashboard_api_key_encrypted = COALESCE($18, meraki_dashboard_api_key_encrypted),
-       meraki_network_id = COALESCE($19, meraki_network_id),
+       mk_use_tls = COALESCE($7, mk_use_tls),
+       omada_base_url = COALESCE($8, omada_base_url),
+       omada_client_id = COALESCE($9, omada_client_id),
+       omada_client_secret_encrypted = COALESCE($10, omada_client_secret_encrypted),
+       omada_omadac_id = COALESCE($11, omada_omadac_id),
+       omada_site_id = COALESCE($12, omada_site_id),
+       unifi_base_url = COALESCE($13, unifi_base_url),
+       unifi_username = COALESCE($14, unifi_username),
+       unifi_password_encrypted = COALESCE($15, unifi_password_encrypted),
+       unifi_site = COALESCE($16, unifi_site),
+       unifi_auth_mode = COALESCE($17, unifi_auth_mode),
+       unifi_api_key_encrypted = COALESCE($18, unifi_api_key_encrypted),
+       meraki_dashboard_api_key_encrypted = COALESCE($19, meraki_dashboard_api_key_encrypted),
+       meraki_network_id = COALESCE($20, meraki_network_id),
        status = 'unconfigured'
-     WHERE id=$20 AND tenant_id=$21
+     WHERE id=$21 AND tenant_id=$22
      RETURNING id, name, type, status`,
     [
       name, mk?.host, mk?.port, mk?.username, encrypt(mk?.password), mk?.hotspotProfile,
+      typeof mk?.useTls === 'boolean' ? mk.useTls : null,
       om?.baseUrl, om?.clientId, encrypt(om?.clientSecret), om?.omadacId, om?.siteId,
       uf?.baseUrl, uf?.username, encrypt(uf?.password), uf?.site,
       uf?.authMode, encrypt(uf?.apiKey),
@@ -142,20 +145,35 @@ router.post('/:id/test', asyncHandler(async (req, res) => {
 //   - WAN type: DHCP / static IP / PPPoE (fiber, DSL, some 4G setups)
 //   - Wired AP ports: any number of ethernet ports, not a fixed ether2-5
 //   - Wireless backhaul links: for APs too far to run a cable to, this
-//     generates a WDS station-bridge link per remote AP - the main router
-//     broadcasts a private backhaul SSID, and the remote AP must be
-//     separately configured (once, on that device) to connect to it as a
-//     WDS station. That remote-side setup can't be pushed from here.
+//     generates a backhaul link per remote AP - the main router broadcasts
+//     a private backhaul SSID, and the remote AP must be separately
+//     configured (once, on that device) to connect to it as a station. That
+//     remote-side setup can't be pushed from here.
 //
 // HONEST LIMITS, stated plainly rather than glossed over:
-//   - Wireless config uses the legacy `/interface wireless` syntax, which
-//     covers most RouterOS 6 devices and many RouterOS 7 devices on
-//     older wireless chips. Newer Wi-Fi 6/6E hardware on RouterOS 7 often
-//     uses the newer `/interface wifi` (wifiwave2) syntax instead - if
-//     your router uses that, this section needs adapting, not copy-paste.
+//   - Wireless config comes in two syntaxes, chosen via wirelessSyntax:
+//       'legacy' - the `/interface wireless` menu, for RouterOS 6 and most
+//                  RouterOS 7 devices on older (pre-Wi-Fi 6) wireless chips.
+//                  Uses a WDS station-bridge link per remote AP.
+//       'wifi6'  - RouterOS 7's newer unified `/interface wifi` package
+//                  (Wi-Fi 6/6E chips, e.g. the wifi-qcom driver). Uses
+//                  native AP/station-bridge mode instead of WDS. The
+//                  property names here (configuration.mode, security.*,
+//                  datapath.bridge) are confirmed against MikroTik's own
+//                  documentation, not guessed - but this codebase hasn't
+//                  run it against real Wi-Fi 6/6E hardware, so treat it as
+//                  a strong starting point to review, not a proven
+//                  drop-in. If a router only has one built-in radio, only
+//                  the first backhaul link can use it directly - more
+//                  simultaneous links need a second radio or a virtual AP
+//                  interface, which this generator doesn't create.
+//     Picking the wrong one for your hardware needs adapting, not
+//     copy-paste - if you're not sure which package your router runs,
+//     check Winbox/WebFig under Interfaces for a "WiFi" vs "Wireless" menu.
 //   - This assumes the ROUTER ITSELF has a wireless radio capable of
-//     WDS/AP-bridge mode. A radio-less model (like a hEX S) cannot do the
-//     wireless-backhaul part at all - only the wired-port section applies.
+//     AP-bridge/station mode. A radio-less model (like a hEX S) cannot do
+//     the wireless-backhaul part at all - only the wired-port section
+//     applies.
 router.post('/:id/rsc-config', asyncHandler(async (req, res) => {
   const { rows: siteRows } = await pool.query('SELECT * FROM sites WHERE id=$1 AND tenant_id=$2', [
     req.params.id, req.tenantId,
@@ -175,8 +193,12 @@ router.post('/:id/rsc-config', asyncHandler(async (req, res) => {
     pppoeUsername, pppoePassword, // used when wanType === 'pppoe'
     wiredPorts = [2, 3, 4, 5],    // ether port numbers for the wired AP bridge
     routerHasWifi = false,
+    wirelessSyntax = 'legacy',    // 'legacy' (/interface wireless) | 'wifi6' (/interface wifi, Wi-Fi 6/6E)
     wirelessLinks = [],           // [{ name, ssid, password }] - one per remote wireless AP
   } = req.body || {};
+  if (!['legacy', 'wifi6'].includes(wirelessSyntax)) {
+    return res.status(400).json({ error: "wirelessSyntax must be 'legacy' or 'wifi6'" });
+  }
 
   const slug = site.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'yournet';
   const hotspotProfile = site.mk_hotspot_profile || 'default';
@@ -210,7 +232,22 @@ router.post('/:id/rsc-config', asyncHandler(async (req, res) => {
   // --- Wireless backhaul links to remote APs (only if this router has its own radio) ---
   let wirelessSection = '';
   if (routerHasWifi && wirelessLinks.length) {
-    wirelessSection = `\n# Wireless backhaul links - one WDS station-bridge per remote AP.
+    if (wirelessSyntax === 'wifi6') {
+      wirelessSection = `\n# Wireless backhaul links - one WiFi 6/6E AP-mode radio per remote AP,
+# native-bridged into ${bridgeName} via datapath.bridge (no WDS needed on
+# this newer driver). IMPORTANT: each remote AP must ALSO be configured
+# (once, on that device) as a station-bridge connecting to the matching
+# SSID below - this file only configures THIS router's side of each link.
+# Only the first link can use a router with a single built-in radio - see
+# the comment above this function for what additional links need.
+${wirelessLinks.map((link, i) => {
+  const ifaceName = `wifi${i + 1}`;
+  const secName = `wifi-link${i + 1}-sec`;
+  return `/interface wifi security add name=${secName} authentication-types=wpa2-psk,wpa3-psk passphrase="${link.password || '<SET-A-STRONG-PASSWORD>'}"
+/interface wifi set [ find default-name=${ifaceName} ] configuration.mode=ap configuration.ssid="${link.ssid || `${slug}-link${i + 1}`}" security=${secName} datapath.bridge=${bridgeName} disabled=no comment="Backhaul to: ${link.name || 'remote AP ' + (i + 1)}"`;
+}).join('\n')}`;
+    } else {
+      wirelessSection = `\n# Wireless backhaul links - one WDS station-bridge per remote AP.
 # IMPORTANT: each remote AP must ALSO be configured (once, on that device)
 # as a WDS station connecting to the matching SSID below - this file only
 # configures THIS router's side of each link.
@@ -220,6 +257,7 @@ ${wirelessLinks.map((link, i) => {
 /interface wireless security-profiles add name=${ifaceName}-sec mode=dynamic-keys authentication-types=wpa2-psk wpa2-pre-shared-key="${link.password || '<SET-A-STRONG-PASSWORD>'}"
 /interface wireless set ${ifaceName} security-profile=${ifaceName}-sec`;
 }).join('\n')}`;
+    }
   }
 
   const rsc = `# YourNet Control - RouterOS starting config for site: ${site.name}

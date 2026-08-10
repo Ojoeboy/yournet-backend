@@ -2,6 +2,7 @@
 (function () {
   const DICT = window.YOURNET_I18N || { languages: { en: 'English' }, en: {} };
   const STORAGE_KEY = 'yournet_lang';
+  const RTL_LANGS = ['ar'];
 
   function currentLang() {
     return localStorage.getItem(STORAGE_KEY) || 'en';
@@ -20,6 +21,7 @@
       el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder')));
     });
     document.documentElement.setAttribute('lang', currentLang());
+    document.documentElement.setAttribute('dir', RTL_LANGS.includes(currentLang()) ? 'rtl' : 'ltr');
   }
 
   function setLanguage(lang) {

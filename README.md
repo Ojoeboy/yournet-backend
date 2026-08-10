@@ -6,7 +6,7 @@ Mikrotik RouterOS and TP-Link Omada integrations (not simulated data).
 ## What this replaces from the old HTML-only app
 | Before (browser-only) | Now |
 |---|---|
-| Fake AP stats via `Math.random()` | Real client/device counts pulled from RouterOS API or Omada Open API |
+| Fake AP stats via `Math.random()` | Real connected-client counts pulled from the RouterOS/Omada/UniFi/Meraki APIs. Mikrotik sites can also show real access-point status via CAPsMAN, using field names confirmed against MikroTik's own docs and live router captures - but only for actual Mikrotik CAP devices under a CAPsMAN manager; a generic/third-party AP just bridged to the router works fine for clients but won't appear in that list. |
 | Voucher "redeemed" = a status flag in localStorage | Redeeming a voucher creates a real hotspot user on Mikrotik, or authorizes the client via Omada's External Portal API |
 | One device, one browser, no sharing | Postgres database, multi-tenant, any device can log in |
 | Anyone could edit vouchers by editing localStorage | JWT-authenticated API, server-side validation |
@@ -36,7 +36,11 @@ have free tiers good enough to start).
 2. Add a site (`POST /api/sites`) - either:
    - **Mikrotik**: router IP reachable from this backend (port-forward the
      API port, or put both on the same VPN), API username/password with
-     `api` permission enabled.
+     `api` permission enabled. Works over the plain API (port 8728,
+     default) or API-SSL (port 8729) if you enable "Connect over API-SSL"
+     on the site - note the connection trusts the router's self-signed
+     API-SSL cert rather than verifying it, since RouterOS doesn't have a
+     CA-issued cert workflow for this service.
    - **Omada**: enable Open API in Global View settings, create a Client
      Credentials application, note the Client ID/Secret and Omadac ID.
      Note: this requires a self-hosted Omada Controller (software or

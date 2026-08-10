@@ -10,12 +10,23 @@ const { RouterOSAPI } = require('node-routeros');
  * @param {object} site - row from `sites` table (type = 'mikrotik')
  */
 async function connect(site) {
+  const useTls = !!site.mk_use_tls;
   const conn = new RouterOSAPI({
     host: site.mk_host,
     user: site.mk_username,
     password: site.mk_password_decrypted, // decrypt before calling this module
-    port: site.mk_api_port || 8728,
+    // If the site hasn't set a port explicitly, default to the port that
+    // matches whichever mode (plain/TLS) it's using - 8728 for the
+    // plaintext API, 8729 for API-SSL - rather than always falling back
+    // to the plain-API default even when TLS is on.
+    port: site.mk_api_port || (useTls ? 8729 : 8728),
     timeout: 8,
+    // RouterOS's API-SSL service almost always presents a self-signed
+    // cert (there's no CA-issued cert workflow for it), so verifying the
+    // chain would break the common case. rejectUnauthorized: false still
+    // gets you encryption-in-transit, just not identity verification -
+    // the same tradeoff most self-hosted RouterOS tooling makes.
+    ...(useTls ? { tls: { rejectUnauthorized: false } } : {}),
   });
   await conn.connect();
   return conn;
@@ -106,4 +117,72 @@ async function listActiveClients(site) {
   }
 }
 
-module.exports = { createHotspotUser, removeHotspotUser, ping, listActiveClients };
+/**
+ * List CAPsMAN-managed access points.
+ *
+ * IMPORTANT CAVEAT: this only returns anything if the router is running as
+ * a CAPsMAN *manager* with real Mikrotik CAP-capable devices (e.g. cAP,
+ * wAP, hAP with "CAP" mode enabled) provisioned under it. A generic/
+ * third-party AP that's just bridged to this router in normal AP mode -
+ * which is most setups, and works fine for clients/vouchers - has no
+ * CAPsMAN relationship whatsoever and will never appear here. That's
+ * expected, not a bug: RouterOS simply has no visibility into a dumb
+ * bridged AP the same way it does into hotspot clients.
+ *
+ * Returns { supported: false, accessPoints: [] } rather than throwing when
+ * CAPsMAN isn't configured/enabled on this router, since that's a normal,
+ * common setup, not an error condition.
+ *
+ * FIELD NAMES: verified against MikroTik's own documentation and real
+ * `remote-cap print` output captured from live routers (not guessed):
+ *   - RouterOS 6.x legacy CAPsMAN (`/caps-man/remote-cap/print`): columns
+ *     are ADDRESS, IDENT, STATE, RADIOS - API property names are
+ *     `address`, `identity`, `state`, `radios`. No board/version columns
+ *     exist at all on this path, so those two always come back null here.
+ *     (One older 6.49.x capture showed a NAME column instead of IDENT for
+ *     the same field - `identity` is tried first since it matches current
+ *     documentation, with `name` as a fallback for that older build.)
+ *   - RouterOS 7's unified wifi package
+ *     (`/interface/wifi/capsman/remote-cap/print`): columns are ADDRESS,
+ *     IDENTITY, STATE, BOARD-NAME, VERSION, CONNECTED-TIME - API property
+ *     names are `address`, `identity`, `state`, `board-name`, `version`,
+ *     `connected-time`.
+ * This is meaningfully more solid than a guess, but still hasn't been run
+ * against a router in this codebase's own test suite - worth a smoke test
+ * against your actual CAPsMAN manager before depending on it.
+ */
+async function listAccessPoints(site) {
+  const conn = await connect(site);
+  try {
+    let caps;
+    let path = '/caps-man/remote-cap/print';
+    try {
+      caps = await conn.write(path);
+    } catch (err) {
+      path = '/interface/wifi/capsman/remote-cap/print';
+      try {
+        caps = await conn.write(path);
+      } catch (err2) {
+        // CAPsMAN package not enabled, no manager configured, or this
+        // RouterOS version uses a different menu than either guess above.
+        return { supported: false, accessPoints: [] };
+      }
+    }
+    return {
+      supported: true,
+      accessPoints: caps.map((c) => ({
+        identity: c.identity || c.name || c.ident || null,
+        address: c.address || null,
+        macAddress: c['mac-address'] || c['radio-mac'] || null,
+        state: c.state || null,
+        boardName: c['board-name'] || c.board || null,
+        version: c.version || null,
+        connectedTime: c['connected-time'] || null,
+      })),
+    };
+  } finally {
+    conn.close();
+  }
+}
+
+module.exports = { createHotspotUser, removeHotspotUser, ping, listActiveClients, listAccessPoints };
