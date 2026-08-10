@@ -4,7 +4,6 @@ const pool = require('../db/pool');
 const voucherService = require('../services/voucherService');
 const gatewayService = require('../services/paymentGatewayService');
 const hubtelGateway = require('../integrations/gateways/hubtelGateway');
-const sms = require('../integrations/smsService');
 const freeStockPhotos = require('../integrations/freeStockPhotos');
 const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
@@ -94,28 +93,11 @@ router.post('/:siteId/redeem', asyncHandler(async (req, res) => {
 }));
 
 // Shared: once a gateway confirms payment succeeded, generate the actual
-// voucher, mark the order paid, and get it to the customer (SMS if we have
-// their phone - the only reliable channel for a webhook flow with no
-// browser to redirect back to, like Hubtel's).
-async function fulfillOrder(order) {
-  const vouchers = await voucherService.generateVouchers(order.tenant_id, {
-    packageId: order.package_id,
-    siteId: order.site_id,
-    quantity: 1,
-  });
-  const voucher = vouchers[0];
-
-  await pool.query(
-    `UPDATE voucher_orders SET status='paid', voucher_id=$1, completed_at=now() WHERE id=$2`,
-    [voucher.id, order.id]
-  );
-
-  if (order.customer_phone) {
-    sms.sendSms(order.customer_phone, `Your YourNet WiFi voucher code: ${voucher.code}`).catch(() => {});
-  }
-
-  return voucher;
-}
+// voucher, mark the order paid, and get it to the customer. See
+// voucherService.fulfillOrder - shared with the owner's manual-MoMo
+// approval path in routes/vouchers.js, so both roads to "paid" end up
+// issuing the voucher and sending the SMS the exact same way.
+const fulfillOrder = voucherService.fulfillOrder;
 
 // PUBLIC: customer picks a package on the portal and pays online instead of
 // using a printed/MoMo-manual code. Works with whichever gateway the
@@ -169,6 +151,39 @@ router.post('/:siteId/buy-voucher', asyncHandler(async (req, res) => {
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
+}));
+
+// PUBLIC: fallback for tenants who haven't set up a real payment gateway.
+// The customer has (or is about to) send money directly to the owner's
+// personal MoMo number shown on the portal - this just records the claim
+// as PENDING so it lands in the owner's dashboard queue. Nothing is
+// verified here and no voucher is created yet: there is no API that lets
+// this app confirm a P2P MoMo transfer actually happened, so the owner
+// checking their own MoMo alert and clicking "Approve" (see routes/
+// vouchers.js /manual-orders/:id/approve) is the real trust boundary, not
+// this submission.
+router.post('/:siteId/buy-voucher-manual', asyncHandler(async (req, res) => {
+  const { siteId } = req.params;
+  const { packageId, phone, note } = req.body;
+  if (!packageId) return res.status(400).json({ error: 'packageId is required' });
+  if (!phone) return res.status(400).json({ error: 'A phone number is required so we can send your voucher once approved.' });
+
+  const { rows } = await pool.query('SELECT tenant_id, portal_momo_number FROM sites WHERE id=$1', [siteId]);
+  if (!rows.length) return res.status(404).json({ error: 'Unknown site' });
+  const { tenant_id: tenantId, portal_momo_number: momoNumber } = rows[0];
+  if (!momoNumber) return res.status(400).json({ error: 'Manual MoMo payment is not set up for this WiFi provider.' });
+
+  const { rows: pkgRows } = await pool.query('SELECT id FROM packages WHERE id=$1 AND tenant_id=$2 AND active=true', [packageId, tenantId]);
+  if (!pkgRows.length) return res.status(404).json({ error: 'Package not found' });
+
+  const reference = `MANUAL-${uuidv4().slice(0, 12)}`;
+  const { rows: orderRows } = await pool.query(
+    `INSERT INTO voucher_orders (tenant_id, site_id, package_id, customer_phone, customer_note, provider, provider_reference)
+     VALUES ($1,$2,$3,$4,$5,'manual_momo',$6) RETURNING id, created_at`,
+    [tenantId, siteId, packageId, phone, note || null, reference]
+  );
+
+  res.json({ ok: true, orderId: orderRows[0].id, status: 'pending' });
 }));
 
 // PUBLIC: Paystack/Flutterwave redirect the customer's browser here after

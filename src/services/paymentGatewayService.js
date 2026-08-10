@@ -81,6 +81,24 @@ async function listGateways(tenantId) {
  * another configured provider.
  */
 async function deleteGatewayConfig(tenantId, provider) {
+  // Guard: if a customer's payment is still pending verification through
+  // this provider, deleting the credentials now would strand them - the
+  // return/verify call looks the gateway row back up by provider and would
+  // fail with "Gateway not configured", leaving a paid customer with no
+  // voucher and no automatic retry. Block until those orders resolve.
+  const { rows: pending } = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM voucher_orders WHERE tenant_id=$1 AND provider=$2 AND status='pending'`,
+    [tenantId, provider]
+  );
+  if (pending[0].count > 0) {
+    const err = new Error(
+      `${pending[0].count} order(s) are still pending payment through ${provider}. ` +
+      `Wait for them to complete or fail before removing these credentials.`
+    );
+    err.status = 409;
+    throw err;
+  }
+
   const { rows } = await pool.query(
     `DELETE FROM payment_gateways WHERE tenant_id=$1 AND provider=$2 RETURNING id, provider, is_active`,
     [tenantId, provider]

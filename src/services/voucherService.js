@@ -1,15 +1,21 @@
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
 const mikrotik = require('../integrations/mikrotik');
 const omada = require('../integrations/omada');
 const unifi = require('../integrations/unifi');
 const meraki = require('../integrations/meraki');
+const sms = require('../integrations/smsService');
 const { decrypt } = require('../utils/credentialCrypto');
 
+// CSPRNG (crypto.randomInt), not Math.random() - Math.random() isn't
+// designed to resist prediction, and while a guessed voucher code is a
+// small loss on its own, there's no reason to use a weaker generator here
+// than the one already used for license keys.
 function randomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
   let s = '';
-  for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < 8; i++) s += chars[crypto.randomInt(chars.length)];
   return `${s.slice(0, 4)}-${s.slice(4)}`;
 }
 
@@ -79,9 +85,34 @@ async function generateVouchers(tenantId, { packageId, siteId, agentId, quantity
  * behaviour of just flipping a status flag in localStorage.
  */
 async function redeemVoucher(tenantId, code, redeemContext = {}) {
+  // Claim the voucher atomically FIRST, before reading anything else or
+  // touching a router. Two devices redeeming the same code at once used to
+  // both pass a SELECT-then-check on 'unused' and both get network access
+  // for one paid voucher - this UPDATE...WHERE status='unused' is the same
+  // row-lock pattern already used for license keys in /signup, and only
+  // one concurrent caller can ever win it.
+  const claim = await pool.query(
+    `UPDATE vouchers SET status='redeeming' WHERE tenant_id=$1 AND code=$2 AND status='unused' RETURNING id`,
+    [tenantId, code]
+  );
+
+  if (!claim.rows.length) {
+    const { rows: existing } = await pool.query(
+      `SELECT status FROM vouchers WHERE tenant_id=$1 AND code=$2`,
+      [tenantId, code]
+    );
+    if (!existing.length) return { ok: false, reason: 'not_found' };
+    // Covers both "someone else already redeemed it" and "someone else's
+    // redemption is in flight right now" - both correctly read as
+    // already/being used rather than available.
+    return { ok: false, reason: 'already_used', status: existing[0].status === 'redeeming' ? 'unused' : existing[0].status };
+  }
+
+  const voucherId = claim.rows[0].id;
+
   const { rows } = await pool.query(
     `SELECT
-       v.id AS voucher_id, v.code, v.status AS voucher_status, v.site_id,
+       v.id AS voucher_id, v.code, v.site_id,
        p.duration_minutes, p.rate_limit_down, p.rate_limit_up,
        s.id AS site_id_full, s.type AS site_type,
        s.mk_host, s.mk_api_port, s.mk_username, s.mk_password_encrypted, s.mk_hotspot_profile,
@@ -93,19 +124,14 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
      FROM vouchers v
      JOIN packages p ON p.id = v.package_id
      JOIN sites s ON s.id = v.site_id
-     WHERE v.tenant_id = $1 AND v.code = $2`,
-    [tenantId, code]
+     WHERE v.id = $1`,
+    [voucherId]
   );
-
-  if (!rows.length) return { ok: false, reason: 'not_found' };
   const v = rows[0];
-  if (v.voucher_status !== 'unused') {
-    return { ok: false, reason: 'already_used', status: v.voucher_status };
-  }
 
   // Mikrotik/Omada integration modules expect decrypted credential fields -
-  // map them here in one place (today this is a pass-through since real
-  // encryption isn't wired in yet; see README "Security" section).
+  // map them here in one place (credentials are stored AES-256-GCM
+  // encrypted; see utils/credentialCrypto.js).
   const site = {
     ...v,
     mk_password_decrypted: decrypt(v.mk_password_encrypted),
@@ -115,60 +141,114 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
     meraki_dashboard_api_key_decrypted: decrypt(v.meraki_dashboard_api_key_encrypted),
   };
 
+  // Releases a voucher that was claimed above ('redeeming') back to
+  // 'unused' - used on any path below that ends without actually granting
+  // access, so a failed/aborted redemption doesn't permanently strand the
+  // voucher in limbo and leave the customer's paid code unusable.
+  const releaseClaim = () => pool.query(
+    `UPDATE vouchers SET status='unused' WHERE id=$1 AND status='redeeming'`,
+    [voucherId]
+  );
+
   let providerResult;
-  if (v.site_type === 'mikrotik') {
-    providerResult = await mikrotik.createHotspotUser(site, {
-      code: v.code,
-      profile: v.mk_hotspot_profile,
-      durationMinutes: v.duration_minutes,
-      rateLimit: v.rate_limit_up && v.rate_limit_down ? `${v.rate_limit_up}/${v.rate_limit_down}` : null,
-      clientMac: redeemContext.clientMac || null,
-    });
-  } else if (v.site_type === 'omada') {
-    providerResult = await omada.authorizeClient(site, {
-      clientMac: redeemContext.clientMac,
-      apMac: redeemContext.apMac,
-      ssidName: redeemContext.ssidName,
-      radioId: redeemContext.radioId,
-      siteParam: v.omada_site_id,
-    });
-  } else if (v.site_type === 'unifi') {
-    providerResult = await unifi.authorizeClient(site, {
-      clientMac: redeemContext.clientMac,
-      durationMinutes: v.duration_minutes,
-      // RouterOS-style rate limit strings are e.g. "4M/10M" (up/down) -
-      // UniFi's API wants separate up/down values in kbps, so these are
-      // parsed from the package's own rate limit fields rather than reused
-      // as-is. "4M" -> 4000 kbps; a bare number is assumed to already be kbps.
-      rateLimitKbpsDown: parseRateToKbps(v.rate_limit_down),
-      rateLimitKbpsUp: parseRateToKbps(v.rate_limit_up),
-    });
-  } else if (v.site_type === 'meraki') {
-    if (!redeemContext.baseGrantUrl) {
-      // This isn't a credentials/network problem - it means the customer's
-      // device didn't arrive via a real Meraki splash redirect (no
-      // base_grant_url in the query string), so there is nothing to grant
-      // access to. Surfaced as its own reason so the portal page can show
-      // something more useful than a generic network error.
-      return { ok: false, reason: 'missing_meraki_grant_url' };
+  try {
+    if (v.site_type === 'mikrotik') {
+      providerResult = await mikrotik.createHotspotUser(site, {
+        code: v.code,
+        profile: v.mk_hotspot_profile,
+        durationMinutes: v.duration_minutes,
+        rateLimit: v.rate_limit_up && v.rate_limit_down ? `${v.rate_limit_up}/${v.rate_limit_down}` : null,
+        clientMac: redeemContext.clientMac || null,
+      });
+    } else if (v.site_type === 'omada') {
+      providerResult = await omada.authorizeClient(site, {
+        clientMac: redeemContext.clientMac,
+        apMac: redeemContext.apMac,
+        ssidName: redeemContext.ssidName,
+        radioId: redeemContext.radioId,
+        siteParam: v.omada_site_id,
+      });
+    } else if (v.site_type === 'unifi') {
+      providerResult = await unifi.authorizeClient(site, {
+        clientMac: redeemContext.clientMac,
+        durationMinutes: v.duration_minutes,
+        // RouterOS-style rate limit strings are e.g. "4M/10M" (up/down) -
+        // UniFi's API wants separate up/down values in kbps, so these are
+        // parsed from the package's own rate limit fields rather than reused
+        // as-is. "4M" -> 4000 kbps; a bare number is assumed to already be kbps.
+        rateLimitKbpsDown: parseRateToKbps(v.rate_limit_down),
+        rateLimitKbpsUp: parseRateToKbps(v.rate_limit_up),
+      });
+    } else if (v.site_type === 'meraki') {
+      if (!redeemContext.baseGrantUrl) {
+        // This isn't a credentials/network problem - it means the customer's
+        // device didn't arrive via a real Meraki splash redirect (no
+        // base_grant_url in the query string), so there is nothing to grant
+        // access to. Surfaced as its own reason so the portal page can show
+        // something more useful than a generic network error.
+        await releaseClaim();
+        return { ok: false, reason: 'missing_meraki_grant_url' };
+      }
+      providerResult = await meraki.authorizeClient(site, {
+        baseGrantUrl: redeemContext.baseGrantUrl,
+        continueUrl: redeemContext.continueUrl,
+        durationSeconds: v.duration_minutes * 60,
+      });
+    } else {
+      await releaseClaim();
+      return { ok: false, reason: 'unsupported_site_type' };
     }
-    providerResult = await meraki.authorizeClient(site, {
-      baseGrantUrl: redeemContext.baseGrantUrl,
-      continueUrl: redeemContext.continueUrl,
-      durationSeconds: v.duration_minutes * 60,
-    });
-  } else {
-    return { ok: false, reason: 'unsupported_site_type' };
+  } catch (err) {
+    // The router/controller call failed (offline, bad creds, timeout,
+    // etc.) - release the claim rather than leaving a paid voucher stuck
+    // in 'redeeming' forever, then let the caller's error handling take it
+    // from here.
+    await releaseClaim();
+    throw err;
   }
 
   const expiresAt = new Date(Date.now() + v.duration_minutes * 60000);
-  await pool.query(
+  const finalize = await pool.query(
     `UPDATE vouchers SET status='active', redeemed_at=now(), expires_at=$1,
-     client_mac=$2, provider_ref=$3 WHERE id=$4`,
-    [expiresAt, redeemContext.clientMac || null, JSON.stringify(providerResult).slice(0, 250), v.voucher_id]
+     client_mac=$2, provider_ref=$3 WHERE id=$4 AND status='redeeming' RETURNING id`,
+    [expiresAt, redeemContext.clientMac || null, JSON.stringify(providerResult).slice(0, 250), voucherId]
   );
+
+  if (!finalize.rows.length) {
+    // Should not happen (only this call holds the claim), but if the row
+    // vanished or changed underneath us, don't report success for a
+    // voucher we can't confirm was actually finalized.
+    return { ok: false, reason: 'redemption_conflict' };
+  }
 
   return { ok: true, expiresAt, redirectUrl: providerResult.redirectUrl || null };
 }
 
-module.exports = { generateVouchers, redeemVoucher, randomCode };
+/**
+ * Shared fulfillment for any paid voucher_orders row, regardless of how it
+ * got confirmed - a gateway webhook/callback (automatic), or an owner
+ * manually approving a MoMo-to-personal-number claim (routes/vouchers.js).
+ * Generates the actual voucher, marks the order paid, and SMS's the code
+ * to the customer if we have their phone.
+ */
+async function fulfillOrder(order) {
+  const vouchers = await generateVouchers(order.tenant_id, {
+    packageId: order.package_id,
+    siteId: order.site_id,
+    quantity: 1,
+  });
+  const voucher = vouchers[0];
+
+  await pool.query(
+    `UPDATE voucher_orders SET status='paid', voucher_id=$1, completed_at=now() WHERE id=$2`,
+    [voucher.id, order.id]
+  );
+
+  if (order.customer_phone) {
+    sms.sendSms(order.customer_phone, `Your YourNet WiFi voucher code: ${voucher.code}`).catch(() => {});
+  }
+
+  return voucher;
+}
+
+module.exports = { generateVouchers, redeemVoucher, randomCode, fulfillOrder };

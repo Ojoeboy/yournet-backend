@@ -47,6 +47,21 @@
 
     <div class="kpi-grid" id="stats"></div>
 
+    <div class="card" id="manual-orders-card" style="display:none">
+      <h2>Pending MoMo payments to confirm</h2>
+      <div class="refresh-note">Customers who said they'd pay your MoMo number directly. Check your own MoMo alert for a matching payment before approving - nothing here is verified automatically.</div>
+      <div class="table-scroll"><table id="manualOrdersTable"></table></div>
+      <div class="msg" id="manual-orders-msg"></div>
+    </div>
+
+    <div class="card" id="gateway-nudge-card" style="display:none">
+      <h2>Get paid automatically</h2>
+      <p style="font-size:13px;color:var(--yn-muted);line-height:1.5">
+        You don't have an online payment gateway set up yet, so every voucher sale currently needs you to manually confirm a MoMo payment before the customer gets their code.
+        Setting up Hubtel or Paystack (Step 5 in <a href="/admin" style="color:#2ec4b6">Setup</a>) lets customers pay and receive their voucher instantly, with no waiting on you.
+      </p>
+    </div>
+
     <div class="card">
       <h2>Sites</h2>
       <div class="refresh-note">Status reflects the last connection test. Live client counts refresh every 20s while expanded.</div>
@@ -148,6 +163,71 @@
     populateTrendSiteSelect(s.sites);
     reloadTrendCharts();
     await loadAgents();
+    await loadManualOrders();
+    await checkGatewayNudge();
+  }
+
+  async function loadManualOrders() {
+    try {
+      const orders = await api('/api/vouchers/manual-orders');
+      const card = document.getElementById('manual-orders-card');
+      if (!orders.length) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      document.getElementById('manualOrdersTable').innerHTML =
+        '<tr><th>Package</th><th>Phone</th><th>Reference</th><th>Requested</th><th></th></tr>' +
+        orders.map(o => `
+          <tr>
+            <td>${o.package_label} (GHS ${Number(o.package_price).toFixed(2)})</td>
+            <td>${o.customer_phone}</td>
+            <td>${o.customer_note ? escapeHtmlDash(o.customer_note) : '<span style="color:#6b8a91">-</span>'}</td>
+            <td>${new Date(o.created_at).toLocaleString()}</td>
+            <td style="white-space:nowrap">
+              <button style="padding:6px 10px;font-size:12px" onclick="approveManualOrder('${o.id}')">Approve</button>
+              <button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" onclick="rejectManualOrder('${o.id}')">Reject</button>
+            </td>
+          </tr>
+        `).join('');
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  async function approveManualOrder(id) {
+    if (!confirm("Confirm you've received this MoMo payment? This will issue the voucher and text it to the customer.")) return;
+    try {
+      await api(`/api/vouchers/manual-orders/${id}/approve`, 'POST');
+      showMsg('manual-orders-msg', 'Approved - voucher sent by SMS.', 'ok');
+      loadManualOrders();
+    } catch (err) {
+      showMsg('manual-orders-msg', err.message, 'err');
+    }
+  }
+
+  async function rejectManualOrder(id) {
+    if (!confirm('Reject this claim? No voucher will be issued.')) return;
+    try {
+      await api(`/api/vouchers/manual-orders/${id}/reject`, 'POST');
+      showMsg('manual-orders-msg', 'Claim rejected.', 'ok');
+      loadManualOrders();
+    } catch (err) {
+      showMsg('manual-orders-msg', err.message, 'err');
+    }
+  }
+
+  function showMsg(id, text, kind) {
+    const el = document.getElementById(id);
+    el.className = 'msg show ' + (kind || '');
+    el.textContent = text;
+  }
+
+  function escapeHtmlDash(str) {
+    return String(str ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  }
+
+  async function checkGatewayNudge() {
+    try {
+      const gateways = await api('/api/payment-gateways');
+      document.getElementById('gateway-nudge-card').style.display =
+        gateways.some(g => g.is_active) ? 'none' : 'block';
+    } catch (err) { /* not logged in yet */ }
   }
 
   function dotClass(status) {

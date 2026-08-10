@@ -50,4 +50,57 @@ router.get('/:id/qrcode', asyncHandler(async (req, res) => {
   res.type('png').send(png);
 }));
 
+// Pending manual-MoMo voucher claims - customers who said they'd pay the
+// owner's personal MoMo number directly (no gateway configured). Nothing
+// here has been verified against any payment API; this is what the owner
+// checks against their own MoMo alert before approving.
+router.get('/manual-orders', asyncHandler(async (req, res) => {
+  const { status } = req.query;
+  const { rows } = await pool.query(
+    `SELECT vo.id, vo.customer_phone, vo.customer_note, vo.status, vo.created_at, vo.completed_at,
+            p.label AS package_label, p.price AS package_price, s.name AS site_name
+     FROM voucher_orders vo
+     JOIN packages p ON p.id = vo.package_id
+     JOIN sites s ON s.id = vo.site_id
+     WHERE vo.tenant_id=$1 AND vo.provider='manual_momo' AND vo.status = $2
+     ORDER BY vo.created_at DESC LIMIT 200`,
+    [req.tenantId, status === 'paid' || status === 'failed' ? status : 'pending']
+  );
+  res.json(rows);
+}));
+
+// Owner confirms they actually received the MoMo transfer (checked against
+// their own phone's MoMo alert, outside this app) - THIS click is the real
+// verification step, since there's no API to confirm a P2P transfer for
+// us. Issues the voucher and SMS's it to the phone number the customer
+// gave, same as an automatic gateway order.
+router.post('/manual-orders/:id/approve', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM voucher_orders WHERE id=$1 AND tenant_id=$2 AND provider='manual_momo'`,
+    [req.params.id, req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Order not found.' });
+  const order = rows[0];
+  if (order.status !== 'pending') return res.status(409).json({ error: `This order is already ${order.status}.` });
+
+  try {
+    const voucher = await voucherService.fulfillOrder(order);
+    res.json({ ok: true, voucher });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}));
+
+// Owner declines a claim (no MoMo alert found, wrong amount, etc.) - no
+// voucher is ever created for it.
+router.post('/manual-orders/:id/reject', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE voucher_orders SET status='failed', completed_at=now()
+     WHERE id=$1 AND tenant_id=$2 AND provider='manual_momo' AND status='pending' RETURNING id`,
+    [req.params.id, req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Order not found or already resolved.' });
+  res.json({ ok: true });
+}));
+
 module.exports = router;

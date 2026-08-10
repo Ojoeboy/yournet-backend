@@ -344,7 +344,7 @@
     <div><label data-i18n="speedDownLabel">Speed down (e.g. 10M)</label><input id="pkgDown" placeholder="10M"></div>
     <div><label data-i18n="speedUpLabel">Speed up (e.g. 4M)</label><input id="pkgUp" placeholder="4M"></div>
   </div>
-  <button onclick="addPackage()" data-i18n="savePackageBtn">Save package</button>
+  <button id="pkgSaveBtn" onclick="addPackage()" data-i18n="savePackageBtn">Save package</button>
   <div class="msg" id="package-msg"></div>
 
   <h2 style="margin-top:24px" data-i18n="existingPackagesTitle">Existing packages</h2>
@@ -654,7 +654,21 @@
 
   const DURATION_MULTIPLIERS = { minutes: 1, hours: 60, days: 1440, months: 43200, years: 525600 };
 
+  // A slow connection + an owner tapping "Save package" twice (easy to do
+  // on mobile while waiting) used to fire two identical POST requests, each
+  // creating its own real row - the portal then correctly displayed every
+  // row it was given, which included the duplicate. Guard against both the
+  // double-click (isSubmittingPackage) and a genuine double-tap that lands
+  // before React/DOM even disables the button, by disabling it immediately
+  // and re-enabling only in `finally`.
+  let isSubmittingPackage = false;
   async function addPackage() {
+    if (isSubmittingPackage) return;
+    isSubmittingPackage = true;
+    const btn = document.getElementById('pkgSaveBtn');
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
     try {
       const value = Number(document.getElementById('pkgDurationValue').value);
       const unit = document.getElementById('pkgDurationUnit').value;
@@ -677,6 +691,10 @@
       loadSitesAndPackages();
     } catch (err) {
       showMsg('package-msg', err.message, 'err');
+    } finally {
+      isSubmittingPackage = false;
+      btn.disabled = false;
+      btn.textContent = originalLabel;
     }
   }
 
@@ -933,6 +951,9 @@
       showMsg('gateway-msg', provider + ' credentials deleted.', 'ok');
       loadGateways();
     } catch (err) {
+      // err.message from a blocked delete (pending orders) already reads
+      // clearly on its own - e.g. "2 order(s) are still pending payment
+      // through hubtel..." - so just surface it as-is, no rewording needed.
       showMsg('gateway-msg', err.message, 'err');
     }
   }

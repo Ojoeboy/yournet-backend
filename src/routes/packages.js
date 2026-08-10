@@ -15,6 +15,20 @@ router.post('/', asyncHandler(async (req, res) => {
   if (!validate.isPositiveNumber(price)) return res.status(400).json({ error: 'Price must be a positive number.' });
   if (!validate.isPositiveNumber(durationMinutes)) return res.status(400).json({ error: 'Duration must be a positive number of minutes.' });
 
+  // Backstop for a double-submit slipping past the button guard (retried
+  // request on a flaky connection, etc.) - if the exact same package was
+  // just created seconds ago, treat this as the same click landing twice
+  // rather than creating a second identical row that would then just show
+  // up twice on the portal.
+  const { rows: recentDup } = await pool.query(
+    `SELECT * FROM packages
+     WHERE tenant_id=$1 AND label=$2 AND price=$3 AND duration_minutes=$4
+       AND created_at > now() - interval '10 seconds'
+     ORDER BY created_at DESC LIMIT 1`,
+    [req.tenantId, label, price, durationMinutes]
+  );
+  if (recentDup.length) return res.json(recentDup[0]);
+
   const { rows } = await pool.query(
     `INSERT INTO packages (tenant_id, label, price, duration_minutes, rate_limit_down, rate_limit_up)
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,

@@ -2,12 +2,20 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 const pool = require('../db/pool');
 const emailService = require('../integrations/emailService');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
+
+// Tenant login is as realistic a brute-force target as owner login (it's
+// the same kind of "email + password" guessable credential), but it was
+// only ever covered by the general apiLimiter shared with ordinary
+// dashboard traffic (120 req/min). Give it its own strict limiter, matching
+// the one already used for owner login in server.js.
+const tenantLoginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 
 const LICENSE_GRACE_DAYS = Number(process.env.LICENSE_GRACE_DAYS || 2);
 
@@ -54,8 +62,8 @@ router.post('/signup', asyncHandler(async (req, res) => {
     const subscriptionStatus = licenseKey.billing_authorization ? 'active' : 'manual';
     const { rows } = await client.query(
       `INSERT INTO tenants (business_name, owner_email, owner_phone, password_hash, currency, plan, plan_expires_at,
-                             verify_token_hash, subscription_status, billing_provider, billing_authorization, next_billing_at)
-       VALUES ($1,$2,$3,$4,$5,'licensed',$6,$7,$8,$9,$10,$6)
+                             verify_token_hash, verify_token_expires_at, subscription_status, billing_provider, billing_authorization, next_billing_at)
+       VALUES ($1,$2,$3,$4,$5,'licensed',$6,$7,now() + interval '24 hours',$8,$9,$10,$6)
        RETURNING id, business_name, owner_email, plan, plan_expires_at`,
       [businessName, email, phone || null, passwordHash, currency || 'GHS', nextBillingAt,
        hashToken(verifyToken), subscriptionStatus, licenseKey.billing_provider || null, licenseKey.billing_authorization || null]
@@ -89,7 +97,7 @@ router.post('/signup', asyncHandler(async (req, res) => {
   }
 }));
 
-router.post('/login', asyncHandler(async (req, res) => {
+router.post('/login', tenantLoginLimiter, asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const missingError = validate.required(req.body, ['email', 'password']);
   if (missingError) return res.status(400).json({ error: missingError });
@@ -138,23 +146,35 @@ router.post('/login', asyncHandler(async (req, res) => {
 // old one-time-license account, or an offline renewal) against an EXISTING
 // account. Distinct from /signup, which only accepts 'signup' keys and
 // creates a brand-new tenant.
-router.post('/reactivate', asyncHandler(async (req, res) => {
-  const { email, licenseKey } = req.body;
-  const missingError = validate.required(req.body, ['email', 'licenseKey']);
+//
+// Requires the account password, same as /login - previously email + a
+// valid unused reactivation key was enough on its own, which meant anyone
+// who intercepted or guessed a distributed key (SMS, email, printed slip)
+// could reactivate/change billing state on someone else's account without
+// proving they own it. This ties the reactivation to the same credential
+// that already gates the dashboard.
+router.post('/reactivate', tenantLoginLimiter, asyncHandler(async (req, res) => {
+  const { email, password, licenseKey } = req.body;
+  const missingError = validate.required(req.body, ['email', 'password', 'licenseKey']);
   if (missingError) return res.status(400).json({ error: missingError });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const tenantResult = await client.query('SELECT id, password_hash FROM tenants WHERE owner_email=$1', [email]);
+    if (!tenantResult.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'No account found with that email.' });
+    }
+    const validPassword = await bcrypt.compare(password, tenantResult.rows[0].password_hash);
+    if (!validPassword) {
+      await client.query('ROLLBACK');
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
     const keyResult = await client.query(`SELECT * FROM license_keys WHERE key_code=$1 FOR UPDATE`, [licenseKey.trim().toUpperCase()]);
     if (!keyResult.rows.length || keyResult.rows[0].status !== 'unused' || keyResult.rows[0].key_type !== 'reactivation') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'That reactivation key was not found, already used, or is not a reactivation key.' });
-    }
-    const tenantResult = await client.query('SELECT id FROM tenants WHERE owner_email=$1', [email]);
-    if (!tenantResult.rows.length) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'No account found with that email.' });
     }
     const tenantId = tenantResult.rows[0].id;
     const key = keyResult.rows[0];
@@ -183,11 +203,11 @@ router.get('/verify-email', asyncHandler(async (req, res) => {
   if (!token) return res.status(400).send('Missing token.');
 
   const { rows } = await pool.query(
-    `UPDATE tenants SET email_verified=true, verify_token_hash=NULL
-     WHERE verify_token_hash=$1 RETURNING id`,
+    `UPDATE tenants SET email_verified=true, verify_token_hash=NULL, verify_token_expires_at=NULL
+     WHERE verify_token_hash=$1 AND verify_token_expires_at > now() RETURNING id`,
     [hashToken(token)]
   );
-  if (!rows.length) return res.status(400).send('Invalid or already-used verification link.');
+  if (!rows.length) return res.status(400).send('Invalid, expired, or already-used verification link.');
   res.send('Email verified. You can close this page.');
 }));
 

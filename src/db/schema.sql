@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS tenants (
 -- Added after the initial release - safe to re-add on an already-migrated DB.
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS verify_token_hash TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS verify_token_expires_at TIMESTAMPTZ;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reset_token_hash TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMPTZ;
 
@@ -183,8 +184,11 @@ CREATE TABLE IF NOT EXISTS packages (
   duration_minutes INTEGER NOT NULL,
   rate_limit_down TEXT,
   rate_limit_up TEXT,
-  active BOOLEAN NOT NULL DEFAULT true
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE packages ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
 CREATE TABLE IF NOT EXISTS vouchers (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -355,10 +359,13 @@ CREATE TABLE IF NOT EXISTS voucher_orders (
   status TEXT NOT NULL DEFAULT 'pending', -- pending | paid | failed
   voucher_id UUID REFERENCES vouchers(id),
   webhook_token_hash TEXT, -- Hubtel orders only, see utils/webhookToken.js
+  customer_note TEXT, -- manual_momo orders only: whatever the customer typed as their MoMo reference, for the owner to eyeball against their own MoMo alert - never trusted as proof on its own, see routes/vouchers.js manual-orders/:id/approve
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at TIMESTAMPTZ,
   UNIQUE(provider, provider_reference)
 );
+
+ALTER TABLE voucher_orders ADD COLUMN IF NOT EXISTS customer_note TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_voucher_orders_reference ON voucher_orders(provider, provider_reference);
 

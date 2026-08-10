@@ -43,7 +43,9 @@ window.YOURNET_I18N = {
     enterFullCode: 'Enter your full voucher code.', poweredBy: 'Powered by YourNet Control',
     buyVoucherHeading: "Don't have a code? Buy one now", phoneForVoucher: 'Phone number (to receive your code)',
     buyBtn: 'Buy', buying: 'Redirecting to payment...', errBuyFailed: 'Could not start payment. Please try again.',
-    momoManualTitle: 'Or pay by Mobile Money transfer', momoManualInstructions: 'After sending payment, contact us via WhatsApp with your payment reference to receive your voucher code.',
+    momoManualTitle: 'Pay by Mobile Money transfer', momoManualInstructions: 'Send the exact amount to the number above, then enter your phone number and confirm below. Your voucher will be sent by SMS once the owner confirms your payment.',
+    momoRefPlaceholder: 'MoMo reference (optional)', momoIveSent: "I've sent the payment",
+    momoPendingMsg: "Thanks! Once the owner confirms your payment, we'll text your voucher code to this number.",
     needHelp: 'Need help? Chat with us on WhatsApp',
 
     // Admin - signup/login

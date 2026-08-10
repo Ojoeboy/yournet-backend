@@ -235,6 +235,9 @@
   // voucher-redeem flow above must keep working even if this call fails.
   let portalPackages = [];
   let onlinePaymentAvailable = false;
+  let manualMomoAvailable = false;
+  let manualMomoNumber = null;
+  let manualMomoName = null;
 
   function setBodyBackground(url) {
     document.body.style.backgroundImage =
@@ -283,17 +286,15 @@
       }
 
       onlinePaymentAvailable = !!cfg.onlinePaymentAvailable;
+      // Manual MoMo (pay the owner's personal number, owner approves by
+      // hand) is only offered as a FALLBACK when there's no real gateway -
+      // if the owner has Hubtel/Paystack/Flutterwave active, that's the
+      // funnel: instant, no waiting on the owner to notice a payment.
+      manualMomoAvailable = !onlinePaymentAvailable && !!cfg.momoNumber;
+      manualMomoNumber = cfg.momoNumber;
+      manualMomoName = cfg.momoName;
       portalPackages = cfg.packages || [];
       if (portalPackages.length) renderPackages();
-
-      if (cfg.momoNumber) {
-        const box = document.getElementById('momo-box');
-        box.innerHTML = `<div>${t('momoManualTitle')}</div>` +
-          `<div class="momo-number">${cfg.momoNumber}</div>` +
-          (cfg.momoName ? `<div>${cfg.momoName}</div>` : '') +
-          `<div style="margin-top:6px;color:var(--muted)">${t('momoManualInstructions')}</div>`;
-        box.classList.add('show');
-      }
 
       if (cfg.whatsappNumber) {
         const digits = cfg.whatsappNumber.replace(/[^0-9]/g, '');
@@ -315,10 +316,14 @@
         </div>
         ${onlinePaymentAvailable
           ? `<button class="pkg-buy" onclick="buyVoucher('${p.id}')">${t('buyBtn')}</button>`
-          : ''}
+          : manualMomoAvailable
+            ? `<button class="pkg-buy" onclick="selectManualPackage('${p.id}', '${p.label.replace(/'/g, "\\'")}', ${p.price})">${t('buyBtn')}</button>`
+            : ''}
       </div>
     `).join('');
-    if (onlinePaymentAvailable) document.getElementById('phone-input-wrap').style.display = 'block';
+    if (onlinePaymentAvailable || manualMomoAvailable) {
+      document.getElementById('phone-input-wrap').style.display = 'block';
+    }
     section.classList.add('show');
   }
 
@@ -340,6 +345,61 @@
         return;
       }
       window.location.href = data.checkoutUrl;
+    } catch (err) {
+      buyMsg.className = 'msg show err';
+      buyMsg.textContent = t('errBuyFailed');
+    }
+  }
+
+  // Manual MoMo: picking a package here doesn't pay for anything yet - it
+  // just opens the instructions box (owner's MoMo number/name) and remembers
+  // which package this claim is for, ready for submitManualMomo() once the
+  // customer has actually sent the money and typed in their phone.
+  let selectedManualPackageId = null;
+  function selectManualPackage(packageId, label, price) {
+    selectedManualPackageId = packageId;
+    const box = document.getElementById('momo-box');
+    box.innerHTML = `
+      <div>${t('momoManualTitle')}</div>
+      <div class="momo-number">${manualMomoNumber}</div>
+      ${manualMomoName ? `<div>${manualMomoName}</div>` : ''}
+      <div style="margin-top:6px;color:var(--muted)">${label} - GHS ${price}</div>
+      <div style="margin-top:10px;color:var(--muted)">${t('momoManualInstructions')}</div>
+      <div class="phone-input" style="margin-top:10px;text-align:left">
+        <input id="momoNote" type="text" placeholder="${t('momoRefPlaceholder')}">
+      </div>
+      <button class="pkg-buy" style="width:100%;margin-top:10px" onclick="submitManualMomo()">${t('momoIveSent')}</button>
+    `;
+    box.classList.add('show');
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  async function submitManualMomo() {
+    const buyMsg = document.getElementById('buy-msg');
+    const phone = document.getElementById('buyerPhone').value.trim();
+    if (!phone) {
+      buyMsg.className = 'msg show err';
+      buyMsg.textContent = t('phoneForVoucher');
+      return;
+    }
+    const note = document.getElementById('momoNote') ? document.getElementById('momoNote').value.trim() : '';
+    buyMsg.className = 'msg show';
+    buyMsg.textContent = t('buying');
+    try {
+      const res = await fetch(`/portal/${siteId}/buy-voucher-manual`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ packageId: selectedManualPackageId, phone, note: note || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        buyMsg.className = 'msg show err';
+        buyMsg.textContent = data.error || t('errBuyFailed');
+        return;
+      }
+      buyMsg.className = 'msg show ok';
+      buyMsg.textContent = t('momoPendingMsg');
+      document.getElementById('momo-box').classList.remove('show');
     } catch (err) {
       buyMsg.className = 'msg show err';
       buyMsg.textContent = t('errBuyFailed');

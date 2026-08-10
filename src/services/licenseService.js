@@ -1,13 +1,18 @@
+const crypto = require('crypto');
 const pool = require('../db/pool');
 
 /**
  * Generates a real, hard-to-guess license key. Format: YNET-XXXX-XXXX-XXXX
  * Deliberately longer/more random than voucher codes since this protects
  * an actual paid purchase, not a few hours of WiFi.
+ *
+ * Uses crypto.randomInt (CSPRNG) rather than Math.random(), which is not
+ * designed to resist prediction and shouldn't be used for anything that
+ * protects a real purchase.
  */
 function generateKeyCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const group = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  const group = () => Array.from({ length: 4 }, () => chars[crypto.randomInt(chars.length)]).join('');
   return `YNET-${group()}-${group()}-${group()}`;
 }
 
