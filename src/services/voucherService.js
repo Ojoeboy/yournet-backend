@@ -230,25 +230,71 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
  * manually approving a MoMo-to-personal-number claim (routes/vouchers.js).
  * Generates the actual voucher, marks the order paid, and SMS's the code
  * to the customer if we have their phone.
+ *
+ * All three callers (Paystack/Flutterwave callback, Hubtel webhook, manual
+ * MoMo approval) previously did their own SELECT-then-check-status before
+ * calling this - a TOCTOU race, since a webhook retry, a refreshed
+ * callback page, or a double-clicked "approve" button could all read
+ * status='pending' before any of them had written 'paid'. Each one would
+ * then generate and hand out its own voucher for the same order. The claim
+ * now lives here, atomically, so every caller shares one guard instead of
+ * three separate (and separately fixable) ones.
  */
 async function fulfillOrder(order) {
-  const vouchers = await generateVouchers(order.tenant_id, {
-    packageId: order.package_id,
-    siteId: order.site_id,
-    quantity: 1,
-  });
-  const voucher = vouchers[0];
-
-  await pool.query(
-    `UPDATE voucher_orders SET status='paid', voucher_id=$1, completed_at=now() WHERE id=$2`,
-    [voucher.id, order.id]
+  // Atomically claim the order: only the caller that flips pending ->
+  // fulfilling wins; anyone else racing on the same order id gets zero
+  // rows back and does not proceed to generate a voucher.
+  const claim = await pool.query(
+    `UPDATE voucher_orders SET status='fulfilling' WHERE id=$1 AND status='pending' RETURNING *`,
+    [order.id]
   );
 
-  if (order.customer_phone) {
-    sms.sendSms(order.customer_phone, `Your YourNet WiFi voucher code: ${voucher.code}`).catch(() => {});
+  if (!claim.rows.length) {
+    // Lost the race (or this order was already resolved earlier) - find
+    // out what actually happened instead of guessing.
+    const { rows: existing } = await pool.query(`SELECT * FROM voucher_orders WHERE id=$1`, [order.id]);
+    const current = existing[0];
+    if (current && current.status === 'paid' && current.voucher_id) {
+      const { rows: voucherRows } = await pool.query(`SELECT * FROM vouchers WHERE id=$1`, [current.voucher_id]);
+      if (voucherRows.length) return voucherRows[0];
+    }
+    // Either another concurrent call is still mid-fulfillment, or this
+    // order already failed - either way, no voucher for THIS call to
+    // return. Callers already check order.status themselves for the
+    // user-facing message, so a null here just means "not this call's job".
+    return null;
   }
 
-  return voucher;
+  const claimedOrder = claim.rows[0];
+  try {
+    const vouchers = await generateVouchers(claimedOrder.tenant_id, {
+      packageId: claimedOrder.package_id,
+      siteId: claimedOrder.site_id,
+      quantity: 1,
+    });
+    const voucher = vouchers[0];
+
+    await pool.query(
+      `UPDATE voucher_orders SET status='paid', voucher_id=$1, completed_at=now() WHERE id=$2`,
+      [voucher.id, claimedOrder.id]
+    );
+
+    if (claimedOrder.customer_phone) {
+      sms.sendSms(claimedOrder.customer_phone, `Your YourNet WiFi voucher code: ${voucher.code}`).catch(() => {});
+    }
+
+    return voucher;
+  } catch (err) {
+    // Voucher generation or the DB write failed after we claimed the
+    // order - put it back to 'pending' rather than leaving it stuck in
+    // 'fulfilling' forever, so a retried webhook or a re-click by the
+    // owner can actually succeed later instead of being silently ignored.
+    await pool.query(
+      `UPDATE voucher_orders SET status='pending' WHERE id=$1 AND status='fulfilling'`,
+      [claimedOrder.id]
+    ).catch(() => {});
+    throw err;
+  }
 }
 
 module.exports = { generateVouchers, redeemVoucher, randomCode, fulfillOrder };

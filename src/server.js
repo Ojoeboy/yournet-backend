@@ -19,6 +19,14 @@ const portalRoutes = require('./routes/portal');
 const pppoeRoutes = require('./routes/pppoe');
 
 const app = express();
+// Render puts this app behind exactly one reverse-proxy hop, which sets
+// X-Forwarded-For on every request. Express doesn't trust that header by
+// default, so express-rate-limit can't tell real client IPs apart (it
+// throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR and would otherwise bucket
+// everyone under one key). `1` means "trust exactly one hop" - the correct
+// value for Render's setup - as opposed to `true`, which would trust the
+// whole chain including headers a client could spoof.
+app.set('trust proxy', 1);
 // contentSecurityPolicy disabled: the captive portal page (public/portal.html)
 // intentionally uses inline <style>/<script> so it stays a single
 // self-contained file with zero external requests - required because the

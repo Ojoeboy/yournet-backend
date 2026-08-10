@@ -84,7 +84,11 @@ router.post('/manual-orders/:id/approve', asyncHandler(async (req, res) => {
   if (order.status !== 'pending') return res.status(409).json({ error: `This order is already ${order.status}.` });
 
   try {
+    // fulfillOrder does its own atomic pending->fulfilling claim, so the
+    // status check above is just for a fast, friendly error message - it's
+    // not what actually prevents a double-approve race.
     const voucher = await voucherService.fulfillOrder(order);
+    if (!voucher) return res.status(409).json({ error: 'This order was already resolved.' });
     res.json({ ok: true, voucher });
   } catch (err) {
     res.status(500).json({ error: err.message });

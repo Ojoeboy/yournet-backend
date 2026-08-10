@@ -214,7 +214,13 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
       return res.send(orderConfirmationPage('Payment failed', 'No voucher was issued.'));
     }
 
+    // fulfillOrder claims the order atomically - a null back means another
+    // concurrent hit on this same reference (retry, refreshed tab) already
+    // won the race, not that anything failed here.
     const voucher = await fulfillOrder(order);
+    if (!voucher) {
+      return res.send(orderConfirmationPage('Already confirmed', 'This order was already completed.'));
+    }
     res.send(orderConfirmationPage('Payment successful', `Your voucher code: <strong>${voucher.code}</strong>`));
   } catch (err) {
     res.status(502).send('Could not verify payment: ' + err.message);
@@ -255,6 +261,8 @@ router.post('/gateway-webhook/hubtel', asyncHandler(async (req, res) => {
   if (order.status === 'paid') return res.json({ ok: true, note: 'already fulfilled' });
 
   if (interpreted.success) {
+    // Return value not needed here: whether this call won the claim or a
+    // concurrent retry already did, the order ends up fulfilled either way.
     await fulfillOrder(order);
   } else {
     await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);

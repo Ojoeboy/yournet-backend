@@ -135,8 +135,27 @@ router.post('/purchase/initialize', asyncHandler(async (req, res) => {
 // payment; when present it's stored so subscriptionBilling.js can charge
 // this same card automatically next month with no key and no buyer action.
 async function fulfillOrder(order, provider, authorizationCode) {
+  // Same TOCTOU race as voucherService.fulfillOrder had: the Paystack/
+  // Flutterwave callback and the Hubtel webhook both do a SELECT-then-
+  // check-status before calling this, so a webhook retry or a refreshed
+  // callback page racing against the original call could otherwise both
+  // pass the "not yet paid" check and both issue a key / reactivate a
+  // subscription for the same order. Claim it atomically here so every
+  // caller shares one guard.
+  const claim = await pool.query(
+    `UPDATE license_purchase_orders SET status='fulfilling' WHERE id=$1 AND status='pending' RETURNING *`,
+    [order.id]
+  );
+  if (!claim.rows.length) {
+    // Lost the race - whatever the winning call returns/returned, this
+    // call has nothing new to issue.
+    return null;
+  }
+  order = claim.rows[0];
+
   const nextBillingAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
+  try {
   if (order.purpose === 'reactivate') {
     const subscriptionStatus = authorizationCode ? 'active' : 'manual';
     await pool.query(
@@ -180,6 +199,17 @@ async function fulfillOrder(order, provider, authorizationCode) {
   }
 
   return key;
+  } catch (err) {
+    // Key issuance or a write failed after we claimed the order - put it
+    // back to 'pending' so a retried webhook or a reloaded callback page
+    // can actually succeed later, instead of the order being stuck in
+    // 'fulfilling' forever with no key and no way to retry it.
+    await pool.query(
+      `UPDATE license_purchase_orders SET status='pending' WHERE id=$1 AND status='fulfilling'`,
+      [order.id]
+    ).catch(() => {});
+    throw err;
+  }
 }
 
 // PUBLIC: Paystack/Flutterwave redirect the buyer's browser here after
@@ -218,6 +248,17 @@ router.get('/purchase/callback/:provider', asyncHandler(async (req, res) => {
 
     const authorizationCode = AUTO_RENEW_PROVIDERS.includes(provider) ? result.authorizationCode : null;
     const outcome = await fulfillOrder(order, provider, authorizationCode);
+
+    if (!outcome) {
+      // Lost the race to a concurrent call (e.g. this page got reloaded
+      // while the original request was still finishing) - re-fetch the
+      // now-completed order rather than reporting failure.
+      const { rows: refreshed } = await pool.query(`SELECT * FROM license_purchase_orders WHERE id=$1`, [order.id]);
+      const current = refreshed[0];
+      if (current?.purpose === 'reactivate') return res.send(renderReactivatedPage(!!authorizationCode));
+      const { rows: keyRows } = await pool.query('SELECT key_code FROM license_keys WHERE id=$1', [current?.issued_key_id]);
+      return res.send(renderKeyPage(keyRows[0]?.key_code));
+    }
 
     if (order.purpose === 'reactivate') return res.send(renderReactivatedPage(!!authorizationCode));
     res.send(renderKeyPage(outcome.key_code));
