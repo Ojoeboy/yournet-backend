@@ -151,6 +151,13 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_use_rotating_backgrounds BOOLE
 -- mikrotik.js for that tradeoff.
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS mk_use_tls BOOLEAN NOT NULL DEFAULT false;
 
+-- Safe to re-run: adds sites.active to a sites table that already existed
+-- before this feature - this was mistakenly written only inside the
+-- CREATE TABLE block above, which CREATE TABLE IF NOT EXISTS silently
+-- skips for a table that already exists, so any pre-existing deployment
+-- never actually got the column despite migrate.js reporting success.
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true;
+
 -- Closes a real hole: Hubtel's webhook has no built-in signature, so
 -- without this an order's own `provider_reference` (handed straight back
 -- to whoever just called buy-voucher/purchase-initialize) was enough to
