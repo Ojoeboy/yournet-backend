@@ -1,20 +1,21 @@
-Move tenant login/signup to /login, separate from setup wizard
+Fix signup TDZ bug, duplicate-email accounts, and /login mislabeling
 
-- Add public/login.html: lean auth landing page with Log in (default),
-  Create account, I already have a key, and Forgot password as tabs
-  under one card, matching the agent portal's visual style
-- Strip auth (signup/login form) out of public/admin.html; it now
-  guards itself on load, redirecting to /login if no token is present,
-  and no longer shows any setup tabs (Router/Portal/Packages/Vouchers/
-  Payment) until the user is authenticated
-- Add GET /login route in server.js
-- Point shell.js logout, and all "please log in" messages
-  (billing.html, print.html, rsc-wizard.html, pppoe.html), at /login
-  instead of /admin
-- Update post-payment key page and license key email (license.js,
-  brevo.js) to send buyers to /login -> "I already have a key"
-  instead of /admin
-- reset-password.html success message now links to /login
+1. src/routes/auth.js - /signup threw a ReferenceError on every attempt:
+   licenseKey (the key string from the request body) was shadowed by a
+   later 'const licenseKey' (the DB row) declared in the same block,
+   triggering the temporal dead zone. Renamed the row variable to
+   licenseKeyRow. Also added a check for an existing account by email,
+   returning a clear error instead of silently allowing duplicates.
 
-No backend/API or schema changes - purely front-end restructuring on
-top of the existing /api/auth/* endpoints.
+2. src/db/schema.sql - owner_email TEXT UNIQUE NOT NULL was declared
+   only inside CREATE TABLE IF NOT EXISTS tenants, so on a database
+   where tenants already existed, that constraint never actually took
+   effect (same bug class as the earlier sites.active fix). Added a
+   non-destructive migration step: for any owner_email shared by more
+   than one tenant, the oldest row keeps its email, newer duplicates
+   get tagged +dupN@duplicate.local (no data deleted), then creates
+   the unique index that should have existed from the start.
+
+3. public/login.html - was mislabeled 'Agent Portal', copied by
+   mistake from the styling reference screenshot of the separate
+   agent.html page. Now correctly reads 'YourNet Control'.

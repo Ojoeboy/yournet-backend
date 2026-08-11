@@ -29,6 +29,17 @@ router.post('/signup', asyncHandler(async (req, res) => {
   if (!validate.isEmail(email)) return res.status(400).json({ error: 'Please enter a valid email address.' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
 
+  // owner_email is *meant* to be UNIQUE at the DB level (see schema.sql),
+  // but that constraint was only ever declared inside CREATE TABLE IF NOT
+  // EXISTS, so it silently never applied to a database where tenants
+  // already existed - same bug class as the sites.active fix. Check here
+  // so signups fail with a clear message even before the schema fix behind
+  // it is deployed, and duplicate accounts stop being possible today.
+  const existing = await pool.query('SELECT id FROM tenants WHERE owner_email=$1', [email]);
+  if (existing.rows.length) {
+    return res.status(400).json({ error: 'An account with that email already exists. Try logging in instead.' });
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -54,24 +65,24 @@ router.post('/signup', asyncHandler(async (req, res) => {
       return res.status(400).json({ error: 'That key is a reactivation key for an existing account - use it from the login page instead.' });
     }
 
-    const licenseKey = keyResult.rows[0];
+    const licenseKeyRow = keyResult.rows[0];
     const passwordHash = await bcrypt.hash(password, 10);
     const verifyToken = crypto.randomBytes(32).toString('hex');
     const nextBillingAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    const subscriptionStatus = licenseKey.billing_authorization ? 'active' : 'manual';
+    const subscriptionStatus = licenseKeyRow.billing_authorization ? 'active' : 'manual';
     const { rows } = await client.query(
       `INSERT INTO tenants (business_name, owner_email, owner_phone, password_hash, currency, plan, plan_expires_at,
                              verify_token_hash, verify_token_expires_at, subscription_status, billing_provider, billing_authorization, next_billing_at)
        VALUES ($1,$2,$3,$4,$5,'licensed',$6,$7,now() + interval '24 hours',$8,$9,$10,$6)
        RETURNING id, business_name, owner_email, plan, plan_expires_at, currency`,
       [businessName, email, phone || null, passwordHash, currency || 'GHS', nextBillingAt,
-       hashToken(verifyToken), subscriptionStatus, licenseKey.billing_provider || null, licenseKey.billing_authorization || null]
+       hashToken(verifyToken), subscriptionStatus, licenseKeyRow.billing_provider || null, licenseKeyRow.billing_authorization || null]
     );
     const tenant = rows[0];
 
     await client.query(
       `UPDATE license_keys SET status='activated', tenant_id=$1, activated_at=now() WHERE id=$2`,
-      [tenant.id, licenseKey.id]
+      [tenant.id, licenseKeyRow.id]
     );
 
     await client.query('COMMIT');

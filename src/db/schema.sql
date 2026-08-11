@@ -158,6 +158,34 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS mk_use_tls BOOLEAN NOT NULL DEFAULT f
 -- never actually got the column despite migrate.js reporting success.
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true;
 
+-- Same bug, different column: owner_email was declared UNIQUE only inside
+-- CREATE TABLE IF NOT EXISTS tenants above, so on a database where tenants
+-- already existed, that constraint never actually took effect - nothing
+-- has ever stopped two accounts sharing an email at the DB level (the
+-- app-level check in src/routes/auth.js /signup is new too, and doesn't
+-- help with rows that already got created before it existed).
+--
+-- Duplicates from before this fix are handled non-destructively: for any
+-- owner_email shared by more than one tenant, the oldest row keeps its
+-- email untouched (that's the "real" account); every newer duplicate gets
+-- its email tagged with +dupN@duplicate.local instead of being deleted, so
+-- no data or payment history is lost, but it also means whoever signed up
+-- for a tagged row can no longer log in with their original email - if any
+-- of the flagged rows in the query below turn out to be real customers
+-- rather than test signups, they need a manual look before relying on
+-- this running unattended again.
+WITH ranked AS (
+  SELECT id, owner_email,
+         ROW_NUMBER() OVER (PARTITION BY owner_email ORDER BY created_at ASC, id ASC) AS rn
+  FROM tenants
+)
+UPDATE tenants t
+SET owner_email = t.owner_email || '+dup' || ranked.rn || '@duplicate.local'
+FROM ranked
+WHERE t.id = ranked.id AND ranked.rn > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_owner_email ON tenants(owner_email);
+
 -- Closes a real hole: Hubtel's webhook has no built-in signature, so
 -- without this an order's own `provider_reference` (handed straight back
 -- to whoever just called buy-voucher/purchase-initialize) was enough to
