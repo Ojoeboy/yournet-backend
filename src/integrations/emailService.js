@@ -72,4 +72,27 @@ async function sendVerificationEmail(toEmail, verifyLink) {
   });
 }
 
-module.exports = { sendPasswordResetEmail, sendVerificationEmail };
+// Sent once, right after an owner/manager creates an agent account (see
+// routes/agents.js POST /). Includes the password in plaintext ONLY
+// because this is the one moment it exists outside its bcrypt hash - the
+// owner already sees it the same way, once, in the creation response
+// (see the tempPassword comment there). Password reset emails never do
+// this; this one has to, since there's no separate "invite link" flow
+// for agents yet, just direct email+password login.
+async function sendAgentWelcomeEmail(toEmail, { agentName, businessName, password, isTempPassword, loginUrl }) {
+  await sendEmail({
+    to: toEmail,
+    subject: `You've been added as an agent for ${businessName}`,
+    html: `
+      <p>Hi ${agentName},</p>
+      <p>${businessName} has added you as an agent on YourNet Control. You can log in to generate and track your own vouchers.</p>
+      <p><a href="${loginUrl}">${loginUrl}</a></p>
+      <p><strong>Email:</strong> ${toEmail}<br>
+      <strong>${isTempPassword ? 'Temporary password' : 'Password'}:</strong> ${password}</p>
+      ${isTempPassword ? '<p>Please log in and change this password as soon as possible.</p>' : ''}
+      <p>If you weren't expecting this, you can ignore this email.</p>
+    `,
+  });
+}
+
+module.exports = { sendPasswordResetEmail, sendVerificationEmail, sendAgentWelcomeEmail };

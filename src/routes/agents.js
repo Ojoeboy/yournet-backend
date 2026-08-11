@@ -10,6 +10,7 @@ const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
 const voucherService = require('../services/voucherService');
 const { checkLicenseLockout } = require('../utils/licenseGate');
+const emailService = require('../integrations/emailService');
 
 const router = express.Router();
 
@@ -120,6 +121,20 @@ router.post('/', ownerOrManagerOnly, asyncHandler(async (req, res) => {
        VALUES ($1,$2,$3,'agent',$4,$5,$6,$7) RETURNING id, name, email, commission_pct, secret_question`,
       [req.tenantId, name, email, passwordHash, commissionPct !== undefined && commissionPct !== null && commissionPct !== '' ? commissionPct : 10, secretQuestion, secretAnswerHash]
     );
+
+    // Fire-and-forget, same posture as the verification/reset emails in
+    // auth.js - a slow or failed send shouldn't block the owner from
+    // seeing the account was created (the response below still carries
+    // the credentials as a fallback either way).
+    const { rows: tenantRows } = await pool.query('SELECT business_name FROM tenants WHERE id=$1', [req.tenantId]);
+    emailService.sendAgentWelcomeEmail(email, {
+      agentName: name,
+      businessName: tenantRows[0]?.business_name || 'your WiFi provider',
+      password: password && password.length >= 8 ? password : tempPassword,
+      isTempPassword: !(password && password.length >= 8),
+      loginUrl: `${process.env.APP_BASE_URL}/agent.html`,
+    }).catch(() => {});
+
     res.json({ ...rows[0], tempPassword: tempPassword || undefined });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'An agent with that email already exists.' });
