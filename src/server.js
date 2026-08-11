@@ -120,6 +120,10 @@ app.use('/owner', ownerLoginLimiter, ownerRoutes);
 app.use('/billing', apiLimiter, billingRoutes);
 app.use('/portal', portalLimiter, portalRoutes);
 
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
+});
+
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'admin.html'));
 });

@@ -1,8 +1,20 @@
-feat: agent welcome email + glassmorphism on agent login
+Move tenant login/signup to /login, separate from setup wizard
 
-- New agent accounts now get an automatic welcome email with their
-  login link, email, and (temp) password via existing Gmail SMTP setup
-- Agent creation no longer relies solely on the owner manually copying
-  credentials to the agent
-- agent.html now uses the same rotating-background glass effect as
-  owner-login.html/license.html (bg-rotate.js + yn-glass card styling)
+- Add public/login.html: lean auth landing page with Log in (default),
+  Create account, I already have a key, and Forgot password as tabs
+  under one card, matching the agent portal's visual style
+- Strip auth (signup/login form) out of public/admin.html; it now
+  guards itself on load, redirecting to /login if no token is present,
+  and no longer shows any setup tabs (Router/Portal/Packages/Vouchers/
+  Payment) until the user is authenticated
+- Add GET /login route in server.js
+- Point shell.js logout, and all "please log in" messages
+  (billing.html, print.html, rsc-wizard.html, pppoe.html), at /login
+  instead of /admin
+- Update post-payment key page and license key email (license.js,
+  brevo.js) to send buyers to /login -> "I already have a key"
+  instead of /admin
+- reset-password.html success message now links to /login
+
+No backend/API or schema changes - purely front-end restructuring on
+top of the existing /api/auth/* endpoints.

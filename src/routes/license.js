@@ -410,7 +410,7 @@ function renderKeyPage(keyCode) {
     'Payment successful - here is your activation key',
     `<div class="key" id="keyCode">${keyCode}</div>
      <button class="copyBtn" onclick="navigator.clipboard.writeText('${keyCode}').then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy key',1500)})">Copy key</button>
-     <p>Save this key now - you'll need it once, during signup at <a href="/admin" style="color:#2ec4b6">/admin</a>. It cannot be reused for a second business.</p>`
+     <p>Save this key now - you'll need it once, on the "I already have a key" tab at <a href="/login" style="color:#2ec4b6">/login</a>. It cannot be reused for a second business.</p>`
   );
 }
 

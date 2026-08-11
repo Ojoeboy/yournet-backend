@@ -74,39 +74,18 @@
 <div class="sub">Click-through setup - no raw API calls needed</div>
 
 <div class="setup-tabs" id="setup-tabs">
-  <button type="button" class="setup-tab active" id="tab-auth" onclick="switchTab('auth')">1. Account</button>
-  <button type="button" class="setup-tab locked" id="tab-site" onclick="switchTab('site')">2. Router<span class="lock">🔒</span></button>
-  <button type="button" class="setup-tab locked" id="tab-portal" onclick="switchTab('portal')">Portal<span class="lock">🔒</span></button>
-  <button type="button" class="setup-tab locked" id="tab-package" onclick="switchTab('package')">3. Packages<span class="lock">🔒</span></button>
-  <button type="button" class="setup-tab locked" id="tab-voucher" onclick="switchTab('voucher')">4. Vouchers<span class="lock">🔒</span></button>
-  <button type="button" class="setup-tab locked" id="tab-gateway" onclick="switchTab('gateway')">5. Payment<span class="lock">🔒</span></button>
+  <button type="button" class="setup-tab" id="tab-account" onclick="switchTab('account')">Account</button>
+  <button type="button" class="setup-tab active" id="tab-site" onclick="switchTab('site')">1. Router</button>
+  <button type="button" class="setup-tab" id="tab-portal" onclick="switchTab('portal')">Portal</button>
+  <button type="button" class="setup-tab" id="tab-package" onclick="switchTab('package')">2. Packages</button>
+  <button type="button" class="setup-tab" id="tab-voucher" onclick="switchTab('voucher')">3. Vouchers</button>
+  <button type="button" class="setup-tab" id="tab-gateway" onclick="switchTab('gateway')">4. Payment</button>
 </div>
 
-<!-- STEP 1: Login/Signup -->
-<div class="card" id="auth-card">
-  <h2 data-i18n="step1Title">Step 1 - Your account</h2>
-  <label data-i18n="licenseKeyLabel">License key</label>
-  <input id="licenseKey" placeholder="YNET-XXXX-XXXX-XXXX">
-  <label data-i18n="businessName">Business name</label>
-  <input id="businessName" placeholder="BITTNET INTERNET SERVICES">
-  <label data-i18n="email">Email</label>
-  <input id="email" type="email" placeholder="you@example.com">
-  <label data-i18n="password">Password</label>
-  <div class="pwd-wrap">
-    <input id="password" type="password">
-    <button type="button" class="pwd-toggle" onclick="togglePwd('password')" aria-label="Show password">👁</button>
-  </div>
-  <button onclick="signup()" data-i18n="createAccountBtn">Create account</button>
-  <button class="secondary" onclick="login()" data-i18n="loginInsteadBtn">Log in instead</button>
-  <div class="msg" id="auth-msg"></div>
-  <p style="font-size:11px;color:#6b8a91;margin-top:10px">
-    <span data-i18n="needKeyText">Need a key?</span>
-    <a href="/license" style="color:#2ec4b6" data-i18n="getOneHere">Get one here</a>.
-    <span data-i18n="forgotPasswordText">Forgot your password?</span>
-    <a href="/forgot-password" style="color:#2ec4b6" data-i18n="resetIt">Reset it</a>.
-  </p>
-
-  <div id="account-prefs" class="hidden" style="margin-top:18px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px">
+<!-- ACCOUNT: prefs only now - login/signup moved to /login (see public/login.html) -->
+<div class="card hidden" id="account-card">
+  <h2>Account</h2>
+  <div id="account-prefs" style="padding-top:4px">
     <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
       <span class="switch">
         <input type="checkbox" id="adminUseRotatingBackgrounds" onchange="saveAdminBackgroundSetting()">
@@ -441,27 +420,27 @@
 <script src="/i18n/translations.js"></script>
 <script src="/i18n/i18n-loader.js"></script>
 <script>
+  // This page is now protected - login/signup live on /login (public/login.html).
+  // No token means we don't belong here at all, so bounce before rendering
+  // anything below rather than showing locked tabs.
   let token = localStorage.getItem('yournet_token') || null;
   let tenant = null;
+  if (!token) {
+    window.location.href = '/login';
+  }
 
   // ---------- quick-setup tabs ----------
   const SETUP_TAB_CARDS = {
-    auth: 'auth-card', site: 'site-card', portal: 'portal-card',
+    account: 'account-card', site: 'site-card', portal: 'portal-card',
     package: 'package-card', voucher: 'voucher-card', gateway: 'gateway-card'
   };
 
   function switchTab(key) {
     const tabEl = document.getElementById('tab-' + key);
-    if (!tabEl || tabEl.classList.contains('locked')) return;
+    if (!tabEl) return;
     Object.keys(SETUP_TAB_CARDS).forEach(function (k) {
       document.getElementById(SETUP_TAB_CARDS[k]).classList.toggle('hidden', k !== key);
       document.getElementById('tab-' + k).classList.toggle('active', k === key);
-    });
-  }
-
-  function unlockTabs() {
-    ['site', 'portal', 'package', 'voucher', 'gateway'].forEach(function (k) {
-      document.getElementById('tab-' + k).classList.remove('locked');
     });
   }
 
@@ -515,45 +494,15 @@
     return data;
   }
 
-  async function signup() {
-    try {
-      const data = await api('/api/auth/signup', 'POST', {
-        licenseKey: document.getElementById('licenseKey').value,
-        businessName: document.getElementById('businessName').value,
-        email: document.getElementById('email').value,
-        password: document.getElementById('password').value,
-      });
-      onAuthed(data);
-    } catch (err) {
-      showMsg('auth-msg', err.message, 'err');
-    }
-  }
-
-  async function login() {
-    try {
-      const data = await api('/api/auth/login', 'POST', {
-        email: document.getElementById('email').value,
-        password: document.getElementById('password').value,
-      });
-      onAuthed(data);
-    } catch (err) {
-      showMsg('auth-msg', err.message, 'err');
-    }
-  }
-
-  function onAuthed(data) {
-    token = data.token;
-    tenant = data.tenant;
-    localStorage.setItem('yournet_token', token);
-    localStorage.setItem('yournet_currency', tenant.currency || 'GHS');
+  // Runs once on load, only when a token is already present (the guard
+  // above already redirected away if not). Replaces the old onAuthed()
+  // that used to fire after signup/login on this same page.
+  function initSetupPage() {
     const pkgCurEl = document.getElementById('pkgPriceCurrency');
     if (pkgCurEl) pkgCurEl.textContent = currencyLabel();
-    showMsg('auth-msg', 'Logged in as ' + (tenant.businessName || tenant.business_name), 'ok');
-    unlockTabs();
     switchTab('site');
     loadSitesAndPackages();
     loadGateways();
-    document.getElementById('account-prefs').classList.remove('hidden');
     loadAdminBackgroundSetting();
   }
 
@@ -964,15 +913,10 @@
     } catch (err) { /* not logged in yet */ }
   }
 
-  // Auto-resume session if already logged in
-  if (token) {
-    unlockTabs();
-    switchTab('site');
-    loadSitesAndPackages();
-    loadGateways();
-    document.getElementById('account-prefs').classList.remove('hidden');
-    loadAdminBackgroundSetting();
-  }
+  // This page is reached only with a token already set (the guard at the
+  // top of this script redirects to /login otherwise), so initialize
+  // straight away instead of waiting on a login/signup submit.
+  initSetupPage();
 
   function renderGatewayFields() {
     document.querySelectorAll('.gw-fields').forEach(el => el.classList.add('hidden'));

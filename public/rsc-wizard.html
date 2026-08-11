@@ -153,7 +153,7 @@
   async function generate() {
     const msg = document.getElementById('msg');
     if (!token) {
-      msg.textContent = 'Please log in via /admin first.';
+      msg.textContent = 'Please log in via /login first.';
       msg.className = 'msg show err';
       return;
     }

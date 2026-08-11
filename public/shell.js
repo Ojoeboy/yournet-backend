@@ -23,7 +23,7 @@
         <div class="app-topbar-side"></div>
         <div class="app-brand"><span class="dot"></span> YourNet Control</div>
         <div class="app-topbar-side right">
-          <a href="#" class="logout-btn" onclick="localStorage.removeItem('yournet_token');window.location.href='/admin';return false;">Log out</a>
+          <a href="#" class="logout-btn" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;">Log out</a>
         </div>
       </div>
       <nav class="app-nav">

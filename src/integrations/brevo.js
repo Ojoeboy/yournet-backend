@@ -37,7 +37,7 @@ async function sendLicenseKeyEmail(toEmail, keyCode) {
       htmlContent: `
         <p>Here is your YourNet Control activation key:</p>
         <p style="font-family:monospace;font-size:20px;font-weight:700">${keyCode}</p>
-        <p>Save this - you'll need it once, during signup at /admin. It cannot be reused for a second business.</p>
+        <p>Save this - you'll need it once, on the "I already have a key" tab at /login. It cannot be reused for a second business.</p>
       `,
     },
     { headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json' } }
