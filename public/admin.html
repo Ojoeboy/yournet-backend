@@ -245,6 +245,10 @@
   <button onclick="addSite()" data-i18n="saveSiteBtn">Save site</button>
   <button class="secondary" onclick="testSite()" data-i18n="testConnectionBtn">Test connection</button>
   <div class="msg" id="site-msg"></div>
+
+  <h3 style="margin-top:22px;font-size:14px;color:#9fb6bc">Manage sites</h3>
+  <div class="table-scroll"><table id="siteManageTable"></table></div>
+  <div class="msg" id="site-manage-msg"></div>
 </div>
 
 <!-- STEP 2.5: Portal branding -->
@@ -325,7 +329,7 @@
   <label data-i18n="pkgLabelLabel">Label</label>
   <input id="pkgLabel" placeholder="6 Hours">
   <div class="row">
-    <div><label data-i18n="priceLabel">Price (GHS)</label><input id="pkgPrice" placeholder="5"></div>
+    <div><label data-i18n="priceLabel">Price (<span id="pkgPriceCurrency">GHS</span>)</label><input id="pkgPrice" placeholder="5"></div>
     <div>
       <label data-i18n="durationLabel">Duration</label>
       <div class="row" style="gap:6px">
@@ -365,6 +369,10 @@
   <select id="voucherPackage"></select>
   <label data-i18n="siteLabel">Site</label>
   <select id="voucherSite"></select>
+  <label>Agent (optional - who's selling these)</label>
+  <select id="voucherAgent"><option value="">- Not assigned to an agent -</option></select>
+  <label>Batch label (optional - for settlement/reconciliation)</label>
+  <input id="voucherBatch" placeholder="e.g. 2026-08-10-morning">
   <label data-i18n="quantityLabel">How many?</label>
   <input id="voucherQty" value="5">
   <button onclick="generateVouchers()" data-i18n="generateBtn">Generate</button>
@@ -489,6 +497,10 @@
     }
   }
 
+  function currencyLabel() {
+    return localStorage.getItem('yournet_currency') || 'GHS';
+  }
+
   async function api(path, method, body) {
     const res = await fetch(path, {
       method,
@@ -533,6 +545,9 @@
     token = data.token;
     tenant = data.tenant;
     localStorage.setItem('yournet_token', token);
+    localStorage.setItem('yournet_currency', tenant.currency || 'GHS');
+    const pkgCurEl = document.getElementById('pkgPriceCurrency');
+    if (pkgCurEl) pkgCurEl.textContent = currencyLabel();
     showMsg('auth-msg', 'Logged in as ' + (tenant.businessName || tenant.business_name), 'ok');
     unlockTabs();
     switchTab('site');
@@ -720,7 +735,7 @@
       tbody.innerHTML = packages.map(p => `
         <tr${p.active ? '' : ' style="opacity:.5"'}>
           <td>${escapeHtmlAdmin(p.label)}</td>
-          <td>GHS ${Number(p.price).toFixed(2)}</td>
+          <td>${currencyLabel()} ${Number(p.price).toFixed(2)}</td>
           <td>${formatDuration(p.duration_minutes)}</td>
           <td>${p.active ? 'Active' : 'Inactive'}</td>
           <td style="white-space:nowrap">
@@ -770,9 +785,53 @@
 
       const packages = await api('/api/packages', 'GET');
       const pkgSelect = document.getElementById('voucherPackage');
-      pkgSelect.innerHTML = packages.map(p => `<option value="${p.id}">${p.label} - GHS ${p.price}</option>`).join('');
+      pkgSelect.innerHTML = packages.map(p => `<option value="${p.id}">${p.label} - ${currencyLabel()} ${p.price}</option>`).join('');
       loadPackageList();
+      loadSiteManageList();
+      loadAgentDropdown();
     } catch (err) { /* not logged in yet */ }
+  }
+
+  async function loadSiteManageList() {
+    try {
+      const sites = await api('/api/sites?all=true', 'GET');
+      const tbody = document.getElementById('siteManageTable');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><th>Site</th><th>Status</th><th>Active</th><th></th></tr>' +
+        (sites.map(s => `
+          <tr${s.active ? '' : ' style="opacity:.5"'}>
+            <td>${escapeHtmlAdmin(s.name)}</td>
+            <td>${escapeHtmlAdmin(s.status)}</td>
+            <td>${s.active ? 'Active' : 'Inactive'}</td>
+            <td style="white-space:nowrap">
+              <button class="secondary" style="padding:6px 10px;font-size:12px" onclick="toggleSiteActive('${s.id}', ${!s.active})">${s.active ? 'Deactivate' : 'Activate'}</button>
+              <button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" onclick="deleteSite('${s.id}')">Delete</button>
+            </td>
+          </tr>
+        `).join('') || '<tr><td colspan="4">No sites yet.</td></tr>');
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  async function toggleSiteActive(id, active) {
+    try {
+      await api(`/api/sites/${id}`, 'PATCH', { active });
+      loadSitesAndPackages();
+    } catch (err) {
+      showMsg('site-manage-msg', err.message, 'err');
+    }
+  }
+
+  async function deleteSite(id) {
+    if (!confirm('Delete this site? This only works if it has never had vouchers, orders, or PPPoE subscribers.')) return;
+    try {
+      await api(`/api/sites/${id}`, 'DELETE');
+      showMsg('site-manage-msg', 'Site deleted.', 'ok');
+      loadSitesAndPackages();
+    } catch (err) {
+      // Backend returns a clear 409 explaining to deactivate instead when
+      // the site is already in use - surface that message as-is.
+      showMsg('site-manage-msg', err.message, 'err');
+    }
   }
 
   async function loadPortalBranding() {
@@ -877,10 +936,14 @@
 
   async function generateVouchers() {
     try {
+      const agentId = document.getElementById('voucherAgent').value;
+      const batch = document.getElementById('voucherBatch').value.trim();
       const data = await api('/api/vouchers/generate', 'POST', {
         packageId: document.getElementById('voucherPackage').value,
         siteId: document.getElementById('voucherSite').value,
         quantity: Number(document.getElementById('voucherQty').value) || 1,
+        agentId: agentId || undefined,
+        batch: batch || undefined,
       });
       showMsg('voucher-msg', `Generated ${data.count} vouchers.`, 'ok');
       const table = document.getElementById('voucherTable');
@@ -889,6 +952,16 @@
     } catch (err) {
       showMsg('voucher-msg', err.message, 'err');
     }
+  }
+
+  async function loadAgentDropdown() {
+    try {
+      const agents = await api('/api/agents', 'GET');
+      const sel = document.getElementById('voucherAgent');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">- Not assigned to an agent -</option>' +
+        agents.map(a => `<option value="${a.id}">${escapeHtmlAdmin(a.name)}</option>`).join('');
+    } catch (err) { /* not logged in yet */ }
   }
 
   // Auto-resume session if already logged in

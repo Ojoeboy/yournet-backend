@@ -6,13 +6,18 @@ const axios = require('axios');
 // Paystack account (their customers paying them directly), depending on
 // which credentials get passed in.
 
-async function initializePayment({ secretKey, email, amountGHS, reference, callbackUrl, metadata }) {
+// currency defaults to 'GHS' for backward compatibility with existing
+// callers. Paystack only supports a handful of currencies (GHS, NGN, USD,
+// ZAR, KES as of writing) and only if the merchant's account has that
+// currency enabled - if a tenant picks an unsupported one at signup, this
+// call will fail with a Paystack error, which the caller surfaces as-is.
+async function initializePayment({ secretKey, email, amountGHS, currency, reference, callbackUrl, metadata }) {
   const res = await axios.post(
     'https://api.paystack.co/transaction/initialize',
     {
       email,
       amount: Math.round(amountGHS * 100),
-      currency: 'GHS',
+      currency: currency || 'GHS',
       reference,
       callback_url: callbackUrl,
       metadata,

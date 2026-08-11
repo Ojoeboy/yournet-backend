@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireNotAgent } = require('../middleware/auth');
 const mikrotik = require('../integrations/mikrotik');
 const omada = require('../integrations/omada');
 const unifi = require('../integrations/unifi');
@@ -10,7 +10,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const freeStockPhotos = require('../integrations/freeStockPhotos');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, requireNotAgent);
 
 // Owner's opt-in toggle for a rotating photo background on admin/dashboard/
 // billing/vouchers pages, in place of the default SVG connectivity mesh -

@@ -1,11 +1,11 @@
 const express = require('express');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireNotAgent } = require('../middleware/auth');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
 const gatewayService = require('../services/paymentGatewayService');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, requireNotAgent);
 
 const SUPPORTED_PROVIDERS = ['paystack', 'hubtel', 'flutterwave'];
 

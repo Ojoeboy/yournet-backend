@@ -8,7 +8,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const pool = require('../db/pool');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireNotAgent } = require('../middleware/auth');
 const mikrotik = require('../integrations/mikrotik');
 const { encrypt, decrypt } = require('../utils/credentialCrypto');
 const validate = require('../utils/validate');
@@ -16,7 +16,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const logger = require('../utils/logger');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, requireNotAgent);
 
 // ---- helpers ----------------------------------------------------------
 

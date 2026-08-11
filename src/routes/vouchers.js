@@ -1,13 +1,13 @@
 const express = require('express');
 const QRCode = require('qrcode');
 const pool = require('../db/pool');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireNotAgent } = require('../middleware/auth');
 const voucherService = require('../services/voucherService');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, requireNotAgent);
 
 router.post('/generate', asyncHandler(async (req, res) => {
   const { packageId, siteId, agentId, quantity, batch } = req.body;
@@ -25,14 +25,50 @@ router.post('/generate', asyncHandler(async (req, res) => {
   }
 }));
 
+// What print.html needs once per page load, not per card: the tenant's
+// business name (always set, used as the printed company name) and a
+// logo to show alongside it. There's no tenant-level logo field - only
+// per-site portal branding - so this picks the first site that has one
+// configured. Good enough for the common case of one look across a
+// tenant's sites; a tenant branding multiple sites differently can still
+// filter the print list to one site/batch at a time.
+router.get('/print-branding', asyncHandler(async (req, res) => {
+  const { rows: tenantRows } = await pool.query('SELECT business_name FROM tenants WHERE id=$1', [req.tenantId]);
+  const { rows: logoRows } = await pool.query(
+    `SELECT portal_logo_url FROM sites WHERE tenant_id=$1 AND portal_logo_url IS NOT NULL AND portal_logo_url != '' ORDER BY name ASC LIMIT 1`,
+    [req.tenantId]
+  );
+  res.json({
+    businessName: tenantRows[0]?.business_name || 'WiFi Vouchers',
+    logoUrl: logoRows[0]?.portal_logo_url || null,
+  });
+}));
+
 router.get('/', asyncHandler(async (req, res) => {
-  const { status, batch } = req.query;
-  const clauses = ['tenant_id=$1'];
+  const { status, batch, agentId } = req.query;
+  const clauses = ['v.tenant_id=$1'];
   const params = [req.tenantId];
-  if (status) { params.push(status); clauses.push(`status=$${params.length}`); }
-  if (batch) { params.push(batch); clauses.push(`batch=$${params.length}`); }
+  if (status) { params.push(status); clauses.push(`v.status=$${params.length}`); }
+  if (batch) { params.push(batch); clauses.push(`v.batch=$${params.length}`); }
+  if (agentId === 'none') {
+    clauses.push('v.agent_id IS NULL');
+  } else if (agentId) {
+    params.push(agentId);
+    clauses.push(`v.agent_id=$${params.length}`);
+  }
+  // Joined to packages (label/price/duration_minutes - what print.html
+  // needs on the card), tenants (business_name - the printed company
+  // name), and tenant_users (the assigned agent's name, if any), so the
+  // print page can render everything from one call instead of stitching
+  // together several round trips itself.
   const { rows } = await pool.query(
-    `SELECT * FROM vouchers WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT 500`,
+    `SELECT v.*, p.label AS package_label, p.price AS package_price, p.duration_minutes AS package_duration_minutes,
+            t.business_name, a.name AS agent_name
+     FROM vouchers v
+     JOIN packages p ON p.id = v.package_id
+     JOIN tenants t ON t.id = v.tenant_id
+     LEFT JOIN tenant_users a ON a.id = v.agent_id
+     WHERE ${clauses.join(' AND ')} ORDER BY v.created_at DESC LIMIT 500`,
     params
   );
   res.json(rows);
@@ -48,6 +84,45 @@ router.get('/:id/qrcode', asyncHandler(async (req, res) => {
   // any generic QR reader and simple to key into the portal by hand too.
   const png = await QRCode.toBuffer(rows[0].code, { width: 240, margin: 1 });
   res.type('png').send(png);
+}));
+
+// Delete a single voucher - but only when doing so can't strand or cut off
+// a real customer:
+//   - 'unused'                              -> safe, never touched anyone.
+//   - 'redeeming' (mid-flight right now)     -> blocked; let it finish first,
+//                                               it'll land on 'active' or
+//                                               get released back to 'unused'.
+//   - 'active' with expires_at still ahead   -> blocked; this is a LIVE
+//                                               session - deleting the row
+//                                               doesn't disconnect the
+//                                               customer (the router grants
+//                                               access independently), it
+//                                               just destroys the record
+//                                               while they're still using it.
+//   - 'active' with expires_at already past  -> safe; there's a schema quirk
+//                                               worth knowing - nothing ever
+//                                               flips status to 'expired',
+//                                               so a lapsed session still
+//                                               reads as 'active' in the DB.
+//                                               expires_at, not status, is
+//                                               what actually tells you the
+//                                               session is over.
+router.delete('/:id', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query('SELECT id, status, expires_at FROM vouchers WHERE id=$1 AND tenant_id=$2', [
+    req.params.id, req.tenantId,
+  ]);
+  if (!rows.length) return res.status(404).json({ error: 'Voucher not found.' });
+  const v = rows[0];
+
+  if (v.status === 'redeeming') {
+    return res.status(409).json({ error: 'This voucher is mid-redemption right now. Try again in a moment.' });
+  }
+  if (v.status === 'active' && (!v.expires_at || new Date(v.expires_at) > new Date())) {
+    return res.status(409).json({ error: 'This voucher has an active session and can\u2019t be deleted while in use. It can be deleted once the session expires.' });
+  }
+
+  await pool.query('DELETE FROM vouchers WHERE id=$1 AND tenant_id=$2', [req.params.id, req.tenantId]);
+  res.json({ ok: true });
 }));
 
 // Pending manual-MoMo voucher claims - customers who said they'd pay the

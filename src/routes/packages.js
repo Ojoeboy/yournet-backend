@@ -1,11 +1,11 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireNotAgent } = require('../middleware/auth');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, requireNotAgent);
 
 router.post('/', asyncHandler(async (req, res) => {
   const { label, price, durationMinutes, rateLimitDown, rateLimitUp } = req.body;

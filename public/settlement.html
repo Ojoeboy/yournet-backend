@@ -46,6 +46,7 @@
 <script src="/i18n/i18n-loader.js"></script>
 <script>
   const token = localStorage.getItem('yournet_token');
+  const currency = localStorage.getItem('yournet_currency') || 'GHS';
 
   async function api(path) {
     const res = await fetch(path, { headers: { Authorization: 'Bearer ' + token } });
@@ -80,14 +81,14 @@
       <table>
         <tr><th>Package</th><th>Price</th><th>Given</th><th>Sold</th><th>Sales</th></tr>
         ${s.items.length ? s.items.map(i => `
-          <tr><td>${i.label}</td><td>GHS ${i.price}</td><td>${i.given}</td><td>${i.sold}</td><td>GHS ${i.sales}</td></tr>
+          <tr><td>${i.label}</td><td>${currency} ${i.price}</td><td>${i.given}</td><td>${i.sold}</td><td>${currency} ${i.sales}</td></tr>
         `).join('') : '<tr><td colspan="5" style="color:#888">No vouchers for this period</td></tr>'}
-        <tfoot><tr><td colspan="4">TOTAL</td><td>GHS ${s.totalSales}</td></tr></tfoot>
+        <tfoot><tr><td colspan="4">TOTAL</td><td>${currency} ${s.totalSales}</td></tr></tfoot>
       </table>
       </div>
       <div class="summary">
-        <div class="row"><span>Commission (${s.agent.commissionPct}%)</span><span>GHS ${s.commissionOwed}</span></div>
-        <div class="row total"><span>Cash to return</span><span>GHS ${s.cashToReturn}</span></div>
+        <div class="row"><span>Commission (${s.agent.commissionPct}%)</span><span>${currency} ${s.commissionOwed}</span></div>
+        <div class="row total"><span>Cash to return</span><span>${currency} ${s.cashToReturn}</span></div>
       </div>
     `;
   }

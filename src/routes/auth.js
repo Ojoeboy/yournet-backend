@@ -7,6 +7,7 @@ const pool = require('../db/pool');
 const emailService = require('../integrations/emailService');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
+const { checkLicenseLockout, LICENSE_GRACE_DAYS } = require('../utils/licenseGate');
 
 const router = express.Router();
 
@@ -16,8 +17,6 @@ const router = express.Router();
 // dashboard traffic (120 req/min). Give it its own strict limiter, matching
 // the one already used for owner login in server.js.
 const tenantLoginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
-
-const LICENSE_GRACE_DAYS = Number(process.env.LICENSE_GRACE_DAYS || 2);
 
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -64,7 +63,7 @@ router.post('/signup', asyncHandler(async (req, res) => {
       `INSERT INTO tenants (business_name, owner_email, owner_phone, password_hash, currency, plan, plan_expires_at,
                              verify_token_hash, verify_token_expires_at, subscription_status, billing_provider, billing_authorization, next_billing_at)
        VALUES ($1,$2,$3,$4,$5,'licensed',$6,$7,now() + interval '24 hours',$8,$9,$10,$6)
-       RETURNING id, business_name, owner_email, plan, plan_expires_at`,
+       RETURNING id, business_name, owner_email, plan, plan_expires_at, currency`,
       [businessName, email, phone || null, passwordHash, currency || 'GHS', nextBillingAt,
        hashToken(verifyToken), subscriptionStatus, licenseKey.billing_provider || null, licenseKey.billing_authorization || null]
     );
@@ -110,35 +109,22 @@ router.post('/login', tenantLoginLimiter, asyncHandler(async (req, res) => {
   if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
   // Monthly license lockout - deliberately checked AFTER the password is
-  // confirmed correct, and blocks the dashboard even so. plan_expires_at
-  // being NULL means "never had a monthly cycle start" (shouldn't happen
-  // for any tenant created after this went live, but guards old rows) -
-  // treated as not-yet-locked rather than expired.
-  let daysPastGrace = null;
-  if (tenant.plan_expires_at) {
-    const lockoutAt = new Date(new Date(tenant.plan_expires_at).getTime() + LICENSE_GRACE_DAYS * 24 * 60 * 60 * 1000);
-    const now = new Date();
-    if (now > lockoutAt) {
-      return res.status(402).json({
-        error: 'Your YourNet Control subscription has expired and the grace period has ended. Renew at /license to restore access.',
-        locked: true,
-      });
-    }
-    if (now > new Date(tenant.plan_expires_at)) {
-      daysPastGrace = Math.ceil((lockoutAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
-    }
-  }
+  // confirmed correct, and blocks the dashboard even so. See
+  // utils/licenseGate.js - the same check is applied to agent login/
+  // generation so a lapsed subscription locks everyone out consistently.
+  const { locked, error, graceDaysRemaining } = checkLicenseLockout(tenant);
+  if (locked) return res.status(402).json({ error, locked: true });
 
   const token = jwt.sign({ tenantId: tenant.id, role: 'owner' }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
   res.json({
     token,
-    tenant: { id: tenant.id, businessName: tenant.business_name, email: tenant.owner_email, plan: tenant.plan },
+    tenant: { id: tenant.id, businessName: tenant.business_name, email: tenant.owner_email, plan: tenant.plan, currency: tenant.currency },
     // Present only while in the grace window - lets the dashboard show
     // "renew within N day(s)" instead of the tenant finding out by being
     // locked out with no warning.
-    graceDaysRemaining: daysPastGrace,
+    graceDaysRemaining,
   });
 }));
 

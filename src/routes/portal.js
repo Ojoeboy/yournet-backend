@@ -19,10 +19,12 @@ const router = express.Router();
 router.get('/:siteId/config', asyncHandler(async (req, res) => {
   const { siteId } = req.params;
   const { rows } = await pool.query(
-    `SELECT tenant_id, portal_business_name, portal_logo_url, portal_primary_color,
-            portal_background_image_url, portal_caution_text, portal_whatsapp_number,
-            portal_momo_number, portal_momo_name, portal_use_rotating_backgrounds
-     FROM sites WHERE id=$1`,
+    `SELECT s.tenant_id, s.portal_business_name, s.portal_logo_url, s.portal_primary_color,
+            s.portal_background_image_url, s.portal_caution_text, s.portal_whatsapp_number,
+            s.portal_momo_number, s.portal_momo_name, s.portal_use_rotating_backgrounds,
+            t.currency
+     FROM sites s JOIN tenants t ON t.id = s.tenant_id
+     WHERE s.id=$1`,
     [siteId]
   );
   if (!rows.length) return res.status(404).json({ error: 'Unknown site' });
@@ -52,6 +54,7 @@ router.get('/:siteId/config', asyncHandler(async (req, res) => {
     whatsappNumber: site.portal_whatsapp_number,
     momoNumber: site.portal_momo_number,
     momoName: site.portal_momo_name,
+    currency: site.currency,
     packages,
     onlinePaymentAvailable: !!activeGateway,
     rotatingBackgrounds,
@@ -108,9 +111,13 @@ router.post('/:siteId/buy-voucher', asyncHandler(async (req, res) => {
   const { packageId, email, phone } = req.body;
   if (!packageId) return res.status(400).json({ error: 'packageId is required' });
 
-  const { rows } = await pool.query('SELECT tenant_id FROM sites WHERE id=$1', [siteId]);
+  const { rows } = await pool.query(
+    `SELECT s.tenant_id, t.currency FROM sites s JOIN tenants t ON t.id = s.tenant_id WHERE s.id=$1`,
+    [siteId]
+  );
   if (!rows.length) return res.status(404).json({ error: 'Unknown site' });
   const tenantId = rows[0].tenant_id;
+  const currency = rows[0].currency;
 
   const { rows: pkgRows } = await pool.query('SELECT * FROM packages WHERE id=$1 AND tenant_id=$2', [packageId, tenantId]);
   if (!pkgRows.length) return res.status(404).json({ error: 'Package not found' });
@@ -133,6 +140,7 @@ router.post('/:siteId/buy-voucher', asyncHandler(async (req, res) => {
   try {
     const checkout = await gatewayService.initializeCheckout(tenantId, {
       amountGHS: Number(pkg.price),
+      currency,
       email: email || 'customer@example.com',
       phone,
       reference,

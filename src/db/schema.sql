@@ -96,6 +96,12 @@ CREATE TABLE IF NOT EXISTS sites (
   last_checked_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
+  -- Soft-deactivate: mirrors packages.active. A site with vouchers, orders,
+  -- or pppoe subscribers referencing it can't be hard-deleted (see
+  -- DELETE /:id in routes/sites.js), so this lets it drop out of pickers
+  -- without breaking that history.
+  active BOOLEAN NOT NULL DEFAULT true,
+
   -- Portal branding: NULL means "use the default YourNet portal look".
   -- portal_custom_html, if set, is served as the ENTIRE captive portal page
   -- for this site instead of the built-in template - an advanced escape
@@ -478,3 +484,37 @@ CREATE TABLE IF NOT EXISTS pppoe_payments (
 CREATE INDEX IF NOT EXISTS idx_pppoe_payments_subscriber ON pppoe_payments(subscriber_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pppoe_payments_provider_ref
   ON pppoe_payments(provider, provider_reference) WHERE provider_reference IS NOT NULL;
+
+-- Agent secret question: a lightweight second factor for the agent
+-- self-service voucher generation added below. Set by the owner/manager
+-- when adding or editing an agent (never by the agent themselves, so a
+-- compromised agent login alone can't also rewrite the recovery question).
+-- Only the hash is stored, same bcrypt pattern as password_hash.
+-- secret_failed_attempts/secret_locked_until back the lockout in
+-- routes/agents.js POST /verify-secret - a few wrong guesses in a row
+-- locks the agent out of generating for a cooldown window and raises an
+-- admin-visible alert (see agent_activity_log below), since repeated wrong
+-- answers from a token that otherwise proves tenant+role is one of the
+-- stronger signals available that the login itself may be compromised.
+ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS secret_question TEXT;
+ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS secret_answer_hash TEXT;
+ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS secret_failed_attempts INT NOT NULL DEFAULT 0;
+ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS secret_locked_until TIMESTAMPTZ;
+
+-- Feed for the owner's "Activity Log" tab: every agent-self-generated
+-- voucher batch, plus every failed/locked secret-question attempt, so an
+-- owner can see agent-side activity as it happens rather than only
+-- discovering it later in the voucher/commission numbers.
+-- agent_name_snapshot is kept alongside agent_id (which sets NULL if the
+-- agent is ever deleted) so the log stays readable/historical either way.
+CREATE TABLE IF NOT EXISTS agent_activity_log (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  agent_id UUID REFERENCES tenant_users(id) ON DELETE SET NULL,
+  agent_name_snapshot TEXT,
+  type TEXT NOT NULL, -- 'voucher_batch' | 'secret_question_failed' | 'secret_question_locked'
+  detail JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_activity_tenant_created ON agent_activity_log(tenant_id, created_at DESC);

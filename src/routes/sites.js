@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireNotAgent } = require('../middleware/auth');
 const mikrotik = require('../integrations/mikrotik');
 const omada = require('../integrations/omada');
 const unifi = require('../integrations/unifi');
@@ -10,7 +10,7 @@ const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
-router.use(requireAuth);
+router.use(requireAuth, requireNotAgent);
 
 router.post('/', asyncHandler(async (req, res) => {
   const { name, type, mikrotik: mk, omada: om, unifi: uf, meraki: mr } = req.body;
@@ -43,8 +43,12 @@ router.post('/', asyncHandler(async (req, res) => {
 }));
 
 router.get('/', asyncHandler(async (req, res) => {
+  // Mirrors packages: default to active-only (keeps dropdowns clean), the
+  // site-management screen passes ?all=true to also see deactivated ones.
+  const includeInactive = req.query.all === 'true';
   const { rows } = await pool.query(
-    `SELECT id, name, type, status, last_checked_at FROM sites WHERE tenant_id=$1`,
+    `SELECT id, name, type, status, active, last_checked_at FROM sites
+     WHERE tenant_id=$1 ${includeInactive ? '' : 'AND active=true'} ORDER BY name ASC`,
     [req.tenantId]
   );
   res.json(rows);
@@ -60,10 +64,15 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   ]);
   if (!existing.length) return res.status(404).json({ error: 'Site not found' });
 
-  const { name, mikrotik: mk, omada: om, unifi: uf, meraki: mr } = req.body;
+  const { name, active, mikrotik: mk, omada: om, unifi: uf, meraki: mr } = req.body;
   if (uf?.authMode && !['classic', 'unifios'].includes(uf.authMode)) {
     return res.status(400).json({ error: "unifi.authMode must be 'classic' or 'unifios'" });
   }
+
+  // Only force a re-test (status -> 'unconfigured') when router/controller
+  // credentials actually changed. A pure active/inactive toggle (the
+  // deactivate button) shouldn't wipe a site's verified connection status.
+  const credentialsChanged = !!(mk || om || uf || mr);
 
   const { rows } = await pool.query(
     `UPDATE sites SET
@@ -87,9 +96,10 @@ router.patch('/:id', asyncHandler(async (req, res) => {
        unifi_api_key_encrypted = COALESCE($18, unifi_api_key_encrypted),
        meraki_dashboard_api_key_encrypted = COALESCE($19, meraki_dashboard_api_key_encrypted),
        meraki_network_id = COALESCE($20, meraki_network_id),
-       status = 'unconfigured'
-     WHERE id=$21 AND tenant_id=$22
-     RETURNING id, name, type, status`,
+       active = COALESCE($21, active),
+       status = CASE WHEN $24 THEN 'unconfigured' ELSE status END
+     WHERE id=$22 AND tenant_id=$23
+     RETURNING id, name, type, status, active`,
     [
       name, mk?.host, mk?.port, mk?.username, encrypt(mk?.password), mk?.hotspotProfile,
       typeof mk?.useTls === 'boolean' ? mk.useTls : null,
@@ -97,10 +107,42 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       uf?.baseUrl, uf?.username, encrypt(uf?.password), uf?.site,
       uf?.authMode, encrypt(uf?.apiKey),
       encrypt(mr?.dashboardApiKey), mr?.networkId,
-      req.params.id, req.tenantId,
+      typeof active === 'boolean' ? active : null,
+      req.params.id, req.tenantId, credentialsChanged,
     ]
   );
   res.json(rows[0]);
+}));
+
+// Sites are only ever hard-deleted if nothing references them yet - mirrors
+// the packages.js pattern. vouchers.site_id and voucher_orders.site_id have
+// no CASCADE, but pppoe_subscribers.site_id DOES cascade-delete at the DB
+// level, which is exactly the case this guard exists to prevent: deleting a
+// site that still has recurring PPPoE subscribers would otherwise silently
+// wipe their billing records along with it. If the site has been used for
+// any of the three, the honest move (and what this returns as guidance) is
+// to deactivate it instead.
+router.delete('/:id', asyncHandler(async (req, res) => {
+  const { rows: existing } = await pool.query('SELECT id FROM sites WHERE id=$1 AND tenant_id=$2', [req.params.id, req.tenantId]);
+  if (!existing.length) return res.status(404).json({ error: 'Site not found.' });
+
+  const { rows: usage } = await pool.query(
+    `SELECT
+       (SELECT COUNT(*) FROM vouchers WHERE site_id=$1)::int AS voucher_count,
+       (SELECT COUNT(*) FROM voucher_orders WHERE site_id=$1)::int AS order_count,
+       (SELECT COUNT(*) FROM pppoe_subscribers WHERE site_id=$1)::int AS pppoe_count`,
+    [req.params.id]
+  );
+  const used = usage[0].voucher_count + usage[0].order_count + usage[0].pppoe_count;
+  if (used > 0) {
+    return res.status(409).json({
+      error: `This site has already been used for ${used} voucher(s)/order(s)/PPPoE subscriber(s), so deleting it would break that history. Deactivate it instead - it'll stop appearing for new vouchers but existing ones keep working.`,
+      usedCount: used,
+    });
+  }
+
+  await pool.query('DELETE FROM sites WHERE id=$1 AND tenant_id=$2', [req.params.id, req.tenantId]);
+  res.json({ ok: true });
 }));
 
 // Real connectivity test - actually pings the router/controller, no fake data.

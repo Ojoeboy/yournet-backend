@@ -238,6 +238,7 @@
   let manualMomoAvailable = false;
   let manualMomoNumber = null;
   let manualMomoName = null;
+  let portalCurrency = 'GHS';
 
   function setBodyBackground(url) {
     document.body.style.backgroundImage =
@@ -293,6 +294,7 @@
       manualMomoAvailable = !onlinePaymentAvailable && !!cfg.momoNumber;
       manualMomoNumber = cfg.momoNumber;
       manualMomoName = cfg.momoName;
+      portalCurrency = cfg.currency || 'GHS';
       portalPackages = cfg.packages || [];
       if (portalPackages.length) renderPackages();
 
@@ -312,7 +314,7 @@
       <div class="pkg-card">
         <div class="pkg-info">
           <div class="pkg-label">${p.label}</div>
-          <div class="pkg-price">GHS ${p.price}</div>
+          <div class="pkg-price">${portalCurrency} ${p.price}</div>
         </div>
         ${onlinePaymentAvailable
           ? `<button class="pkg-buy" onclick="buyVoucher('${p.id}')">${t('buyBtn')}</button>`
@@ -363,7 +365,7 @@
       <div>${t('momoManualTitle')}</div>
       <div class="momo-number">${manualMomoNumber}</div>
       ${manualMomoName ? `<div>${manualMomoName}</div>` : ''}
-      <div style="margin-top:6px;color:var(--muted)">${label} - GHS ${price}</div>
+      <div style="margin-top:6px;color:var(--muted)">${label} - ${portalCurrency} ${price}</div>
       <div style="margin-top:10px;color:var(--muted)">${t('momoManualInstructions')}</div>
       <div class="phone-input" style="margin-top:10px;text-align:left">
         <input id="momoNote" type="text" placeholder="${t('momoRefPlaceholder')}">

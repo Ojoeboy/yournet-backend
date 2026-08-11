@@ -13,6 +13,12 @@ function requireAuth(req, res, next) {
     req.tenantId = payload.tenantId;
     req.userId = payload.userId;
     req.role = payload.role;
+    // Set only on an agent token AFTER a successful POST /api/agents/verify-secret
+    // for this login session (see routes/agents.js) - never present on a
+    // freshly-issued login token. Routes that require it (agent self-service
+    // voucher generation) check req.secretVerified explicitly; nothing else
+    // relies on it.
+    req.secretVerified = payload.sq === true;
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired token' });
@@ -37,4 +43,18 @@ function requireOwnerAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, requireOwnerAuth };
+// Agents now get a real tenant-scoped JWT (see POST /api/agents/login), but
+// that token must NOT be able to reach owner/manager surfaces - router
+// credentials, packages, gateways, dashboard stats, pppoe billing, etc.
+// requireAuth alone only proves "this token belongs to tenant X"; this
+// adds "and it isn't an agent token" for routes that should stay
+// owner/manager-only. Apply as router.use(requireAuth, requireNotAgent)
+// on any route file agents shouldn't touch.
+function requireNotAgent(req, res, next) {
+  if (req.role === 'agent') {
+    return res.status(403).json({ error: 'Not available to agent accounts.' });
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireOwnerAuth, requireNotAgent };

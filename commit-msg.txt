@@ -1,0 +1,8 @@
+feat: agent self-service portal, site soft-delete, multi-currency wiring
+
+- Add agent login + requireNotAgent middleware blocking agent JWTs from owner/manager routes
+- Add public/agent.html: agent summary, settlement filter, password change
+- Vouchers: attach agent/batch on generation; /api/vouchers now joins packages
+- print.html: show price+duration, add compact print layout
+- Sites: add active flag, deactivate/reactivate, safe delete (blocks if vouchers/orders/pppoe subscribers exist)
+- Thread tenants.currency through Paystack/Flutterwave + portal/admin/dashboard/settlement/print (SaaS billing itself intentionally stays GHS-fixed)

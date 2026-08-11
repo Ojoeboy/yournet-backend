@@ -119,14 +119,21 @@ async function getActiveGateway(tenantId) {
  * Returns { checkoutUrl, reference, provider } regardless of which
  * provider actually handled it - callers don't need to branch on provider.
  */
-async function initializeCheckout(tenantId, { amountGHS, email, phone, reference, callbackUrl, returnUrl, description }) {
+// currency: the TENANT's chosen currency (tenants.currency), passed through
+// to whichever gateway supports it. Hubtel has no currency parameter in its
+// API at all (it's implicitly GHS-only), so a tenant on Hubtel with a
+// non-GHS currency selected will still be charged in GHS - that's a real
+// Hubtel limitation, not something this layer can paper over. Paystack and
+// Flutterwave both get it passed through; each will error at their end if
+// the merchant's account doesn't have that currency enabled.
+async function initializeCheckout(tenantId, { amountGHS, currency, email, phone, reference, callbackUrl, returnUrl, description }) {
   const gw = await getActiveGateway(tenantId);
   if (!gw) throw new Error('This WiFi provider has not set up online payment yet.');
 
   if (gw.provider === 'paystack') {
     const result = await paystackGateway.initializePayment({
       secretKey: decrypt(gw.paystack_secret_key_encrypted),
-      email, amountGHS, reference, callbackUrl,
+      email, amountGHS, currency, reference, callbackUrl,
     });
     return { ...result, provider: 'paystack' };
   }
@@ -144,7 +151,7 @@ async function initializeCheckout(tenantId, { amountGHS, email, phone, reference
   if (gw.provider === 'flutterwave') {
     const result = await flutterwaveGateway.initializePayment({
       secretKey: decrypt(gw.flutterwave_secret_key_encrypted),
-      email, phone, amountGHS, reference, redirectUrl: callbackUrl, title: description,
+      email, phone, amountGHS, currency, reference, redirectUrl: callbackUrl, title: description,
     });
     return { ...result, provider: 'flutterwave' };
   }
