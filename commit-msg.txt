@@ -1,21 +1,12 @@
-Fix signup TDZ bug, duplicate-email accounts, and /login mislabeling
+Fix flash of protected content before auth redirect
 
-1. src/routes/auth.js - /signup threw a ReferenceError on every attempt:
-   licenseKey (the key string from the request body) was shadowed by a
-   later 'const licenseKey' (the DB row) declared in the same block,
-   triggering the temporal dead zone. Renamed the row variable to
-   licenseKeyRow. Also added a check for an existing account by email,
-   returning a clear error instead of silently allowing duplicates.
+Both /admin and /license-admin only redirected unauthenticated
+visitors in a <script> near the end of <body>, by which point the
+browser had already painted the whole protected page (setup wizard /
+license key list) - a flash of real content before the redirect fired.
 
-2. src/db/schema.sql - owner_email TEXT UNIQUE NOT NULL was declared
-   only inside CREATE TABLE IF NOT EXISTS tenants, so on a database
-   where tenants already existed, that constraint never actually took
-   effect (same bug class as the earlier sites.active fix). Added a
-   non-destructive migration step: for any owner_email shared by more
-   than one tenant, the oldest row keeps its email, newer duplicates
-   get tagged +dupN@duplicate.local (no data deleted), then creates
-   the unique index that should have existed from the start.
-
-3. public/login.html - was mislabeled 'Agent Portal', copied by
-   mistake from the styling reference screenshot of the separate
-   agent.html page. Now correctly reads 'YourNet Control'.
+Added a synchronous check at the very top of <head> on both pages
+that redirects immediately if the relevant token isn't present, before
+anything below is parsed or painted. The original checks stay in place
+further down as a safety net (and because admin.html's relies on it to
+set the token variable used elsewhere).

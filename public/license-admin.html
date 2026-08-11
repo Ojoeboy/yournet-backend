@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>License Keys - Owner Admin</title>
+<script>
+  // Same fix as admin.html: runs before anything below is parsed or
+  // painted, so an unauthenticated visitor never sees a flash of the
+  // license key list before being sent to /owner-login.
+  if (!sessionStorage.getItem('yournet_owner_token')) {
+    window.location.replace('/owner-login');
+  }
+</script>
 <style>
   body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
     margin:0;padding:20px;max-width:640px;margin-inline:auto}
@@ -73,9 +81,12 @@
 <div id="list"></div>
 
 <script>
+  // Safety net - the guard at the very top of <head> is what actually
+  // prevents the flash of content; this just makes sure `token` is set
+  // for the rest of this script.
   const token = sessionStorage.getItem('yournet_owner_token');
   if (!token) {
-    window.location.href = '/owner-login';
+    window.location.replace('/owner-login');
   }
 
   function authedFetch(url, opts = {}) {

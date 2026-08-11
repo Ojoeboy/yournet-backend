@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>YourNet Admin</title>
+<script>
+  // Runs before anything below is parsed or painted, so an unauthenticated
+  // visitor never sees a flash of the setup wizard before being sent to
+  // /login - the later check in the main script (further down this file)
+  // still runs too and is what the rest of the page relies on for `token`,
+  // this one's only job is to stop the page from ever being visible first.
+  if (!localStorage.getItem('yournet_token')) {
+    window.location.replace('/login');
+  }
+</script>
 <link rel="stylesheet" href="/shell.css">
 <style>
   *{box-sizing:border-box}
@@ -420,13 +430,14 @@
 <script src="/i18n/translations.js"></script>
 <script src="/i18n/i18n-loader.js"></script>
 <script>
-  // This page is now protected - login/signup live on /login (public/login.html).
-  // No token means we don't belong here at all, so bounce before rendering
-  // anything below rather than showing locked tabs.
+  // Safety net - the guard at the very top of <head> is what actually
+  // prevents the flash of content; this just makes sure `token` is set
+  // for the rest of this script and catches the (very unlikely) case
+  // where that earlier check didn't fire.
   let token = localStorage.getItem('yournet_token') || null;
   let tenant = null;
   if (!token) {
-    window.location.href = '/login';
+    window.location.replace('/login');
   }
 
   // ---------- quick-setup tabs ----------
