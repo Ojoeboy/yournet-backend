@@ -41,7 +41,16 @@ function isConfigured(provider) {
 // now, so the page never shows a provider that would just fail on submit.
 router.get('/purchase/providers', (req, res) => {
   const labels = { paystack: 'Paystack (Card & Mobile Money)', flutterwave: 'Flutterwave', hubtel: 'Hubtel' };
-  res.json({ providers: SUPPORTED_PROVIDERS.filter(isConfigured).map((id) => ({ id, label: labels[id] })) });
+  res.json({
+    providers: SUPPORTED_PROVIDERS.filter(isConfigured).map((id) => ({ id, label: labels[id] })),
+    // Only meaningful when providers above is empty - license.html shows
+    // this on the manual-pay fallback so the buyer actually knows where
+    // to send their money, instead of just a reference field with no
+    // destination.
+    manualMomo: process.env.OWNER_MOMO_NUMBER
+      ? { number: process.env.OWNER_MOMO_NUMBER, name: process.env.OWNER_MOMO_NAME || null }
+      : null,
+  });
 });
 
 // PUBLIC: buyer picks a provider on /license and this kicks off that
@@ -327,6 +336,84 @@ router.get('/purchase/status/:reference', asyncHandler(async (req, res) => {
     return res.send(renderPage('Payment failed', '<p>No key was issued. If you were charged, contact support.</p>'));
   }
   res.send(renderPendingPage());
+}));
+
+// Stopgap for when no gateway is configured (see /purchase/providers -
+// license.html hides the automated checkout entirely and shows this
+// instead). Buyer submits their MoMo transaction reference; nothing is
+// verified automatically here - it just queues the claim for the owner
+// to check against their own phone's MoMo message and approve/reject
+// from /license-admin. No key is issued until that happens.
+router.post('/purchase/claim-manual', asyncHandler(async (req, res) => {
+  const { purpose, buyerEmail, buyerPhone, momoReference, notes } = req.body;
+  const resolvedPurpose = purpose === 'reactivate' ? 'reactivate' : 'signup';
+  const validationError =
+    validate.required(req.body, ['buyerEmail', 'momoReference']) ||
+    (!validate.isEmail(buyerEmail) ? 'Please enter a valid email address.' : null);
+  if (validationError) return res.status(400).json({ error: validationError });
+
+  const { rows } = await pool.query(
+    `INSERT INTO license_manual_claims (purpose, buyer_email, buyer_phone, momo_reference, notes)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [resolvedPurpose, buyerEmail.trim(), buyerPhone || null, momoReference.trim(), notes || null]
+  );
+  res.json({ ok: true, claimId: rows[0].id });
+}));
+
+// OWNER ONLY: queue of manual claims waiting on the owner to check their
+// own MoMo message and decide.
+router.get('/admin/manual-claims', requireOwnerAuth, asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM license_manual_claims ORDER BY (status = 'pending') DESC, created_at DESC LIMIT 200`
+  );
+  res.json(rows);
+}));
+
+// OWNER ONLY: approve a manual claim - issues a key exactly like
+// /admin/issue-manual does, then links it back to the claim so the two
+// stay traceable to each other.
+router.post('/admin/manual-claims/:id/approve', requireOwnerAuth, asyncHandler(async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM license_manual_claims WHERE id=$1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Claim not found.' });
+  const claim = rows[0];
+  if (claim.status !== 'pending') return res.status(400).json({ error: `This claim was already ${claim.status}.` });
+
+  const resolvedKeyType = claim.purpose === 'reactivate' ? 'reactivation' : 'signup';
+  const key = await license.issueKey({
+    amount: resolvedKeyType === 'reactivation' ? LICENSE_REACTIVATION_PRICE_GHS : LICENSE_SIGNUP_PRICE_GHS,
+    paymentMethod: 'momo_manual',
+    paymentReference: claim.momo_reference,
+    buyerEmail: claim.buyer_email,
+    buyerPhone: claim.buyer_phone,
+    notes: claim.notes,
+    keyType: resolvedKeyType,
+  });
+
+  await pool.query(
+    `UPDATE license_manual_claims SET status='approved', issued_key_id=$1, reviewed_at=now() WHERE id=$2`,
+    [key.id, claim.id]
+  );
+
+  if (claim.buyer_phone) sms.sendLicenseKeySms(claim.buyer_phone, key.key_code).catch(() => {});
+  let email = { sent: false };
+  try {
+    email = await brevo.sendLicenseKeyEmail(claim.buyer_email, key.key_code);
+  } catch (err) {
+    email = { sent: false, reason: err.message };
+  }
+
+  res.json({ ...key, email });
+}));
+
+// OWNER ONLY: reject a manual claim - e.g. the reference doesn't match
+// anything in the owner's own MoMo message history. No key is issued.
+router.post('/admin/manual-claims/:id/reject', requireOwnerAuth, asyncHandler(async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM license_manual_claims WHERE id=$1', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Claim not found.' });
+  if (rows[0].status !== 'pending') return res.status(400).json({ error: `This claim was already ${rows[0].status}.` });
+
+  await pool.query(`UPDATE license_manual_claims SET status='rejected', reviewed_at=now() WHERE id=$1`, [req.params.id]);
+  res.json({ ok: true });
 }));
 
 // OWNER ONLY: manually issue a key - a deliberate escape hatch for a sale

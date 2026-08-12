@@ -310,6 +310,29 @@ CREATE INDEX IF NOT EXISTS idx_license_purchase_orders_ref ON license_purchase_o
 ALTER TABLE license_purchase_orders ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'signup';
 ALTER TABLE license_purchase_orders ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id);
 ALTER TABLE license_purchase_orders ADD COLUMN IF NOT EXISTS billing_provider TEXT;
+
+-- Stopgap for buying a license key when no payment gateway is configured
+-- yet (see license.js /purchase/claim-manual): buyer submits their MoMo
+-- transaction reference, owner cross-checks it against their own phone's
+-- MoMo message and approves/rejects from /license-admin - same shape as
+-- the old pre-gateway flow this project used to have, kept as its own
+-- table rather than forcing it into license_purchase_orders (which is
+-- built specifically around gateway provider/reference/webhook fields
+-- that don't apply here).
+CREATE TABLE IF NOT EXISTS license_manual_claims (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  purpose TEXT NOT NULL DEFAULT 'signup' CHECK (purpose IN ('signup', 'reactivate')),
+  buyer_email TEXT NOT NULL,
+  buyer_phone TEXT,
+  momo_reference TEXT NOT NULL,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  issued_key_id UUID REFERENCES license_keys(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reviewed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_license_manual_claims_status ON license_manual_claims(status);
 ALTER TABLE license_purchase_orders ADD COLUMN IF NOT EXISTS billing_authorization TEXT;
 
 -- LEGACY - kept only so historical data stays queryable directly in the

@@ -77,6 +77,10 @@
   <div class="msg" id="resendMsg"></div>
 </div>
 
+<h2>Pending manual payment claims</h2>
+<p class="note">From buyers on <code>/license</code> when no gateway is configured. Nothing here is verified automatically - check the reference against your own MoMo message before approving.</p>
+<div id="claimsList"></div>
+
 <h2>Issued keys</h2>
 <div id="list"></div>
 
@@ -123,6 +127,69 @@
         </div>
       </div>
     `).join('');
+  }
+
+  async function loadClaims() {
+    const res = await authedFetch('/license/admin/manual-claims');
+    if (res.status === 401) {
+      sessionStorage.removeItem('yournet_owner_token');
+      window.location.href = '/owner-login';
+      return;
+    }
+    const claims = await res.json();
+    const list = document.getElementById('claimsList');
+    if (!claims.length) {
+      list.innerHTML = '<p class="note">No manual payment claims yet.</p>';
+      return;
+    }
+    list.innerHTML = claims.map(c => `
+      <div class="card">
+        <div class="row"><span>Status</span><span class="pill ${c.status === 'pending' ? 'unused' : c.status === 'approved' ? 'activated' : ''}">${c.status}</span></div>
+        <div class="row"><span>Type</span><span class="pill">${c.purpose === 'reactivate' ? 'Reactivation' : 'Signup'}</span></div>
+        <div class="row"><span>Buyer</span><span>${c.buyer_email}</span></div>
+        <div class="row"><span>Phone</span><span>${c.buyer_phone || '-'}</span></div>
+        <div class="row"><span>MoMo reference</span><span>${c.momo_reference}</span></div>
+        <div class="row"><span>Submitted</span><span>${new Date(c.created_at).toLocaleString()}</span></div>
+        ${c.notes ? `<div class="row"><span>Notes</span><span>${c.notes}</span></div>` : ''}
+        ${c.status === 'pending' ? `
+          <div class="keyBox">
+            <button class="copyBtn" style="background:rgba(46,196,182,.2);color:#2ec4b6" onclick="approveClaim('${c.id}', this)">Approve &amp; issue key</button>
+            <button class="copyBtn" style="background:rgba(255,107,107,.15);color:#ff6b6b" onclick="rejectClaim('${c.id}', this)">Reject</button>
+          </div>
+        ` : ''}
+      </div>
+    `).join('');
+  }
+
+  async function approveClaim(id, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Approving...';
+    try {
+      const res = await authedFetch(`/license/admin/manual-claims/${id}/approve`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not approve this claim.');
+      loadClaims();
+      loadKeys();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+      btn.textContent = 'Approve & issue key';
+    }
+  }
+
+  async function rejectClaim(id, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Rejecting...';
+    try {
+      const res = await authedFetch(`/license/admin/manual-claims/${id}/reject`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not reject this claim.');
+      loadClaims();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+      btn.textContent = 'Reject';
+    }
   }
 
   function copyKey(code, btn) {
@@ -214,7 +281,7 @@
     setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2000);
   }
 
-  if (token) loadKeys();
+  if (token) { loadKeys(); loadClaims(); }
 </script>
 <script src="/fontsize.js"></script>
 </body>

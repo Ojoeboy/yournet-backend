@@ -20,6 +20,11 @@
   .msg.show{display:block}
   .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
   .note{font-size:12px;color:#6b8a91;line-height:1.6}
+  .hidden{display:none}
+  .momoTarget{background:#0d1a1e;border:1px solid rgba(255,197,90,.4);border-radius:10px;
+    padding:12px;margin-bottom:14px;text-align:center}
+  .momoTarget .num{font-family:monospace;font-size:20px;font-weight:800;color:#ffc55a}
+  .momoTarget .name{font-size:12px;color:#6b8a91;margin-top:2px}
   /* Glass mode: bg-rotate.js adds this to <body> once a rotating photo
      background is actually showing, so the card goes see-through only then. */
   body.yn-glass .card{background:rgba(19,34,40,.35);backdrop-filter:blur(16px) saturate(150%);
@@ -35,14 +40,29 @@
 <div class="price">GHS <span id="priceDisplay">150</span> <span data-i18n="oneTime">to activate</span></div>
 <p class="note" style="margin:-14px 0 18px">Then GHS 50/month, billed automatically.</p>
 
-<div class="card">
-  <h2 data-i18n="chooseHowToPay">Choose how to pay</h2>
+<div class="card" id="gatewayCard">
   <select id="provider"></select>
   <input id="email" type="email" data-i18n-placeholder="email" placeholder="Your email (for your activation key)">
   <input id="phone" data-i18n-placeholder="phone" placeholder="Phone number" style="display:none">
   <button id="payBtn" onclick="startCheckout()" data-i18n="payNowBtn">Pay now</button>
   <div class="msg" id="payMsg"></div>
   <p class="note" data-i18n="autoKeyNote">Your activation key is generated automatically the moment payment is confirmed.</p>
+</div>
+
+<!-- Shown only when no automated gateway is configured (see loadProviders
+     below) - a stopgap so buyers aren't fully blocked while that gets set
+     up. Nothing here is verified automatically: the owner checks the MoMo
+     reference against their own phone before approving. -->
+<div class="card hidden" id="manualCard">
+  <h2>Pay by Mobile Money</h2>
+  <p class="note" style="margin-top:0">Automated card/MoMo checkout isn't set up yet. You can still pay directly and get your key once it's confirmed - this usually isn't instant.</p>
+  <div id="manualMomoTarget"></div>
+  <input id="manualEmail" type="email" placeholder="Your email (for your activation key)">
+  <input id="manualPhone" placeholder="Your phone number (optional)">
+  <input id="manualRef" placeholder="MoMo transaction ID / reference">
+  <input id="manualNotes" placeholder="Anything else worth knowing? (optional)">
+  <button id="manualSubmitBtn" onclick="submitManualClaim()">I've sent the payment</button>
+  <div class="msg" id="manualMsg"></div>
 </div>
 
 <script src="/bg-rotate.js"></script>
@@ -55,20 +75,73 @@
   async function loadProviders() {
     const select = document.getElementById('provider');
     const payBtn = document.getElementById('payBtn');
+    const gatewayCard = document.getElementById('gatewayCard');
+    const manualCard = document.getElementById('manualCard');
     try {
       const res = await fetch('/license/purchase/providers');
       const data = await res.json();
       providers = data.providers || [];
       if (!providers.length) {
-        select.innerHTML = `<option>${t('noPaymentMethodsYet') || 'No payment methods available yet'}</option>`;
-        payBtn.disabled = true;
+        // No gateway configured at all - don't even show a disabled
+        // dropdown, just switch straight to the manual-pay fallback.
+        gatewayCard.classList.add('hidden');
+        manualCard.classList.remove('hidden');
+        renderManualMomoTarget(data.manualMomo);
         return;
       }
       select.innerHTML = providers.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
       togglePhoneField();
     } catch (err) {
-      select.innerHTML = `<option>${t('noPaymentMethodsYet') || 'No payment methods available yet'}</option>`;
-      payBtn.disabled = true;
+      gatewayCard.classList.add('hidden');
+      manualCard.classList.remove('hidden');
+      renderManualMomoTarget(null);
+    }
+  }
+
+  function renderManualMomoTarget(manualMomo) {
+    const target = document.getElementById('manualMomoTarget');
+    const submitBtn = document.getElementById('manualSubmitBtn');
+    if (!manualMomo) {
+      // Owner hasn't set OWNER_MOMO_NUMBER either - there's genuinely
+      // nowhere to tell the buyer to send money, so don't let them submit
+      // a claim with no destination behind it.
+      target.innerHTML = '<p class="note" style="margin:0">No payment method is available right now. Please check back shortly.</p>';
+      submitBtn.disabled = true;
+      return;
+    }
+    target.innerHTML =
+      '<div class="momoTarget">' +
+      '<div class="num">' + manualMomo.number + '</div>' +
+      (manualMomo.name ? '<div class="name">' + manualMomo.name + '</div>' : '') +
+      '</div>';
+  }
+
+  async function submitManualClaim() {
+    const msgEl = document.getElementById('manualMsg');
+    const email = document.getElementById('manualEmail').value.trim();
+    const phone = document.getElementById('manualPhone').value.trim();
+    const momoReference = document.getElementById('manualRef').value.trim();
+    const notes = document.getElementById('manualNotes').value.trim();
+    if (!email || !momoReference) {
+      msgEl.textContent = 'Enter your email and the MoMo transaction reference.';
+      msgEl.className = 'msg show err';
+      return;
+    }
+    try {
+      const res = await fetch('/license/purchase/claim-manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ buyerEmail: email, buyerPhone: phone || undefined, momoReference, notes: notes || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not submit your payment.');
+      document.getElementById('manualCard').innerHTML =
+        '<h2>Payment submitted</h2><p class="note" style="margin-top:0">' +
+        "We'll check this against our records and email your activation key to " +
+        email + " once it's confirmed.</p>";
+    } catch (err) {
+      msgEl.textContent = err.message;
+      msgEl.className = 'msg show err';
     }
   }
 
