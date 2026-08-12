@@ -70,4 +70,34 @@ async function sendRenewalFailedEmail(toEmail, graceDays) {
   return { sent: true };
 }
 
-module.exports = { sendLicenseKeyEmail, sendRenewalFailedEmail };
+// Alerts the platform owner (not a buyer) that a new manual MoMo claim needs
+// review - so /license-admin doesn't have to be checked on a timer. Uses
+// OWNER_ALERT_EMAIL, a separate setting from OWNER_MOMO_NUMBER/NAME (which
+// are what gets shown TO buyers, not where alerts go).
+async function sendManualClaimAlertEmail(claim) {
+  const from = senderEmail();
+  const to = process.env.OWNER_ALERT_EMAIL;
+  if (!process.env.BREVO_API_KEY || !from || !to) {
+    console.log(`[BREVO STUB - not configured] Manual claim alert for: ${claim.buyer_email}`);
+    return { sent: false, reason: 'Brevo and/or OWNER_ALERT_EMAIL is not configured.' };
+  }
+
+  await axios.post(
+    'https://api.brevo.com/v3/smtp/email',
+    {
+      sender: { email: from, name: process.env.BREVO_SENDER_NAME || 'YourNet Control' },
+      to: [{ email: to }],
+      subject: 'New manual MoMo claim awaiting review',
+      htmlContent: `
+        <p>A new manual payment claim needs your review on /license-admin.</p>
+        <p><strong>Buyer:</strong> ${claim.buyer_email}${claim.buyer_phone ? ' (' + claim.buyer_phone + ')' : ''}</p>
+        <p><strong>MoMo reference given:</strong> ${claim.momo_reference}</p>
+        <p>Check it against your own MoMo message before approving.</p>
+      `,
+    },
+    { headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json' } }
+  );
+  return { sent: true };
+}
+
+module.exports = { sendLicenseKeyEmail, sendRenewalFailedEmail, sendManualClaimAlertEmail };

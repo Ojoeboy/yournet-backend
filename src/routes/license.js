@@ -354,10 +354,19 @@ router.post('/purchase/claim-manual', asyncHandler(async (req, res) => {
 
   const { rows } = await pool.query(
     `INSERT INTO license_manual_claims (purpose, buyer_email, buyer_phone, momo_reference, notes)
-     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
     [resolvedPurpose, buyerEmail.trim(), buyerPhone || null, momoReference.trim(), notes || null]
   );
-  res.json({ ok: true, claimId: rows[0].id });
+  const claim = rows[0];
+
+  // Best-effort - a failed alert shouldn't fail the buyer's submission,
+  // the claim is already saved and visible on /license-admin regardless.
+  brevo.sendManualClaimAlertEmail(claim).catch(() => {});
+  if (process.env.OWNER_ALERT_PHONE) {
+    sms.sendSms(process.env.OWNER_ALERT_PHONE, `New manual MoMo claim from ${claim.buyer_email}, ref: ${claim.momo_reference}. Review on /license-admin.`).catch(() => {});
+  }
+
+  res.json({ ok: true, claimId: claim.id });
 }));
 
 // OWNER ONLY: queue of manual claims waiting on the owner to check their

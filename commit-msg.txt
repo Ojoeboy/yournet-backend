@@ -1,32 +1,25 @@
-Add manual MoMo claim flow as stopgap for license purchases
+Make manual MoMo a permanent option, add owner alerts on new claims
 
-/license currently shows a dead-end "no payment methods available"
-message with no gateway configured - meaning nobody but the owner can
-get a license key right now. This restores a self-service path (closer
-to what the old pre-gateway version of this app had) without touching
-the real gateway flow at all.
+Manual pay used to disappear once a gateway was configured. Now it
+stays as a second, permanent option - some buyers prefer sending
+directly (no gateway fees, no third-party checkout page) over
+automated checkout, even once one exists. Wording adjusts depending
+on which options are actually available, so buyers who care about
+speed know the automated option is instant and this one isn't.
 
-- schema.sql: new license_manual_claims table - kept separate from
-  license_purchase_orders, which is built specifically around gateway
-  provider/reference/webhook fields that don't apply to a manual claim
-- license.js: POST /purchase/claim-manual (public, buyer submits their
-  MoMo reference - nothing verified automatically); GET/POST
-  /admin/manual-claims... (owner-only list/approve/reject - approve
-  reuses the same issueKey() the existing manual-issue route uses, and
-  emails/texts the key the same way)
-- license.html: shows a "Pay by Mobile Money" card instead of a
-  disabled dropdown when /purchase/providers comes back empty, and
-  displays exactly where to send the money (see below) before asking
-  for a payment reference
-- license-admin.html: new "Pending manual payment claims" section to
-  review and approve/reject submissions
-- .env.example: new OWNER_MOMO_NUMBER / OWNER_MOMO_NAME - the number
-  and name shown to buyers on the manual card. Without these set, the
-  card shows "no payment method available" and disables submission
-  instead of accepting a claim with nowhere it was actually supposed
-  to go
+- license.html: manual card no longer hides itself when a gateway is
+  configured; renders different copy depending on whether one exists
+- brevo.js: new sendManualClaimAlertEmail() - notifies OWNER_ALERT_EMAIL
+  (separate from OWNER_MOMO_NUMBER/NAME, which is what buyers see, not
+  where alerts go)
+- license.js: /purchase/claim-manual now fires that email plus an SMS
+  to OWNER_ALERT_PHONE (via the existing sendSms) the moment a claim
+  comes in - both best-effort, a failed alert doesn't fail the buyer's
+  submission since the claim is already saved regardless
+- .env.example: documents OWNER_ALERT_EMAIL / OWNER_ALERT_PHONE
 
-This is explicitly a stopgap - approving a claim still means manually
-checking the reference against your own MoMo message, same trust
-model the old flow had. A real gateway (Paystack/Flutterwave/Hubtel)
-removes that step entirely once configured.
+Keeping this permanently is a real ongoing tradeoff, not just a
+temporary stopgap anymore - every claim still needs a human to check
+it against their own MoMo message before approving. These alerts are
+what makes that sustainable instead of requiring /license-admin to be
+checked on a timer.

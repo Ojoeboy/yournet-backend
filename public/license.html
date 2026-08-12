@@ -41,6 +41,7 @@
 <p class="note" style="margin:-14px 0 18px">Then GHS 50/month, billed automatically.</p>
 
 <div class="card" id="gatewayCard">
+  <h2 style="margin:0 0 8px;font-size:15px;color:#2ec4b6">Pay online (instant)</h2>
   <select id="provider"></select>
   <input id="email" type="email" data-i18n-placeholder="email" placeholder="Your email (for your activation key)">
   <input id="phone" data-i18n-placeholder="phone" placeholder="Phone number" style="display:none">
@@ -49,13 +50,16 @@
   <p class="note" data-i18n="autoKeyNote">Your activation key is generated automatically the moment payment is confirmed.</p>
 </div>
 
-<!-- Shown only when no automated gateway is configured (see loadProviders
-     below) - a stopgap so buyers aren't fully blocked while that gets set
-     up. Nothing here is verified automatically: the owner checks the MoMo
-     reference against their own phone before approving. -->
+<!-- A permanent second option, not just a stopgap for when no gateway is
+     configured - some buyers prefer sending MoMo directly over a
+     third-party checkout page, and it has no gateway fees. The tradeoff
+     is speed: nothing here is verified automatically, the owner checks
+     the MoMo reference against their own phone before approving, so this
+     can take hours instead of being instant. See renderManualMomoTarget
+     below for the copy shown depending on whether a gateway also exists. -->
 <div class="card hidden" id="manualCard">
-  <h2>Pay by Mobile Money</h2>
-  <p class="note" style="margin-top:0">Automated card/MoMo checkout isn't set up yet. You can still pay directly and get your key once it's confirmed - this usually isn't instant.</p>
+  <h2 id="manualCardTitle" style="margin:0 0 8px;font-size:15px;color:#2ec4b6">Pay by Mobile Money</h2>
+  <p class="note" id="manualCardNote" style="margin-top:0"></p>
   <div id="manualMomoTarget"></div>
   <input id="manualEmail" type="email" placeholder="Your email (for your activation key)">
   <input id="manualPhone" placeholder="Your phone number (optional)">
@@ -77,16 +81,22 @@
     const payBtn = document.getElementById('payBtn');
     const gatewayCard = document.getElementById('gatewayCard');
     const manualCard = document.getElementById('manualCard');
+    const manualNote = document.getElementById('manualCardNote');
     try {
       const res = await fetch('/license/purchase/providers');
       const data = await res.json();
       providers = data.providers || [];
+      // Manual pay is always shown now, not just as a fallback - only the
+      // wording changes depending on whether an automated option also
+      // exists, so buyers who care about speed know to pick that instead.
+      manualCard.classList.remove('hidden');
+      manualNote.textContent = providers.length
+        ? "Prefer to send MoMo directly instead of the checkout above? You can, but it isn't instant - the owner reviews and confirms it by hand."
+        : "Automated card/MoMo checkout isn't set up yet. You can still pay directly and get your key once it's confirmed - this usually isn't instant.";
+      renderManualMomoTarget(data.manualMomo);
+
       if (!providers.length) {
-        // No gateway configured at all - don't even show a disabled
-        // dropdown, just switch straight to the manual-pay fallback.
         gatewayCard.classList.add('hidden');
-        manualCard.classList.remove('hidden');
-        renderManualMomoTarget(data.manualMomo);
         return;
       }
       select.innerHTML = providers.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
@@ -94,6 +104,7 @@
     } catch (err) {
       gatewayCard.classList.add('hidden');
       manualCard.classList.remove('hidden');
+      manualNote.textContent = "Automated card/MoMo checkout isn't set up yet. You can still pay directly and get your key once it's confirmed - this usually isn't instant.";
       renderManualMomoTarget(null);
     }
   }
@@ -102,11 +113,16 @@
     const target = document.getElementById('manualMomoTarget');
     const submitBtn = document.getElementById('manualSubmitBtn');
     if (!manualMomo) {
-      // Owner hasn't set OWNER_MOMO_NUMBER either - there's genuinely
-      // nowhere to tell the buyer to send money, so don't let them submit
-      // a claim with no destination behind it.
-      target.innerHTML = '<p class="note" style="margin:0">No payment method is available right now. Please check back shortly.</p>';
-      submitBtn.disabled = true;
+      // OWNER_MOMO_NUMBER isn't set, so there's genuinely nowhere to tell
+      // the buyer to send money on THIS card - but if a gateway exists,
+      // that's still a real option, so only hide the manual card entirely
+      // rather than showing a confusing "no payment method" message.
+      if (providers.length) {
+        document.getElementById('manualCard').classList.add('hidden');
+      } else {
+        target.innerHTML = '<p class="note" style="margin:0">No payment method is available right now. Please check back shortly.</p>';
+        submitBtn.disabled = true;
+      }
       return;
     }
     target.innerHTML =
