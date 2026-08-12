@@ -127,7 +127,14 @@
     <input id="mkHost" placeholder="e.g. 192.168.88.1">
     <div class="row">
       <div><label data-i18n="apiPortLabel">API port</label><input id="mkPort" value="8728"></div>
-      <div><label data-i18n="hotspotProfileLabel">Hotspot profile</label><input id="mkProfile" value="default"></div>
+      <div>
+        <label data-i18n="hotspotProfileLabel">Hotspot profile</label>
+        <select id="mkProfile">
+          <option value="default" selected>default</option>
+        </select>
+        <button type="button" class="secondary" style="margin-top:6px;padding:8px 10px;font-size:12px" onclick="fetchHotspotProfiles()">Fetch from router</button>
+        <div class="msg" id="mkProfile-msg"></div>
+      </div>
     </div>
     <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px">
       <span class="switch">
@@ -470,6 +477,39 @@
     const useTls = document.getElementById('mkUseTls').checked;
     if (portInput.value === '8728' || portInput.value === '8729' || portInput.value === '') {
       portInput.value = useTls ? '8729' : '8728';
+    }
+  }
+
+  async function fetchHotspotProfiles() {
+    const msgEl = document.getElementById('mkProfile-msg');
+    const selectEl = document.getElementById('mkProfile');
+    const host = document.getElementById('mkHost').value.trim();
+    const username = document.getElementById('mkUser').value.trim();
+    const password = document.getElementById('mkPass').value;
+    if (!host || !username || !password) {
+      showMsg('mkProfile-msg', 'Fill in the router IP, username, and password first.', 'err');
+      return;
+    }
+    showMsg('mkProfile-msg', 'Connecting to router...', 'ok');
+    try {
+      const data = await api('/api/sites/mikrotik/hotspot-profiles', 'POST', {
+        host,
+        port: document.getElementById('mkPort').value.trim() || undefined,
+        username,
+        password,
+        useTls: document.getElementById('mkUseTls').checked,
+      });
+      if (!data.profiles || !data.profiles.length) {
+        showMsg('mkProfile-msg', 'Connected, but the router has no hotspot profiles configured yet.', 'err');
+        return;
+      }
+      const current = selectEl.value;
+      selectEl.innerHTML = data.profiles.map((p) =>
+        `<option value="${p}"${p === current ? ' selected' : ''}>${p}</option>`
+      ).join('');
+      showMsg('mkProfile-msg', 'Loaded ' + data.profiles.length + ' profile(s) from the router.', 'ok');
+    } catch (err) {
+      showMsg('mkProfile-msg', err.message, 'err');
     }
   }
 

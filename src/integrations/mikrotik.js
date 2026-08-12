@@ -98,6 +98,23 @@ async function ping(site) {
 }
 
 /**
+ * List the hotspot server profiles already configured on the router
+ * (RouterOS `/ip hotspot profile print`), for the Router setup step's
+ * "Hotspot profile" dropdown - so tenants pick from what's actually on
+ * their router instead of typing a name that may not exist or may be
+ * misspelled.
+ */
+async function listHotspotProfiles(site) {
+  const conn = await connect(site);
+  try {
+    const rows = await conn.write('/ip/hotspot/profile/print');
+    return rows.map((r) => r.name).filter(Boolean);
+  } finally {
+    conn.close();
+  }
+}
+
+/**
  * List currently active clients (for dashboard's "live clients" view).
  */
 async function listActiveClients(site) {
@@ -367,6 +384,7 @@ module.exports = {
   createHotspotUser,
   removeHotspotUser,
   ping,
+  listHotspotProfiles,
   listActiveClients,
   listAccessPoints,
   createPppoeSecret,

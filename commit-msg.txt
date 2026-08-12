@@ -1,12 +1,18 @@
-Fix flash of protected content before auth redirect
+Add live dropdown for Mikrotik hotspot profile in Router setup
 
-Both /admin and /license-admin only redirected unauthenticated
-visitors in a <script> near the end of <body>, by which point the
-browser had already painted the whole protected page (setup wizard /
-license key list) - a flash of real content before the redirect fired.
+Previously the "Hotspot profile" field in Setup > 1. Router was a
+plain text input pre-filled with "default" - not connected to the
+router in any way, so a typo or a profile that doesn't actually
+exist would go unnoticed until a voucher redemption failed.
 
-Added a synchronous check at the very top of <head> on both pages
-that redirects immediately if the relevant token isn't present, before
-anything below is parsed or painted. The original checks stay in place
-further down as a safety net (and because admin.html's relies on it to
-set the token variable used elsewhere).
+- mikrotik.js: new listHotspotProfiles() - connects and runs
+  /ip/hotspot/profile/print, returns the profile names that
+  actually exist on the router
+- sites.js: new POST /api/sites/mikrotik/hotspot-profiles - unlike
+  the existing /:id/test route, this works with credentials typed
+  into the form directly, since the site isn't saved yet at this
+  point in setup
+- admin.html: mkProfile is now a <select> with a "Fetch from
+  router" button that calls the new endpoint using whatever
+  host/port/username/password/TLS are currently filled in, and
+  populates the dropdown with the real results

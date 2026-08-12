@@ -145,6 +145,29 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// Fetch hotspot server profiles directly from a Mikrotik router using
+// credentials typed into the Router setup form, before the site is even
+// saved - lets the "Hotspot profile" field be a real dropdown of what's
+// actually configured on the router instead of free text.
+router.post('/mikrotik/hotspot-profiles', asyncHandler(async (req, res) => {
+  const { host, port, username, password, useTls } = req.body || {};
+  const missingError = validate.required(req.body, ['host', 'username', 'password']);
+  if (missingError) return res.status(400).json({ error: missingError });
+
+  try {
+    const profiles = await mikrotik.listHotspotProfiles({
+      mk_host: host,
+      mk_api_port: port || undefined,
+      mk_username: username,
+      mk_password_decrypted: password,
+      mk_use_tls: !!useTls,
+    });
+    res.json({ profiles });
+  } catch (err) {
+    res.status(400).json({ error: 'Could not connect to the router: ' + err.message });
+  }
+}));
+
 // Real connectivity test - actually pings the router/controller, no fake data.
 router.post('/:id/test', asyncHandler(async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM sites WHERE id=$1 AND tenant_id=$2', [req.params.id, req.tenantId]);
