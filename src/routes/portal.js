@@ -21,6 +21,7 @@ router.get('/:siteId/config', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT s.tenant_id, s.portal_business_name, s.portal_logo_url, s.portal_primary_color,
             s.portal_background_image_url, s.portal_caution_text, s.portal_whatsapp_number,
+            s.portal_help_email, s.portal_help_phone,
             s.portal_momo_number, s.portal_momo_name, s.portal_use_rotating_backgrounds,
             t.currency
      FROM sites s JOIN tenants t ON t.id = s.tenant_id
@@ -52,6 +53,8 @@ router.get('/:siteId/config', asyncHandler(async (req, res) => {
     backgroundImageUrl: site.portal_background_image_url,
     cautionText: site.portal_caution_text,
     whatsappNumber: site.portal_whatsapp_number,
+    helpEmail: site.portal_help_email,
+    helpPhone: site.portal_help_phone,
     momoNumber: site.portal_momo_number,
     momoName: site.portal_momo_name,
     currency: site.currency,

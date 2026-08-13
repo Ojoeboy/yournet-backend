@@ -80,6 +80,7 @@
   .help-link{display:none;margin-top:10px;text-align:center}
   .help-link.show{display:block}
   .help-link a{color:var(--teal);font-size:12.5px;text-decoration:none;font-weight:600}
+  .help-link .sep{color:#5a7a80;margin:0 8px;font-size:11px}
   .phone-input{margin-top:10px}
   .phone-input input{text-transform:none;letter-spacing:normal;font-size:14px;font-weight:400;text-align:left}
 </style>
@@ -240,6 +241,15 @@
   let manualMomoName = null;
   let portalCurrency = 'GHS';
 
+  // Tenant-entered strings (help email/phone) get interpolated into
+  // innerHTML below, so escape them first - this is public, unauthenticated
+  // customer-facing HTML.
+  function escapePortalHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
   function setBodyBackground(url) {
     document.body.style.backgroundImage =
       `linear-gradient(rgba(8,15,18,0.5),rgba(8,15,18,0.6)), url("${url}")`;
@@ -298,10 +308,25 @@
       portalPackages = cfg.packages || [];
       if (portalPackages.length) renderPackages();
 
+      // Any combination of WhatsApp / email / phone is fine - only render
+      // the channels the tenant actually configured for this site. The
+      // translated "Need help?" WhatsApp copy stays as the lead link when
+      // present (existing behavior, unchanged for tenants with only
+      // WhatsApp set up); email/phone are appended as compact icon links.
+      const helpParts = [];
       if (cfg.whatsappNumber) {
         const digits = cfg.whatsappNumber.replace(/[^0-9]/g, '');
+        helpParts.push(`<a href="https://wa.me/${digits}" target="_blank" rel="noopener">${t('needHelp')}</a>`);
+      }
+      if (cfg.helpEmail) {
+        helpParts.push(`<a href="mailto:${cfg.helpEmail}">✉ ${escapePortalHtml(cfg.helpEmail)}</a>`);
+      }
+      if (cfg.helpPhone) {
+        helpParts.push(`<a href="tel:${cfg.helpPhone}">☎ ${escapePortalHtml(cfg.helpPhone)}</a>`);
+      }
+      if (helpParts.length) {
         const link = document.getElementById('help-link');
-        link.innerHTML = `<a href="https://wa.me/${digits}" target="_blank" rel="noopener">${t('needHelp')}</a>`;
+        link.innerHTML = helpParts.join('<span class="sep">|</span>');
         link.classList.add('show');
       }
     } catch (err) { /* extras are optional - never block redemption on this */ }

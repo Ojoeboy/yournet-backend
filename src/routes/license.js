@@ -170,7 +170,7 @@ async function fulfillOrder(order, provider, authorizationCode) {
     await pool.query(
       `UPDATE tenants
        SET plan='licensed', plan_expires_at=$1, next_billing_at=$1,
-           subscription_status=$2, billing_provider=$3, billing_authorization=$4
+           subscription_status=$2, billing_provider=$3, billing_authorization=$4, plan_started_at=now()
        WHERE id=$5`,
       [nextBillingAt, subscriptionStatus, provider, authorizationCode || null, order.tenant_id]
     );

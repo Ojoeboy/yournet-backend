@@ -57,7 +57,7 @@ router.get('/callback', asyncHandler(async (req, res) => {
 
     if (success && tenantId && plan) {
       await pool.query(
-        `UPDATE tenants SET plan=$1, plan_expires_at=now() + ($2 || ' days')::interval WHERE id=$3`,
+        `UPDATE tenants SET plan=$1, plan_expires_at=now() + ($2 || ' days')::interval, plan_started_at=now() WHERE id=$3`,
         [planCode, plan.days, tenantId]
       );
     }

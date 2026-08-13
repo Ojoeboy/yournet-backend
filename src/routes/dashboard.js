@@ -301,4 +301,86 @@ router.get('/sites/:id/access-points', asyncHandler(async (req, res) => {
   }
 }));
 
+// ---------- plan overview ----------
+// Aggregates everything the "Overview of Plan" page needs into one call:
+// current plan + price + start/end dates, linked payment gateways (no
+// secrets), and a merged log of both (a) this tenant's own YourNet
+// subscription payments and (b) their customers' payments through their
+// linked gateways (vouchers + PPPoE), sorted newest first.
+const SAAS_PLANS = {
+  starter: { label: 'Starter', priceGHS: 50 },
+  pro: { label: 'Pro', priceGHS: 150 },
+};
+const LICENSE_SIGNUP_PRICE_GHS = Number(process.env.LICENSE_SIGNUP_PRICE_GHS || 150);
+const LICENSE_REACTIVATION_PRICE_GHS = Number(process.env.LICENSE_REACTIVATION_PRICE_GHS || 50);
+
+router.get('/plan-overview', asyncHandler(async (req, res) => {
+  const { rows: tenantRows } = await pool.query(
+    `SELECT plan, plan_started_at, plan_expires_at, subscription_status, currency
+     FROM tenants WHERE id=$1`,
+    [req.tenantId]
+  );
+  if (!tenantRows.length) return res.status(404).json({ error: 'Tenant not found' });
+  const tenant = tenantRows[0];
+
+  // Price: prefer what was actually last paid (kind='initial' or
+  // 'renewal', most recent) since that reflects any historical price
+  // change; fall back to the current price table if there's no payment
+  // history yet (e.g. a manually-issued/legacy account).
+  const { rows: lastPaymentRows } = await pool.query(
+    `SELECT amount FROM subscription_payments
+     WHERE tenant_id=$1 AND status IN ('success','paid')
+     ORDER BY created_at DESC LIMIT 1`,
+    [req.tenantId]
+  );
+  let priceGHS = lastPaymentRows[0] ? Number(lastPaymentRows[0].amount) : null;
+  if (priceGHS === null) {
+    if (SAAS_PLANS[tenant.plan]) priceGHS = SAAS_PLANS[tenant.plan].priceGHS;
+    else if (tenant.plan === 'licensed') priceGHS = LICENSE_REACTIVATION_PRICE_GHS;
+  }
+
+  const { rows: gateways } = await pool.query(
+    `SELECT provider, is_active, contact_email, hubtel_merchant_account_number,
+       (paystack_secret_key_encrypted IS NOT NULL) AS paystack_configured,
+       (hubtel_client_secret_encrypted IS NOT NULL) AS hubtel_configured,
+       (flutterwave_secret_key_encrypted IS NOT NULL) AS flutterwave_configured
+     FROM payment_gateways WHERE tenant_id=$1 ORDER BY provider`,
+    [req.tenantId]
+  );
+
+  const { rows: subscriptionLog } = await pool.query(
+    `SELECT 'subscription' AS kind, amount, currency, provider, status, kind AS payment_kind, created_at
+     FROM subscription_payments WHERE tenant_id=$1
+     ORDER BY created_at DESC LIMIT 25`,
+    [req.tenantId]
+  );
+
+  const { rows: customerLog } = await pool.query(
+    `SELECT 'voucher' AS kind, p.price AS amount, 'GHS' AS currency, vo.provider, vo.status,
+       NULL AS payment_kind, vo.created_at
+     FROM voucher_orders vo JOIN packages p ON p.id = vo.package_id
+     WHERE vo.tenant_id=$1
+     UNION ALL
+     SELECT 'pppoe' AS kind, pp.amount, 'GHS' AS currency, pp.provider, pp.status,
+       NULL AS payment_kind, pp.created_at
+     FROM pppoe_payments pp
+     WHERE pp.tenant_id=$1
+     ORDER BY created_at DESC LIMIT 50`,
+    [req.tenantId]
+  );
+
+  res.json({
+    plan: tenant.plan,
+    planLabel: SAAS_PLANS[tenant.plan]?.label || (tenant.plan === 'licensed' ? 'Licensed' : tenant.plan),
+    priceGHS,
+    currency: tenant.currency,
+    subscriptionStatus: tenant.subscription_status,
+    planStartedAt: tenant.plan_started_at,
+    planExpiresAt: tenant.plan_expires_at,
+    gateways,
+    subscriptionPayments: subscriptionLog,
+    customerPayments: customerLog,
+  });
+}));
+
 module.exports = router;

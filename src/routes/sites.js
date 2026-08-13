@@ -355,8 +355,8 @@ ${profileLines.join('\n') || '# No active packages yet - create some in /admin f
 // purpose: saving a logo/color shouldn't reset the site's connection
 // status to 'unconfigured' the way a credentials change should.
 const PORTAL_FIELDS = `id, portal_business_name, portal_logo_url, portal_primary_color, portal_custom_html,
-     portal_background_image_url, portal_caution_text, portal_whatsapp_number, portal_momo_number, portal_momo_name,
-     portal_use_rotating_backgrounds`;
+     portal_background_image_url, portal_caution_text, portal_whatsapp_number, portal_help_email, portal_help_phone,
+     portal_momo_number, portal_momo_name, portal_use_rotating_backgrounds`;
 
 router.get('/:id/portal', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
@@ -375,7 +375,7 @@ router.patch('/:id/portal', asyncHandler(async (req, res) => {
 
   const {
     businessName, logoUrl, primaryColor, customHtml,
-    backgroundImageUrl, cautionText, whatsappNumber, momoNumber, momoName,
+    backgroundImageUrl, cautionText, whatsappNumber, helpEmail, helpPhone, momoNumber, momoName,
     useRotatingBackgrounds,
   } = req.body;
 
@@ -394,13 +394,15 @@ router.patch('/:id/portal', asyncHandler(async (req, res) => {
        portal_background_image_url = COALESCE($5, portal_background_image_url),
        portal_caution_text = COALESCE($6, portal_caution_text),
        portal_whatsapp_number = COALESCE($7, portal_whatsapp_number),
-       portal_momo_number = COALESCE($8, portal_momo_number),
-       portal_momo_name = COALESCE($9, portal_momo_name),
-       portal_use_rotating_backgrounds = COALESCE($10, portal_use_rotating_backgrounds)
-     WHERE id=$11 AND tenant_id=$12
+       portal_help_email = COALESCE($8, portal_help_email),
+       portal_help_phone = COALESCE($9, portal_help_phone),
+       portal_momo_number = COALESCE($10, portal_momo_number),
+       portal_momo_name = COALESCE($11, portal_momo_name),
+       portal_use_rotating_backgrounds = COALESCE($12, portal_use_rotating_backgrounds)
+     WHERE id=$13 AND tenant_id=$14
      RETURNING ${PORTAL_FIELDS}`,
     [businessName, logoUrl, primaryColor, customHtml,
-      backgroundImageUrl, cautionText, whatsappNumber, momoNumber, momoName,
+      backgroundImageUrl, cautionText, whatsappNumber, helpEmail, helpPhone, momoNumber, momoName,
       // COALESCE only substitutes on NULL, not on false, so an explicit
       // `false` here correctly turns the toggle off - only a genuinely
       // missing field (undefined -> null) leaves the existing value alone.
@@ -412,11 +414,13 @@ router.patch('/:id/portal', asyncHandler(async (req, res) => {
 
 // Clear a single optional portal field back to "not shown" (NULL) - the
 // PATCH above uses COALESCE so it can only set values, never blank one out.
-// Body: { field: 'backgroundImageUrl' | 'cautionText' | 'whatsappNumber' | 'momoNumber' | 'momoName' }
+// Body: { field: 'backgroundImageUrl' | 'cautionText' | 'whatsappNumber' | 'helpEmail' | 'helpPhone' | 'momoNumber' | 'momoName' }
 const CLEARABLE_PORTAL_FIELDS = {
   backgroundImageUrl: 'portal_background_image_url',
   cautionText: 'portal_caution_text',
   whatsappNumber: 'portal_whatsapp_number',
+  helpEmail: 'portal_help_email',
+  helpPhone: 'portal_help_phone',
   momoNumber: 'portal_momo_number',
   momoName: 'portal_momo_name',
 };

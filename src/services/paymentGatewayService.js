@@ -20,8 +20,8 @@ async function saveGatewayConfig(tenantId, provider, config) {
        tenant_id, provider,
        paystack_secret_key_encrypted, paystack_public_key,
        hubtel_client_id, hubtel_client_secret_encrypted, hubtel_merchant_account_number,
-       flutterwave_secret_key_encrypted, flutterwave_public_key
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       flutterwave_secret_key_encrypted, flutterwave_public_key, contact_email
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      ON CONFLICT (tenant_id, provider) DO UPDATE SET
        paystack_secret_key_encrypted = COALESCE(EXCLUDED.paystack_secret_key_encrypted, payment_gateways.paystack_secret_key_encrypted),
        paystack_public_key = COALESCE(EXCLUDED.paystack_public_key, payment_gateways.paystack_public_key),
@@ -30,13 +30,14 @@ async function saveGatewayConfig(tenantId, provider, config) {
        hubtel_merchant_account_number = COALESCE(EXCLUDED.hubtel_merchant_account_number, payment_gateways.hubtel_merchant_account_number),
        flutterwave_secret_key_encrypted = COALESCE(EXCLUDED.flutterwave_secret_key_encrypted, payment_gateways.flutterwave_secret_key_encrypted),
        flutterwave_public_key = COALESCE(EXCLUDED.flutterwave_public_key, payment_gateways.flutterwave_public_key),
+       contact_email = COALESCE(EXCLUDED.contact_email, payment_gateways.contact_email),
        updated_at = now()
      RETURNING id, provider, is_active`,
     [
       tenantId, provider,
       encrypted.paystackSecretKeyEncrypted, config.paystackPublicKey || null,
       config.hubtelClientId || null, encrypted.hubtelClientSecretEncrypted, config.hubtelMerchantAccountNumber || null,
-      encrypted.flutterwaveSecretKeyEncrypted, config.flutterwavePublicKey || null,
+      encrypted.flutterwaveSecretKeyEncrypted, config.flutterwavePublicKey || null, config.contactEmail || null,
     ]
   );
   return rows[0];
@@ -66,7 +67,7 @@ async function listGateways(tenantId) {
        (hubtel_client_secret_encrypted IS NOT NULL) AS hubtel_configured,
        (flutterwave_secret_key_encrypted IS NOT NULL) AS flutterwave_configured,
        hubtel_client_id, hubtel_merchant_account_number,
-       paystack_public_key, flutterwave_public_key
+       paystack_public_key, flutterwave_public_key, contact_email
      FROM payment_gateways WHERE tenant_id=$1`,
     [tenantId]
   );

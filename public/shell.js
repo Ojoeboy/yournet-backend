@@ -8,14 +8,75 @@
   // (primary and secondary alike) also appears in the slide-out drawer,
   // opened via the bottom bar's "More" button, so nothing is ever only
   // reachable one way.
+  // Help links are plain external contacts (email/WhatsApp/phone), not
+  // in-app pages - update HELP_CONTACT below with the real details before
+  // shipping; nothing else needs to change.
+  const HELP_CONTACT = {
+    email: 'yournetcontrol@gmail.com',
+    whatsappNumber: '233546539112', // digits only, country code, no leading +
+    phoneNumber: '+233546539112',
+  };
+
+  // "section" groups items in the desktop vertical sidebar only (see
+  // buildNavGroups/render below). It has no effect on the mobile bottom
+  // bar or drawer, which both stay flat lists - grouping is a desktop-only
+  // visual affordance, not a change to what pages exist or how they load.
   const NAV_ITEMS = [
-    { key: 'dashboard', href: '/dashboard.html', icon: '\u25C9', label: 'Dashboard', primary: true },
-    { key: 'setup', href: '/admin', icon: '\u2699', label: 'Setup', primary: false },
-    { key: 'vouchers', href: '/print.html', icon: '\u2637', label: 'Vouchers', primary: true },
-    { key: 'agents', href: '/agents', icon: '\u25A4', label: 'Agents', primary: true },
-    { key: 'pppoe', href: '/pppoe', icon: '\u21C4', label: 'PPPoE', primary: false },
-    { key: 'billing', href: '/billing.html', icon: '\u26A1', label: 'Billing', primary: true },
+    { key: 'dashboard', href: '/dashboard.html', icon: '\u25C9', label: 'Dashboard', primary: true, section: null },
+    { key: 'setup', href: '/admin', icon: '\u2699', label: 'Setup', primary: false, section: 'Operations/Network' },
+    { key: 'agents', href: '/agents', icon: '\u25A4', label: 'Agents', primary: true, section: 'Operations/Network' },
+    { key: 'pppoe', href: '/pppoe', icon: '\u21C4', label: 'PPPoE', primary: false, section: 'Operations/Network' },
+    { key: 'vouchers', href: '/print.html', icon: '\u2637', label: 'Vouchers', primary: true, section: 'Finance' },
+    { key: 'billing', href: '/billing.html', icon: '\u26A1', label: 'Billing', primary: true, section: 'Finance' },
+    {
+      key: 'plan-overview', href: '/plan-overview.html', icon: '\u2756', label: 'Overview of Plan',
+      primary: false, section: 'Plan',
+    },
+    {
+      key: 'help-email', href: `mailto:${HELP_CONTACT.email}`, icon: '\u2709', label: 'Email',
+      primary: false, section: 'Help', external: true,
+    },
+    {
+      key: 'help-whatsapp', href: `https://wa.me/${HELP_CONTACT.whatsappNumber}`, icon: '\u{1F4AC}',
+      label: 'WhatsApp', primary: false, section: 'Help', external: true,
+    },
+    {
+      key: 'help-phone', href: `tel:${HELP_CONTACT.phoneNumber}`, icon: '\u260E', label: 'Call',
+      primary: false, section: 'Help', external: true,
+    },
   ];
+
+  // Groups NAV_ITEMS into { label, items } clusters for the desktop
+  // sidebar, preserving first-appearance order of both items and
+  // sections. Items with section:null render standalone, with no header.
+  function buildNavGroups(items) {
+    const groups = [];
+    const bySection = new Map();
+    items.forEach((item) => {
+      const key = item.section || null;
+      if (key === null) {
+        groups.push({ label: null, items: [item] });
+        return;
+      }
+      if (!bySection.has(key)) {
+        const group = { label: key, items: [] };
+        bySection.set(key, group);
+        groups.push(group);
+      }
+      bySection.get(key).items.push(item);
+    });
+    return groups;
+  }
+
+  function navLinkHtml(item, active) {
+    const isActive = !item.external && item.key === active;
+    const extraAttrs = item.external ? ' target="_blank" rel="noopener"' : '';
+    return `
+      <a href="${item.href}" class="${isActive ? 'active' : ''}"${extraAttrs}>
+        <span class="ico">${item.icon}</span><span>${item.label}</span>
+      </a>
+    `;
+  }
 
   function render() {
     const el = document.getElementById('app-sidebar');
@@ -32,19 +93,16 @@
         <div class="app-topbar-side right">${logoutHtml}</div>
       </div>
       <nav class="app-nav">
-        ${NAV_ITEMS.map((item) => `
-          <a href="${item.href}" class="${item.key === active ? 'active' : ''}">
-            <span class="ico">${item.icon}</span><span>${item.label}</span>
-          </a>
+        ${buildNavGroups(NAV_ITEMS).map((group) => `
+          <div class="app-nav-group${group.label === 'Help' ? ' app-nav-group--help' : ''}">
+            ${group.label ? `<div class="app-nav-section-label">${group.label}</div>` : ''}
+            ${group.items.map((item) => navLinkHtml(item, active)).join('')}
+          </div>
         `).join('')}
       </nav>
 
       <nav class="app-bottom-nav">
-        ${primaryItems.map((item) => `
-          <a href="${item.href}" class="${item.key === active ? 'active' : ''}">
-            <span class="ico">${item.icon}</span><span>${item.label}</span>
-          </a>
-        `).join('')}
+        ${primaryItems.map((item) => navLinkHtml(item, active)).join('')}
         <button type="button" class="more-btn ${secondaryActive ? 'active' : ''}" id="yn-drawer-open" aria-label="More">
           <span class="ico">\u2261</span><span>More</span>
         </button>
@@ -57,11 +115,7 @@
           <button type="button" class="app-drawer-close" id="yn-drawer-close" aria-label="Close menu">&times;</button>
         </div>
         <nav class="app-drawer-nav">
-          ${NAV_ITEMS.map((item) => `
-            <a href="${item.href}" class="${item.key === active ? 'active' : ''}">
-              <span class="ico">${item.icon}</span><span>${item.label}</span>
-            </a>
-          `).join('')}
+          ${NAV_ITEMS.map((item) => navLinkHtml(item, active)).join('')}
         </nav>
         <div class="app-drawer-footer">${logoutHtml}</div>
       </div>

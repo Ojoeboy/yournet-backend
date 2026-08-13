@@ -19,7 +19,7 @@
   --yn-cream:#e8f0f1;
 }
 
-.app-shell{min-height:100vh;position:relative;z-index:1}
+.app-shell{min-height:100vh;position:relative;z-index:1;display:flex}
 
 /* ---------- connectivity mesh background (from Bitnet captive-portal design) ---------- */
 .mesh-bg{position:fixed;inset:0;z-index:0;opacity:.28;pointer-events:none}
@@ -27,25 +27,25 @@
 .mesh-node{fill:var(--yn-teal);opacity:.6}
 .mesh-line{stroke:var(--yn-teal);stroke-width:.6;opacity:.25}
 
-/* ---------- top bar (desktop: sticky header, brand truly centered) ----------
+/* ---------- sidebar (desktop: fixed-width left column, grouped nav) ----------
    #app-sidebar is the historical element name (kept so admin.html/
-   dashboard.html/billing.html/print.html need zero markup changes) but on
-   desktop it now renders as a full-width sticky header, not a left rail:
-   a 3-column grid (spacer / brand / logout) is what keeps the brand
-   centered on the page regardless of how wide the logout button is,
-   followed by a horizontal tab strip for the section nav. */
+   dashboard.html/billing.html/print.html need zero markup changes). On
+   desktop it renders as a full-height sticky left rail: brand up top,
+   then the nav grouped into labeled sections (see app-nav-group below). */
 .app-sidebar{
-  width:100%;background:var(--yn-ink-deep);border-bottom:1px solid var(--yn-line);
-  position:sticky;top:0;z-index:30;
+  width:220px;flex-shrink:0;background:var(--yn-ink-deep);border-right:1px solid var(--yn-line);
+  position:sticky;top:0;height:100vh;overflow-y:auto;z-index:30;
+  display:flex;flex-direction:column;
 }
 .app-topbar{
-  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
-  padding:16px 32px;gap:12px;
+  display:flex;flex-direction:column;align-items:flex-start;
+  padding:20px 18px 16px;gap:14px;border-bottom:1px solid var(--yn-line);
 }
-.app-topbar-side{display:flex;align-items:center;gap:10px;min-width:0}
-.app-topbar-side.right{justify-content:flex-end}
+.app-topbar-side{min-width:0}
+.app-topbar-side:not(.right){display:none}
+.app-topbar-side.right{display:flex;width:100%}
 .app-brand{
-  justify-self:center;display:flex;align-items:center;gap:10px;
+  display:flex;align-items:center;gap:10px;
   font-weight:800;font-size:16px;color:var(--yn-cream);white-space:nowrap;
 }
 .app-brand .dot{
@@ -66,20 +66,34 @@
 .logout-btn:hover{border-color:var(--yn-danger);color:var(--yn-danger);background:rgba(255,107,107,.08)}
 
 .app-nav{
-  display:flex;align-items:center;justify-content:center;gap:6px;
-  padding:0 20px 12px;flex-wrap:wrap;
+  display:flex;flex-direction:column;padding:14px 10px 16px;flex:1;overflow-y:auto;
+}
+.app-nav-group{display:flex;flex-direction:column;gap:2px}
+.app-nav-group + .app-nav-group{margin-top:16px}
+.app-nav-section-label{
+  font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--yn-muted);padding:6px 12px 4px;
 }
 .app-nav a{
-  display:flex;align-items:center;gap:8px;padding:9px 16px;border-radius:9px;
+  display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;
   color:var(--yn-muted);text-decoration:none;font-size:13.5px;font-weight:700;
-  border-bottom:2px solid transparent;transition:background .15s,color .15s,border-color .15s;
+  transition:background .15s,color .15s;
 }
 .app-nav a:hover{background:rgba(255,255,255,.04);color:var(--yn-cream)}
-.app-nav a.active{background:rgba(46,196,182,.1);color:var(--yn-teal);border-bottom-color:var(--yn-teal)}
+.app-nav a.active{background:rgba(46,196,182,.1);color:var(--yn-teal)}
 .app-nav a .ico{width:16px;text-align:center;flex-shrink:0;font-size:14px}
 
+/* Help sits pinned to the bottom of the sidebar, set off by a divider -
+   it's a support/contact exit, not part of the page-to-page nav flow, so
+   it reads as a distinct, lower-emphasis cluster rather than one more
+   item in the list. */
+.app-nav-group--help{
+  margin-top:auto;padding-top:14px;border-top:1px solid var(--yn-line);
+}
+.app-nav-group--help a{font-size:12.5px;font-weight:600}
+
 /* ---------- main content area ---------- */
-.app-main{width:100%;max-width:1080px;margin:0 auto;padding:32px 32px 80px;box-sizing:border-box}
+.app-main{flex:1;min-width:0;max-width:1080px;margin:0;padding:32px 32px 80px;box-sizing:border-box}
 
 /* ---------- reusable widgets used across dashboard/admin ---------- */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px}
@@ -171,7 +185,8 @@ body.yn-drawer-locked{overflow:hidden}
 
 /* ---------- mobile: top bar collapses away, bottom bar + drawer take over ---------- */
 @media (max-width:760px){
-  .app-shell{display:flex;flex-direction:column}
+  .app-shell{flex-direction:column}
+  .app-sidebar{width:100%;height:auto;position:static;border-right:none;overflow-y:visible}
   .app-topbar{display:none}
   .app-nav{display:none}
   .app-bottom-nav{display:flex}

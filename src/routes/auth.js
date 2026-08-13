@@ -72,8 +72,8 @@ router.post('/signup', asyncHandler(async (req, res) => {
     const subscriptionStatus = licenseKeyRow.billing_authorization ? 'active' : 'manual';
     const { rows } = await client.query(
       `INSERT INTO tenants (business_name, owner_email, owner_phone, password_hash, currency, plan, plan_expires_at,
-                             verify_token_hash, verify_token_expires_at, subscription_status, billing_provider, billing_authorization, next_billing_at)
-       VALUES ($1,$2,$3,$4,$5,'licensed',$6,$7,now() + interval '24 hours',$8,$9,$10,$6)
+                             verify_token_hash, verify_token_expires_at, subscription_status, billing_provider, billing_authorization, next_billing_at, plan_started_at)
+       VALUES ($1,$2,$3,$4,$5,'licensed',$6,$7,now() + interval '24 hours',$8,$9,$10,$6,now())
        RETURNING id, business_name, owner_email, plan, plan_expires_at, currency`,
       [businessName, email, phone || null, passwordHash, currency || 'GHS', nextBillingAt,
        hashToken(verifyToken), subscriptionStatus, licenseKeyRow.billing_provider || null, licenseKeyRow.billing_authorization || null]
@@ -180,7 +180,7 @@ router.post('/reactivate', tenantLoginLimiter, asyncHandler(async (req, res) => 
 
     await client.query(
       `UPDATE tenants SET plan='licensed', plan_expires_at=$1, next_billing_at=$1,
-              subscription_status=$2, billing_provider=$3, billing_authorization=$4
+              subscription_status=$2, billing_provider=$3, billing_authorization=$4, plan_started_at=now()
        WHERE id=$5`,
       [nextBillingAt, subscriptionStatus, key.billing_provider || null, key.billing_authorization || null, tenantId]
     );

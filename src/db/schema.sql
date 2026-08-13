@@ -49,6 +49,16 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_provider TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS billing_authorization TEXT;
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS next_billing_at TIMESTAMPTZ;
 
+-- When the CURRENT plan cycle began (signup, reactivation, or a manual
+-- plan switch) - set alongside plan_expires_at everywhere a cycle starts
+-- or restarts (routes/auth.js reactivate-by-key, routes/license.js
+-- reactivate, routes/billing.js starter/pro purchase). Deliberately left
+-- untouched by services/subscriptionBilling.js's monthly auto-renewal,
+-- since that extends the existing cycle rather than starting a new one.
+-- Powers the "Overview of Plan" page; NULL for tenants who predate this
+-- column (their plan_expires_at still displays fine either way).
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS plan_started_at TIMESTAMPTZ;
+
 -- Staff/kiosk logins belonging to a tenant (agents who sell vouchers)
 CREATE TABLE IF NOT EXISTS tenant_users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -119,6 +129,8 @@ CREATE TABLE IF NOT EXISTS sites (
   portal_background_image_url TEXT,
   portal_caution_text TEXT,        -- shown as a warning/notice box on the portal page
   portal_whatsapp_number TEXT,     -- shown as a "Need help?" tap-to-chat link, digits only incl. country code
+  portal_help_email TEXT,          -- shown as a "Need help?" mailto link
+  portal_help_phone TEXT,          -- shown as a "Need help?" tap-to-call link, incl. leading +
   portal_momo_number TEXT,         -- manual MoMo fallback: number to display for direct transfer
   portal_momo_name TEXT,           -- manual MoMo fallback: registered account name shown alongside the number
 
@@ -139,6 +151,8 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_custom_html TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_background_image_url TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_caution_text TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_whatsapp_number TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_help_email TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_help_phone TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_momo_number TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_momo_name TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_use_rotating_backgrounds BOOLEAN NOT NULL DEFAULT true;
@@ -408,6 +422,13 @@ CREATE TABLE IF NOT EXISTS payment_gateways (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payment_gateways_tenant ON payment_gateways(tenant_id);
+
+-- Contact email for this specific linked gateway (e.g. the inbox that
+-- receives Paystack/Hubtel/Flutterwave payout notifications) - separate
+-- from the tenant's own login email (owner_email), and separate per
+-- provider since a tenant can have more than one gateway configured.
+-- Shown on the "Overview of Plan" page alongside hubtel_merchant_account_number.
+ALTER TABLE payment_gateways ADD COLUMN IF NOT EXISTS contact_email TEXT;
 
 -- A customer buying a voucher online (not printed/MoMo-manual) - tracks the
 -- order from "started checkout" through "paid, voucher issued".

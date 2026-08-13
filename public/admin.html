@@ -269,6 +269,10 @@
   <input id="portalCautionText" placeholder="e.g. Do not share your voucher code with anyone.">
   <label>WhatsApp help number (optional - shown as a "Need help?" chat link)</label>
   <input id="portalWhatsappNumber" placeholder="e.g. 233241234567 (with country code, no + or spaces)">
+  <label>Help email (optional - shown as a "Need help?" email link)</label>
+  <input id="portalHelpEmail" type="email" placeholder="e.g. support@yourbusiness.com">
+  <label>Help phone number (optional - shown as a "Need help?" call link)</label>
+  <input id="portalHelpPhone" placeholder="e.g. +233241234567">
   <label>MoMo number for manual payments (optional)</label>
   <input id="portalMomoNumber" placeholder="e.g. 024 123 4567">
   <label>MoMo registered account name (optional)</label>
@@ -421,6 +425,12 @@
     <label>Public key</label>
     <input id="gwFlutterwavePublic" placeholder="FLWPUBK-...">
   </div>
+
+  <label>Contact email</label>
+  <input id="gwContactEmail" type="email" placeholder="e.g. billing@yourbusiness.com">
+  <p style="font-size:11px;color:#6b8a91;margin:2px 0 10px">
+    Shown on your Plan Overview page next to this gateway - not sent to the provider.
+  </p>
 
   <button onclick="saveGateway()">Save credentials</button>
   <button class="secondary" onclick="activateGateway()">Make this the active gateway</button>
@@ -845,6 +855,8 @@
       document.getElementById('portalBackgroundImageUrl').value = branding.portal_background_image_url || '';
       document.getElementById('portalCautionText').value = branding.portal_caution_text || '';
       document.getElementById('portalWhatsappNumber').value = branding.portal_whatsapp_number || '';
+      document.getElementById('portalHelpEmail').value = branding.portal_help_email || '';
+      document.getElementById('portalHelpPhone').value = branding.portal_help_phone || '';
       document.getElementById('portalMomoNumber').value = branding.portal_momo_number || '';
       document.getElementById('portalMomoName').value = branding.portal_momo_name || '';
       document.getElementById('portalCustomHtml').value = branding.portal_custom_html || '';
@@ -867,18 +879,22 @@
         backgroundImageUrl: document.getElementById('portalBackgroundImageUrl').value || null,
         cautionText: document.getElementById('portalCautionText').value || null,
         whatsappNumber: document.getElementById('portalWhatsappNumber').value || null,
+        helpEmail: document.getElementById('portalHelpEmail').value || null,
+        helpPhone: document.getElementById('portalHelpPhone').value || null,
         momoNumber: document.getElementById('portalMomoNumber').value || null,
         momoName: document.getElementById('portalMomoName').value || null,
         useRotatingBackgrounds: document.getElementById('portalUseRotatingBackgrounds').checked,
       });
-      // PATCH only sets values (COALESCE) - any of these five fields left
+      // PATCH only sets values (COALESCE) - any of these seven fields left
       // blank in the form needs an explicit clear so an admin can actually
-      // remove a background image / caution note / WhatsApp / MoMo detail
-      // once set, instead of it being stuck forever.
+      // remove a background image / caution note / WhatsApp / email / phone /
+      // MoMo detail once set, instead of it being stuck forever.
       const clearable = {
         backgroundImageUrl: 'portalBackgroundImageUrl',
         cautionText: 'portalCautionText',
         whatsappNumber: 'portalWhatsappNumber',
+        helpEmail: 'portalHelpEmail',
+        helpPhone: 'portalHelpPhone',
         momoNumber: 'portalMomoNumber',
         momoName: 'portalMomoName',
       };
@@ -969,15 +985,23 @@
   // straight away instead of waiting on a login/signup submit.
   initSetupPage();
 
+  // Populated by loadGateways() - lets renderGatewayFields() prefill the
+  // shared Contact email box with whatever was last saved for whichever
+  // provider is selected, so switching providers in the dropdown doesn't
+  // show a stale/blank value.
+  let loadedGateways = [];
+
   function renderGatewayFields() {
     document.querySelectorAll('.gw-fields').forEach(el => el.classList.add('hidden'));
     const provider = document.getElementById('gwProvider').value;
     document.getElementById('gwFields-' + provider).classList.remove('hidden');
+    const existing = loadedGateways.find(g => g.provider === provider);
+    document.getElementById('gwContactEmail').value = existing?.contact_email || '';
   }
 
   async function saveGateway() {
     const provider = document.getElementById('gwProvider').value;
-    const body = { provider };
+    const body = { provider, contactEmail: document.getElementById('gwContactEmail').value.trim() };
     if (provider === 'paystack') {
       body.paystackSecretKey = document.getElementById('gwPaystackSecret').value;
       body.paystackPublicKey = document.getElementById('gwPaystackPublic').value;
@@ -1029,6 +1053,7 @@
   async function loadGateways() {
     try {
       const gateways = await api('/api/payment-gateways', 'GET');
+      loadedGateways = gateways;
       const table = document.getElementById('gatewayTable');
       // Flutterwave is no longer offered for new setups, but a tenant who
       // already configured it should still see it as an option here so they
@@ -1036,12 +1061,17 @@
       if (gateways.some(g => g.provider === 'flutterwave')) {
         document.getElementById('gwProviderFlutterwaveOpt').style.display = '';
       }
+      // Reflect whatever's saved for the currently-selected provider into
+      // the shared Contact email box (covers first load after a page
+      // refresh, not just provider switches).
+      renderGatewayFields();
       if (!gateways.length) {
         table.innerHTML = '<tr><td style="color:#6b8a91">No gateway linked yet.</td></tr>';
         return;
       }
-      table.innerHTML = '<tr><th>Provider</th><th>Status</th><th></th></tr>' +
+      table.innerHTML = '<tr><th>Provider</th><th>Status</th><th>Contact email</th><th></th></tr>' +
         gateways.map(g => `<tr><td>${g.provider}</td><td>${g.is_active ? '<span class="pill">Active</span>' : 'Configured'}</td>` +
+          `<td style="color:#6b8a91">${g.contact_email ? escapeHtmlAdmin(g.contact_email) : '-'}</td>` +
           `<td style="white-space:nowrap"><button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" ` +
           `onclick="deleteGateway('${g.provider}', ${g.is_active})">Delete</button></td></tr>`).join('');
     } catch (err) { /* not logged in yet */ }

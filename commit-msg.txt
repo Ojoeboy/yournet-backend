@@ -1,1 +1,39 @@
-Add mobile bottom nav bar (Dashboard/Vouchers/Agents/Billing) + slide-out vertical sidebar drawer with full nav list, brand header, and logout; desktop top nav unchanged
+feat(billing): add Plan Overview page, gateway contact email, and captive portal help contacts
+
+- Add tenants.plan_started_at and payment_gateways.contact_email columns
+  (additive migration via ALTER TABLE ... ADD COLUMN IF NOT EXISTS)
+- Wire plan_started_at into every real plan-start path (signup,
+  reactivate-by-key, license reactivation, starter/pro purchase) while
+  leaving the monthly auto-renewal job untouched, so it always reflects
+  the true start of the current cycle
+- Add GET /api/dashboard/plan-overview, aggregating plan name/price/
+  status/dates, linked gateways (contact email included, secrets
+  excluded), the tenant's own subscription_payments log, and a merged/
+  sorted customer payments log from voucher_orders + pppoe_payments
+- Add public/plan-overview.html: plan summary card, linked gateways
+  list, and a tabbed My Subscription / Customer Payments table
+- Sidebar: rename "Operations" to "Operations/Network", add "Plan" and
+  "Help" groups (Email/WhatsApp/Call, pinned to bottom with a divider,
+  open in new tab)
+- Setup page: add a "Contact email" field to the gateway card, wired
+  into saveGateway(), prefilled per-provider via a new loadedGateways
+  state var, and surfaced in the gateway table
+
+- Add sites.portal_help_email and sites.portal_help_phone columns
+  (additive migration via ALTER TABLE ... ADD COLUMN IF NOT EXISTS)
+- Wire helpEmail/helpPhone through PATCH /api/sites/:id/portal, its
+  clear-field endpoint, and the public /portal/:siteId/config endpoint
+- Captive portal (public/portal.html) "Need help?" section now renders
+  any combination of WhatsApp / email / phone links per site, escaping
+  tenant-entered values before injecting into innerHTML
+- Setup page: add "Help email" and "Help phone number" fields to Portal
+  Branding, wired into load/save/clear alongside the existing WhatsApp
+  number field
+
+Still TODO before going live: replace the placeholder values in
+shell.js HELP_CONTACT (email, WhatsApp number, phone number) with real
+support contact details.
+
+Run `npm run migrate` on deploy for the four new columns
+(tenants.plan_started_at, payment_gateways.contact_email,
+sites.portal_help_email, sites.portal_help_phone).
