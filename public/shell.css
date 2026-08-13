@@ -111,19 +111,72 @@
 .live-panel .live-empty{font-size:12.5px;color:var(--yn-muted);padding:6px 0}
 .live-panel .live-err{font-size:12.5px;color:var(--yn-danger)}
 
-/* ---------- mobile: top bar collapses away, nav becomes a bottom tab bar ---------- */
+/* ---------- mobile bottom bar (native-app style) ----------
+   4 most-used sections as tabs, plus a "More" button that opens the
+   drawer below. Hidden entirely on desktop - .app-nav (the horizontal
+   strip) is what desktop uses instead. */
+.app-bottom-nav{
+  display:none;position:fixed;bottom:0;left:0;right:0;z-index:40;
+  background:var(--yn-ink-deep);border-top:1px solid var(--yn-line);
+  padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+  align-items:center;justify-content:space-around;
+}
+.app-bottom-nav a,.app-bottom-nav .more-btn{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 4px;font-size:10.5px;font-weight:700;border-radius:8px;
+  color:var(--yn-muted);text-decoration:none;background:none;border:none;
+  font-family:inherit;cursor:pointer;flex:1;min-width:0;
+}
+.app-bottom-nav a .ico,.app-bottom-nav .more-btn .ico{font-size:17px}
+.app-bottom-nav a.active,.app-bottom-nav .more-btn.active{color:var(--yn-teal)}
+
+/* ---------- slide-out drawer (vertical sidebar) ----------
+   Opened from the bottom bar's "More" button. Holds every nav item
+   (including the 4 already in the bottom bar, for a single consistent
+   place to find everything), plus brand header and logout. */
+.app-drawer-backdrop{
+  display:none;position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.5);
+  opacity:0;pointer-events:none;transition:opacity .2s ease;
+}
+.app-drawer-backdrop.open{opacity:1;pointer-events:auto}
+.app-drawer{
+  display:none;position:fixed;top:0;bottom:0;left:0;z-index:60;
+  width:min(78vw,300px);background:var(--yn-ink-deep);border-right:1px solid var(--yn-line);
+  transform:translateX(-100%);transition:transform .25s ease;
+  flex-direction:column;overflow-y:auto;box-shadow:8px 0 24px rgba(0,0,0,.35);
+}
+.app-drawer.open{transform:translateX(0)}
+.app-drawer-header{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:16px;border-bottom:1px solid var(--yn-line);
+}
+.app-drawer-header .app-brand{justify-self:start;font-size:14.5px}
+.app-drawer-close{
+  background:none;border:none;color:var(--yn-muted);font-size:22px;line-height:1;
+  cursor:pointer;padding:4px 8px;border-radius:6px;
+}
+.app-drawer-close:hover{color:var(--yn-cream);background:rgba(255,255,255,.06)}
+.app-drawer-nav{display:flex;flex-direction:column;padding:10px;gap:2px;flex:1}
+.app-drawer-nav a{
+  display:flex;align-items:center;gap:12px;padding:12px 12px;border-radius:9px;
+  color:var(--yn-cream);text-decoration:none;font-size:14px;font-weight:600;
+}
+.app-drawer-nav a .ico{width:18px;text-align:center;flex-shrink:0;font-size:16px;color:var(--yn-muted)}
+.app-drawer-nav a:hover{background:rgba(255,255,255,.05)}
+.app-drawer-nav a.active{background:rgba(46,196,182,.12);color:var(--yn-teal)}
+.app-drawer-nav a.active .ico{color:var(--yn-teal)}
+.app-drawer-footer{padding:14px 16px;border-top:1px solid var(--yn-line)}
+.app-drawer-footer .logout-btn{display:flex;justify-content:center}
+body.yn-drawer-locked{overflow:hidden}
+
+/* ---------- mobile: top bar collapses away, bottom bar + drawer take over ---------- */
 @media (max-width:760px){
   .app-shell{display:flex;flex-direction:column}
   .app-topbar{display:none}
-  .app-sidebar{
-    width:100%;height:auto;position:fixed;bottom:0;left:0;right:0;top:auto;
-    border-bottom:none;border-top:1px solid var(--yn-line);padding:6px 4px;
-    display:flex;align-items:center;z-index:40;
-  }
-  .app-nav{flex-direction:row;width:100%;justify-content:space-around;padding:0}
-  .app-nav a{flex-direction:column;gap:3px;padding:6px 4px;font-size:10.5px;border-radius:8px;border-bottom:none}
-  .app-nav a.active{border-bottom:none}
-  .app-nav a .ico{font-size:16px}
+  .app-nav{display:none}
+  .app-bottom-nav{display:flex}
+  .app-drawer-backdrop{display:block}
+  .app-drawer{display:flex}
   .app-main{padding:16px 14px 90px}
 }
 
@@ -142,7 +195,9 @@ body.yn-glass .card{
   -webkit-backdrop-filter:blur(16px) saturate(150%);
   border:1px solid rgba(255,255,255,.16);
 }
-body.yn-glass .app-sidebar{
+body.yn-glass .app-sidebar,
+body.yn-glass .app-bottom-nav,
+body.yn-glass .app-drawer{
   background:rgba(8,19,22,.55);
   backdrop-filter:blur(20px);
   -webkit-backdrop-filter:blur(20px);
@@ -155,7 +210,9 @@ body.yn-glass .app-sidebar{
   body.yn-glass .kpi-card,
   body.yn-glass .site-card,
   body.yn-glass .card,
-  body.yn-glass .app-sidebar{
+  body.yn-glass .app-sidebar,
+  body.yn-glass .app-bottom-nav,
+  body.yn-glass .app-drawer{
     background:var(--yn-panel);
   }
 }

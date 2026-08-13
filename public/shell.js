@@ -4,27 +4,32 @@
 // window.YOURNET_ACTIVE_NAV before this script runs, so the right item
 // gets highlighted.
 (function () {
+  // "primary: true" items appear in the mobile bottom bar. Everything
+  // (primary and secondary alike) also appears in the slide-out drawer,
+  // opened via the bottom bar's "More" button, so nothing is ever only
+  // reachable one way.
   const NAV_ITEMS = [
-    { key: 'dashboard', href: '/dashboard.html', icon: '\u25C9', label: 'Dashboard' },
-    { key: 'setup', href: '/admin', icon: '\u2699', label: 'Setup' },
-    { key: 'vouchers', href: '/print.html', icon: '\u2637', label: 'Vouchers' },
-    { key: 'agents', href: '/agents', icon: '\u25A4', label: 'Agents' },
-    { key: 'pppoe', href: '/pppoe', icon: '\u21C4', label: 'PPPoE' },
-    { key: 'billing', href: '/billing.html', icon: '\u26A1', label: 'Billing' },
+    { key: 'dashboard', href: '/dashboard.html', icon: '\u25C9', label: 'Dashboard', primary: true },
+    { key: 'setup', href: '/admin', icon: '\u2699', label: 'Setup', primary: false },
+    { key: 'vouchers', href: '/print.html', icon: '\u2637', label: 'Vouchers', primary: true },
+    { key: 'agents', href: '/agents', icon: '\u25A4', label: 'Agents', primary: true },
+    { key: 'pppoe', href: '/pppoe', icon: '\u21C4', label: 'PPPoE', primary: false },
+    { key: 'billing', href: '/billing.html', icon: '\u26A1', label: 'Billing', primary: true },
   ];
 
   function render() {
     const el = document.getElementById('app-sidebar');
     if (!el) return;
     const active = window.YOURNET_ACTIVE_NAV || '';
+    const primaryItems = NAV_ITEMS.filter((i) => i.primary);
+    const secondaryActive = NAV_ITEMS.some((i) => !i.primary && i.key === active);
+    const logoutHtml = `<a href="#" class="logout-btn" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;">Log out</a>`;
 
     el.innerHTML = `
       <div class="app-topbar">
         <div class="app-topbar-side"></div>
         <div class="app-brand"><img src="/img/logo-icon.png" alt="" class="brand-logo-icon"> YourNet Control</div>
-        <div class="app-topbar-side right">
-          <a href="#" class="logout-btn" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;">Log out</a>
-        </div>
+        <div class="app-topbar-side right">${logoutHtml}</div>
       </div>
       <nav class="app-nav">
         ${NAV_ITEMS.map((item) => `
@@ -33,7 +38,53 @@
           </a>
         `).join('')}
       </nav>
+
+      <nav class="app-bottom-nav">
+        ${primaryItems.map((item) => `
+          <a href="${item.href}" class="${item.key === active ? 'active' : ''}">
+            <span class="ico">${item.icon}</span><span>${item.label}</span>
+          </a>
+        `).join('')}
+        <button type="button" class="more-btn ${secondaryActive ? 'active' : ''}" id="yn-drawer-open" aria-label="More">
+          <span class="ico">\u2261</span><span>More</span>
+        </button>
+      </nav>
+
+      <div class="app-drawer-backdrop" id="yn-drawer-backdrop"></div>
+      <div class="app-drawer" id="yn-drawer">
+        <div class="app-drawer-header">
+          <div class="app-brand"><img src="/img/logo-icon.png" alt="" class="brand-logo-icon"> YourNet Control</div>
+          <button type="button" class="app-drawer-close" id="yn-drawer-close" aria-label="Close menu">&times;</button>
+        </div>
+        <nav class="app-drawer-nav">
+          ${NAV_ITEMS.map((item) => `
+            <a href="${item.href}" class="${item.key === active ? 'active' : ''}">
+              <span class="ico">${item.icon}</span><span>${item.label}</span>
+            </a>
+          `).join('')}
+        </nav>
+        <div class="app-drawer-footer">${logoutHtml}</div>
+      </div>
     `;
+
+    const drawer = document.getElementById('yn-drawer');
+    const backdrop = document.getElementById('yn-drawer-backdrop');
+    const openBtn = document.getElementById('yn-drawer-open');
+    const closeBtn = document.getElementById('yn-drawer-close');
+
+    function openDrawer() {
+      drawer.classList.add('open');
+      backdrop.classList.add('open');
+      document.body.classList.add('yn-drawer-locked');
+    }
+    function closeDrawer() {
+      drawer.classList.remove('open');
+      backdrop.classList.remove('open');
+      document.body.classList.remove('yn-drawer-locked');
+    }
+    if (openBtn) openBtn.addEventListener('click', openDrawer);
+    if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+    if (backdrop) backdrop.addEventListener('click', closeDrawer);
   }
 
   // Favicon/app-icon links - injected here rather than duplicated in every

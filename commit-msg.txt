@@ -1,1 +1,1 @@
-Add YourNet Control logo (login, sidebar, favicon, PWA icons) and split Agents into its own page at /agents.html with Overview/Activity Log subtabs
+Add mobile bottom nav bar (Dashboard/Vouchers/Agents/Billing) + slide-out vertical sidebar drawer with full nav list, brand header, and logout; desktop top nav unchanged
