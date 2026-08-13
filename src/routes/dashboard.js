@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const pool = require('../db/pool');
 const { requireAuth, requireNotAgent } = require('../middleware/auth');
 const mikrotik = require('../integrations/mikrotik');
@@ -11,6 +12,35 @@ const freeStockPhotos = require('../integrations/freeStockPhotos');
 
 const router = express.Router();
 router.use(requireAuth, requireNotAgent);
+
+// Account/profile logo upload - memory storage (never touches disk, since
+// Render's filesystem is ephemeral) - the buffer is base64-encoded into a
+// data: URL and saved straight into tenants.account_logo.
+const logoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1.5 * 1024 * 1024 }, // 1.5MB - this is an icon, not a banner
+  fileFilter: (req, file, cb) => {
+    if (!/^image\/(png|jpe?g|webp|gif)$/.test(file.mimetype)) {
+      return cb(new Error('Logo must be a PNG, JPEG, WEBP, or GIF image'));
+    }
+    cb(null, true);
+  },
+});
+
+router.post('/logo', asyncHandler(async (req, res) => {
+  logoUpload.single('logo')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (!req.file) return res.status(400).json({ error: 'No file received' });
+    const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    await pool.query('UPDATE tenants SET account_logo=$1 WHERE id=$2', [dataUrl, req.tenantId]);
+    res.json({ ok: true, logoUrl: dataUrl });
+  });
+}));
+
+router.delete('/logo', asyncHandler(async (req, res) => {
+  await pool.query('UPDATE tenants SET account_logo=NULL WHERE id=$1', [req.tenantId]);
+  res.json({ ok: true });
+}));
 
 // Owner's opt-in toggle for a rotating photo background on admin/dashboard/
 // billing/vouchers pages, in place of the default SVG connectivity mesh -
@@ -33,6 +63,57 @@ router.patch('/background-settings', asyncHandler(async (req, res) => {
     useRotatingBackgrounds, req.tenantId,
   ]);
   res.json({ ok: true, useRotatingBackgrounds });
+}));
+
+// Account tab (business name, admin's full name, digital address, country,
+// business location) + the same fields surfaced in the topbar profile panel.
+// owner_email comes along read-only - it's set at signup, not edited here.
+router.get('/account-info', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT business_name, admin_full_name, owner_email, digital_address, country, business_location, account_logo
+     FROM tenants WHERE id=$1`,
+    [req.tenantId]
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Tenant not found' });
+  const t = rows[0];
+  res.json({
+    businessName: t.business_name,
+    adminFullName: t.admin_full_name,
+    email: t.owner_email,
+    digitalAddress: t.digital_address,
+    country: t.country,
+    businessLocation: t.business_location,
+    logoUrl: t.account_logo,
+  });
+}));
+
+router.patch('/account-info', asyncHandler(async (req, res) => {
+  const { businessName, adminFullName, digitalAddress, country, businessLocation } = req.body;
+  if (!businessName || !String(businessName).trim()) {
+    return res.status(400).json({ error: 'Business name cannot be empty' });
+  }
+  // The Account form always sends its full current state (not a partial
+  // patch), so blank optional fields intentionally clear the stored value -
+  // this stays a simple full overwrite rather than per-field COALESCE.
+  const clean = (v) => (v && String(v).trim()) ? String(v).trim() : null;
+  await pool.query(
+    `UPDATE tenants SET
+       business_name = $1,
+       admin_full_name = $2,
+       digital_address = $3,
+       country = $4,
+       business_location = $5
+     WHERE id=$6`,
+    [
+      String(businessName).trim(),
+      clean(adminFullName),
+      clean(digitalAddress),
+      clean(country),
+      clean(businessLocation),
+      req.tenantId,
+    ]
+  );
+  res.json({ ok: true });
 }));
 
 // Authenticated version of the same rotating photo list the public portal

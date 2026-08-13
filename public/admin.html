@@ -93,9 +93,47 @@
   <button type="button" class="setup-tab" id="tab-access" onclick="switchTab('access')">Manual access</button>
 </div>
 
-<!-- ACCOUNT: prefs only now - login/signup moved to /login (see public/login.html) -->
+<!-- ACCOUNT: business/admin details + prefs - login/signup moved to /login (see public/login.html) -->
 <div class="card hidden" id="account-card">
   <h2>Account</h2>
+
+  <div id="account-details" style="padding-top:4px">
+    <label>Profile / business logo</label>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+      <img id="acctLogoPreview" src="" alt="" style="display:none;width:64px;height:64px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,.15)">
+      <div id="acctLogoPlaceholder" style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:24px;color:#6b8a91">👤</div>
+      <div>
+        <input type="file" id="acctLogoFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="uploadAccountLogo()">
+        <button type="button" class="secondary" style="padding:8px 12px;font-size:12px" onclick="document.getElementById('acctLogoFile').click()">Upload logo</button>
+        <button type="button" class="secondary hidden" id="acctLogoRemoveBtn" style="padding:8px 12px;font-size:12px" onclick="removeAccountLogo()">Remove</button>
+      </div>
+    </div>
+    <div class="msg" id="account-logo-msg"></div>
+
+    <label>Business name</label>
+    <input id="acctBusinessName" placeholder="e.g. BITTNET Internet Services">
+
+    <label>Admin's full name</label>
+    <input id="acctAdminFullName" placeholder="e.g. Ojoe Mensah">
+
+    <label>Digital Address</label>
+    <input id="acctDigitalAddress" placeholder="e.g. BS-0123-4567">
+
+    <label>Country</label>
+    <input id="acctCountry" placeholder="e.g. Ghana">
+
+    <label>Business location</label>
+    <input id="acctBusinessLocation" placeholder="e.g. Sunyani, Bono Region">
+
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button type="button" id="acctSaveBtn" onclick="saveAccountDetails()">Save</button>
+      <button type="button" class="secondary hidden" id="acctUpdateBtn" onclick="saveAccountDetails()">Update</button>
+    </div>
+    <div class="msg" id="account-details-msg"></div>
+  </div>
+
+  <hr style="border-color:rgba(255,255,255,.08);margin:22px 0">
+
   <div id="account-prefs" style="padding-top:4px">
     <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
       <span class="switch">
@@ -610,6 +648,106 @@
     loadSitesAndPackages();
     loadGateways();
     loadAdminBackgroundSetting();
+    loadAccountDetails();
+  }
+
+  async function loadAccountDetails() {
+    try {
+      const info = await api('/api/dashboard/account-info', 'GET');
+      document.getElementById('acctBusinessName').value = info.businessName || '';
+      document.getElementById('acctAdminFullName').value = info.adminFullName || '';
+      document.getElementById('acctDigitalAddress').value = info.digitalAddress || '';
+      document.getElementById('acctCountry').value = info.country || '';
+      document.getElementById('acctBusinessLocation').value = info.businessLocation || '';
+      applyAccountLogo(info.logoUrl);
+      // Once a business name is on file, this is an edit going forward -
+      // swap the button label so it reads "Update" instead of "Save".
+      const hasExisting = !!(info.businessName || info.adminFullName || info.digitalAddress
+        || info.country || info.businessLocation);
+      document.getElementById('acctSaveBtn').classList.toggle('hidden', hasExisting);
+      document.getElementById('acctUpdateBtn').classList.toggle('hidden', !hasExisting);
+    } catch (err) {
+      // Non-critical - leave the form blank (Save state) if this fails.
+    }
+  }
+
+  function applyAccountLogo(logoUrl) {
+    const img = document.getElementById('acctLogoPreview');
+    const placeholder = document.getElementById('acctLogoPlaceholder');
+    const removeBtn = document.getElementById('acctLogoRemoveBtn');
+    if (logoUrl) {
+      img.src = logoUrl;
+      img.style.display = '';
+      placeholder.style.display = 'none';
+      removeBtn.classList.remove('hidden');
+    } else {
+      img.style.display = 'none';
+      img.src = '';
+      placeholder.style.display = '';
+      removeBtn.classList.add('hidden');
+    }
+  }
+
+  async function uploadAccountLogo() {
+    const fileInput = document.getElementById('acctLogoFile');
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    if (file.size > 1.5 * 1024 * 1024) {
+      showMsg('account-logo-msg', 'Image is too large - please use one under 1.5MB.', 'err');
+      fileInput.value = '';
+      return;
+    }
+    const formData = new FormData();
+    formData.append('logo', file);
+    try {
+      const res = await fetch('/api/dashboard/logo', {
+        method: 'POST',
+        headers: token ? { Authorization: 'Bearer ' + token } : {},
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      applyAccountLogo(data.logoUrl);
+      showMsg('account-logo-msg', 'Logo updated.', 'ok');
+      if (window.yournetRefreshProfileLogo) window.yournetRefreshProfileLogo();
+    } catch (err) {
+      showMsg('account-logo-msg', err.message, 'err');
+    } finally {
+      fileInput.value = '';
+    }
+  }
+
+  async function removeAccountLogo() {
+    try {
+      await api('/api/dashboard/logo', 'DELETE');
+      applyAccountLogo(null);
+      showMsg('account-logo-msg', 'Logo removed.', 'ok');
+      if (window.yournetRefreshProfileLogo) window.yournetRefreshProfileLogo();
+    } catch (err) {
+      showMsg('account-logo-msg', err.message, 'err');
+    }
+  }
+
+  async function saveAccountDetails() {
+    const businessName = document.getElementById('acctBusinessName').value.trim();
+    if (!businessName) {
+      showMsg('account-details-msg', 'Business name is required.', 'err');
+      return;
+    }
+    try {
+      await api('/api/dashboard/account-info', 'PATCH', {
+        businessName,
+        adminFullName: document.getElementById('acctAdminFullName').value.trim(),
+        digitalAddress: document.getElementById('acctDigitalAddress').value.trim(),
+        country: document.getElementById('acctCountry').value.trim(),
+        businessLocation: document.getElementById('acctBusinessLocation').value.trim(),
+      });
+      showMsg('account-details-msg', 'Saved.', 'ok');
+      document.getElementById('acctSaveBtn').classList.add('hidden');
+      document.getElementById('acctUpdateBtn').classList.remove('hidden');
+    } catch (err) {
+      showMsg('account-details-msg', err.message, 'err');
+    }
   }
 
   async function loadAdminBackgroundSetting() {

@@ -98,12 +98,47 @@
   function applyMode(sidebarEl, spacerEl, auto) {
     sidebarEl.classList.toggle('auto', auto);
     spacerEl.classList.toggle('auto', auto);
+    if (!auto) closeAutoSidebar(sidebarEl); // switching to pinned - drop any leftover .open state
     const btn = document.getElementById('yn-collapse-toggle');
     if (btn) btn.setAttribute('aria-label', auto ? 'Pin sidebar open' : 'Switch to auto-hide sidebar');
   }
   function setAutoMode(sidebarEl, spacerEl, auto) {
     localStorage.setItem(COLLAPSE_KEY, auto ? '1' : '0');
     applyMode(sidebarEl, spacerEl, auto);
+  }
+
+  // Auto mode's open/closed state - separate from the pinned/auto mode
+  // itself. Rests closed (slim hamburger-only rail); opens on a hamburger
+  // click, closes when the pointer leaves the sidebar or a click lands
+  // outside it (the latter covers touch/keyboard, which never fire
+  // mouseleave). Clicking a nav link inside navigates to a new page, which
+  // naturally resets this on load, so no explicit "close on nav" needed.
+  function openAutoSidebar(sidebarEl) {
+    sidebarEl.classList.add('open');
+    const btn = document.getElementById('yn-sidebar-hamburger');
+    if (btn) { btn.setAttribute('aria-expanded', 'true'); btn.setAttribute('aria-label', 'Close sidebar'); }
+  }
+  function closeAutoSidebar(sidebarEl) {
+    sidebarEl.classList.remove('open');
+    const btn = document.getElementById('yn-sidebar-hamburger');
+    if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.setAttribute('aria-label', 'Open sidebar'); }
+  }
+  function wireAutoSidebarHamburger(sidebarEl) {
+    const hamburger = document.getElementById('yn-sidebar-hamburger');
+    if (!hamburger || hamburger.dataset.wired) return;
+    hamburger.dataset.wired = '1';
+    hamburger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (sidebarEl.classList.contains('open')) closeAutoSidebar(sidebarEl);
+      else openAutoSidebar(sidebarEl);
+    });
+    sidebarEl.addEventListener('mouseleave', () => {
+      if (sidebarEl.classList.contains('auto')) closeAutoSidebar(sidebarEl);
+    });
+    document.addEventListener('click', (e) => {
+      if (!sidebarEl.classList.contains('auto') || !sidebarEl.classList.contains('open')) return;
+      if (!sidebarEl.contains(e.target)) closeAutoSidebar(sidebarEl);
+    });
   }
 
   function render() {
@@ -114,6 +149,18 @@
     const primaryItems = NAV_ITEMS.filter((i) => i.primary);
     const secondaryActive = NAV_ITEMS.some((i) => !i.primary && i.key === active);
     const logoutHtml = `<a href="#" class="logout-btn" title="Log out" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;"><span class="ico">\u23FB</span><span>Log out</span></a>`;
+    // Round profile button (topbar-right, desktop; and the mobile-only bar
+    // below) - click opens a small dropdown with "View profile" + "Log out".
+    // idSuffix keeps ids unique between the desktop and mobile copies.
+    const profileHtml = (idSuffix) => `
+      <div class="yn-profile-wrap" id="yn-profile-wrap-${idSuffix}">
+        <button type="button" class="yn-profile-btn" aria-label="Profile" aria-haspopup="true" aria-expanded="false">\u{1F464}</button>
+        <div class="yn-profile-menu" role="menu">
+          <button type="button" class="yn-profile-menu-item" data-yn-view-profile>View profile</button>
+          <button type="button" class="yn-profile-menu-item yn-danger" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;">Log out</button>
+        </div>
+      </div>
+    `;
     const collapseBtnHtml = `
       <button type="button" class="sidebar-collapse-btn" id="yn-collapse-toggle" aria-label="Collapse sidebar">
         <span class="ico">\u276E</span>
@@ -128,10 +175,16 @@
     `;
 
     el.innerHTML = `
+      <button type="button" class="yn-sidebar-hamburger" id="yn-sidebar-hamburger" aria-label="Open sidebar" aria-expanded="false">
+        <span class="yn-bar"></span><span class="yn-bar"></span><span class="yn-bar"></span><span class="yn-bar"></span>
+      </button>
+      <div class="yn-mobile-topbar">
+        ${profileHtml('mobile')}
+      </div>
       <div class="app-topbar">
         <div class="app-topbar-side"></div>
         <div class="app-brand"><img src="/img/logo-icon.png" alt="" class="brand-logo-icon"> <span class="brand-label">YourNet Control</span></div>
-        <div class="app-topbar-side right">${installBtnHtml}${logoutHtml}</div>
+        <div class="app-topbar-side right">${installBtnHtml}${profileHtml('desktop')}</div>
         ${collapseBtnHtml}
       </div>
       <nav class="app-nav">
@@ -198,6 +251,10 @@
     }
     // Apply saved mode now that the sidebar markup exists.
     applyMode(el, spacer, isAutoMode());
+    wireAutoSidebarHamburger(el);
+
+    wireProfileControls();
+    loadProfileLogo();
 
     document.querySelectorAll('.install-app-btn').forEach((installBtn) => {
       // If beforeinstallprompt already fired earlier in this page's life
@@ -212,6 +269,137 @@
         document.querySelectorAll('.install-app-btn').forEach((btn) => { btn.style.display = 'none'; });
       });
     });
+  }
+
+  // Swaps the round profile button's default person icon for the tenant's
+  // uploaded logo, if any. Runs once per page load; admin.html's Account
+  // tab calls window.yournetRefreshProfileLogo() after an upload/removal so
+  // the button updates immediately without a full page reload.
+  async function loadProfileLogo() {
+    try {
+      const token = localStorage.getItem('yournet_token');
+      if (!token) return;
+      const res = await fetch('/api/dashboard/account-info', {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!res.ok) return;
+      const info = await res.json();
+      applyProfileLogo(info.logoUrl || null);
+    } catch (err) {
+      // Non-critical - buttons keep the default person icon.
+    }
+  }
+
+  function applyProfileLogo(logoUrl) {
+    document.querySelectorAll('.yn-profile-btn').forEach((btn) => {
+      if (logoUrl) {
+        btn.innerHTML = `<img src="${logoUrl}" alt="" class="yn-profile-btn-img">`;
+      } else {
+        btn.textContent = '\u{1F464}';
+      }
+    });
+  }
+  window.yournetRefreshProfileLogo = loadProfileLogo;
+
+  // Profile button (topbar-right on desktop, its own mobile-only bar on
+  // small screens) - toggles a small dropdown: "View profile" opens the
+  // read-only panel below, "Log out" reuses the same logic as logoutHtml.
+  function wireProfileControls() {
+    const wraps = document.querySelectorAll('.yn-profile-wrap');
+    wraps.forEach((wrap) => {
+      const btn = wrap.querySelector('.yn-profile-btn');
+      if (!btn || btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = wrap.classList.contains('open');
+        wraps.forEach((w) => w.classList.remove('open'));
+        if (!isOpen) {
+          wrap.classList.add('open');
+          btn.setAttribute('aria-expanded', 'true');
+        } else {
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+      const viewBtn = wrap.querySelector('[data-yn-view-profile]');
+      if (viewBtn) {
+        viewBtn.addEventListener('click', () => {
+          wrap.classList.remove('open');
+          btn.setAttribute('aria-expanded', 'false');
+          openProfileModal();
+        });
+      }
+    });
+    if (!document.body.dataset.ynProfileOutsideWired) {
+      document.body.dataset.ynProfileOutsideWired = '1';
+      document.addEventListener('click', () => {
+        document.querySelectorAll('.yn-profile-wrap.open').forEach((w) => {
+          w.classList.remove('open');
+          const b = w.querySelector('.yn-profile-btn');
+          if (b) b.setAttribute('aria-expanded', 'false');
+        });
+      });
+    }
+  }
+
+  // Read-only profile panel: business name, admin's full name, email,
+  // country - pulled from the same /api/dashboard/account-info endpoint
+  // the Account tab (admin.html) reads and writes.
+  function ensureProfileModal() {
+    let modal = document.getElementById('yn-profile-modal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'yn-profile-modal';
+    modal.className = 'yn-profile-modal-backdrop';
+    modal.innerHTML = `
+      <div class="yn-profile-modal">
+        <button type="button" class="yn-profile-modal-close" aria-label="Close">&times;</button>
+        <h2>Profile</h2>
+        <div class="yn-profile-modal-body" id="yn-profile-modal-body">Loading&hellip;</div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
+    modal.querySelector('.yn-profile-modal-close').addEventListener('click', () => modal.classList.remove('open'));
+    return modal;
+  }
+
+  async function openProfileModal() {
+    const modal = ensureProfileModal();
+    modal.classList.add('open');
+    const body = document.getElementById('yn-profile-modal-body');
+    body.textContent = 'Loading\u2026';
+    try {
+      const token = localStorage.getItem('yournet_token');
+      const res = await fetch('/api/dashboard/account-info', {
+        headers: token ? { Authorization: 'Bearer ' + token } : {},
+      });
+      const info = await res.json();
+      if (!res.ok) throw new Error(info.error || 'Could not load profile');
+      const row = (label, value) => `
+        <div class="yn-profile-row">
+          <div class="yn-profile-row-label">${label}</div>
+          <div class="yn-profile-row-value">${value ? escapeHtml(value) : '\u2014'}</div>
+        </div>
+      `;
+      const logoHtml = info.logoUrl
+        ? `<div class="yn-profile-modal-logo"><img src="${info.logoUrl}" alt=""></div>`
+        : '';
+      body.innerHTML = logoHtml + [
+        row('Business name', info.businessName),
+        row("Admin's full name", info.adminFullName),
+        row('Email', info.email),
+        row('Country', info.country),
+      ].join('');
+    } catch (err) {
+      body.textContent = err.message || 'Could not load profile.';
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
   }
 
   // Centered page header (logo + title): wraps whatever <h1> the page

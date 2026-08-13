@@ -10,6 +10,18 @@
     margin:0;padding:20px;max-width:520px;margin-inline:auto}
   h1{font-size:20px;margin-bottom:4px}
   .sub{color:#6b8a91;font-size:13px;margin-bottom:18px}
+
+  /* Centered logo + title header - same visual treatment shell.js applies
+     automatically to every page inside the admin shell (see .page-header
+     in shell.css). This page is standalone (no shell.js - agents use it
+     outside the admin nav), so it's replicated locally rather than shared. */
+  .page-header{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin:0 0 22px}
+  .page-header-logo{height:40px;width:auto;margin-bottom:4px}
+  .page-header h1{
+    margin:0;font-size:19px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
+    color:#e8f0f1;margin-bottom:4px;
+  }
+  .page-header .sub{color:#6b8a91;font-size:13px;margin-bottom:0}
   .card{background:#132228;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:18px;margin-bottom:14px}
   label{display:block;font-size:12px;color:#9fb6bc;margin:10px 0 4px}
   input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
@@ -58,7 +70,7 @@
 
   @media print {
     body{background:#fff;color:#000;max-width:none}
-    .topbar,.tabs,#genPanel,#recordsPanel,.print-controls{display:none}
+    .topbar,.tabs,#genPanel,#recordsPanel,.print-controls,.page-header,#login-card{display:none}
     .vcard{background:#fff;border:1px dashed #999;color:#000}
     .vcard .brand{color:#a5670f}
     .vcard .code{color:#0d1a1e}
@@ -86,8 +98,11 @@
 </head>
 <body>
 <script src="/bg-rotate.js"></script>
-<h1>Agent Portal</h1>
-<div class="sub">Generate, print, and track your own vouchers.</div>
+<div class="page-header">
+  <img src="/img/logo-icon.png" alt="" class="page-header-logo">
+  <h1>Agent Portal</h1>
+  <div class="sub">Generate, print, and track your own vouchers.</div>
+</div>
 
 <div class="card" id="login-card">
   <label>Email</label>

@@ -1,40 +1,27 @@
-Add page headers, PWA install, and manual client authorization
+Add account profile fields+logo, topbar profile menu, click-to-open sidebar, and header styling fixes
 
-Implements the 3 remaining "Not built" items from the feature checklist
-(sidebar collapse/expand and hover auto-hide were already working, no
-changes needed there).
+- Account tab: business name, admin full name, digital address, country,
+  business location fields with Save/Update button; new tenants columns
+  (admin_full_name, digital_address, country, business_location) and
+  GET/PATCH /api/dashboard/account-info
 
-Centered page header (logo + title), all shell pages:
-- shell.js: renderPageHeader() auto-wraps each page's existing <h1> (+
-  its .sub subtitle) in a centered header, no per-page markup changes
-  needed on 6 of 7 pages
-- shell.css: new .page-header styles
-- print.html: hand-added header (its title+status layout didn't fit the
-  generic approach), hidden in @media print
+- Account/profile logo upload: multer (memory storage, 1.5MB limit,
+  image/* only) encodes to a base64 data URL stored in new
+  tenants.account_logo column; POST/DELETE /api/dashboard/logo
 
-PWA install ("Add to Home Screen") for the admin app:
-- New public/manifest.json + public/sw.js (static YourNet branding,
-  separate from the existing per-site tenant-branded portal PWA)
-- shell.js: registers the service worker, injects manifest/meta tags,
-  shows an "Install app" button on beforeinstallprompt (Chromium only -
-  no programmatic prompt exists on Safari/iOS)
+- Topbar profile button (desktop + new mobile-only bar): round icon
+  (shows uploaded logo once set) opens a dropdown with "View profile"
+  (business name, admin full name, email, country) and "Log out"
 
-Manual MAC/IP client authorization (no voucher):
-- schema.sql: new manual_client_authorizations table, kept separate from
-  vouchers so grants never appear in print runs/settlement/commissions
-- mikrotik.js: listHotspotHosts(); authorize/revoke reuse existing
-  createHotspotUser/removeHotspotUser
-- unifi.js: unauthorizeClient(), setClientBlocked()
-- omada.js: authorizeClientManual() - UNVERIFIED, sourced from a single
-  unofficial forum report rather than TP-Link's own docs; needs a real
-  smoke test before relying on it in production. No revoke/block-by-MAC
-  endpoint could be confirmed for Omada, left unimplemented on purpose
-  (returns 501 rather than a silent no-op)
-- sites.js: new routes - GET /:id/clients, GET /:id/manual-authorizations,
-  POST /:id/authorize-client, POST /:id/revoke-client. Meraki rejected
-  with 400 on all of these (structurally can't support this pattern)
-- admin.html: new "Manual access" tab - site picker, live device list
-  (falls back to manual MAC entry), duration, optional note, active
-  grants table with per-row revoke
+- Sidebar auto-hide redesign: replaces hover-expanding icon rail with a
+  fixed hamburger-only 48px strip; click opens the full 220px sidebar,
+  closes on mouse-leave or click-outside (touch/keyboard safe); pinned
+  mode unchanged
 
-See CHECKLIST-2-3-4-APPLIED.md for full details and the Omada caveat.
+- Header styling: .page-header (and print.html's .print-head) now bold,
+  uppercase, letter-spaced across all shell pages; extended the same
+  centered logo+title treatment to agent.html, which sits outside the
+  admin shell and previously had no header treatment
+
+New dependency: multer (^1.4.5-lts.1) - run npm install.
+Schema changes are additive/idempotent - run npm run migrate.

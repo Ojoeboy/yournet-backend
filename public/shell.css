@@ -88,8 +88,54 @@
   transition:border-color .15s,color .15s,background .15s;
 }
 .install-app-btn:hover{border-color:var(--yn-teal);color:var(--yn-teal);background:rgba(46,196,182,.08)}
-.app-sidebar.auto:not(:hover):not(:focus-within) .install-app-btn span:not(.ico){display:none}
-.app-sidebar.auto:not(:hover):not(:focus-within) .install-app-btn{padding:8px;justify-content:center}
+
+/* ---------- profile button + dropdown (topbar-right on desktop, its own
+   bar on mobile - see .yn-mobile-topbar below) ---------- */
+.yn-profile-wrap{position:relative;flex-shrink:0}
+.yn-profile-btn{
+  width:34px;height:34px;border-radius:50%;flex-shrink:0;
+  background:var(--yn-panel-2);border:1px solid var(--yn-line);color:var(--yn-cream);
+  display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer;
+  transition:border-color .15s,color .15s;
+}
+.yn-profile-btn:hover{border-color:var(--yn-teal);color:var(--yn-teal)}
+.yn-profile-btn-img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+.yn-profile-menu{
+  display:none;position:absolute;top:calc(100% + 8px);right:0;min-width:170px;
+  background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:10px;
+  box-shadow:0 12px 28px rgba(0,0,0,.35);padding:6px;z-index:40;
+}
+.yn-profile-wrap.open .yn-profile-menu{display:block}
+.yn-profile-menu-item{
+  display:block;width:100%;text-align:left;background:none;border:none;
+  color:var(--yn-cream);font-size:13px;font-weight:600;padding:9px 10px;border-radius:7px;cursor:pointer;
+}
+.yn-profile-menu-item:hover{background:rgba(255,255,255,.06)}
+.yn-profile-menu-item.yn-danger:hover{color:var(--yn-danger);background:rgba(255,107,107,.08)}
+
+.yn-mobile-topbar{display:none}
+
+.yn-profile-modal-backdrop{
+  display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);
+  align-items:flex-start;justify-content:center;padding:14vh 16px 16px;
+}
+.yn-profile-modal-backdrop.open{display:flex}
+.yn-profile-modal{
+  background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:14px;
+  padding:22px;width:100%;max-width:340px;position:relative;
+}
+.yn-profile-modal h2{margin:0 0 14px;font-size:17px;color:var(--yn-cream)}
+.yn-profile-modal-close{
+  position:absolute;top:12px;right:14px;background:none;border:none;color:var(--yn-muted);
+  font-size:20px;line-height:1;cursor:pointer;
+}
+.yn-profile-modal-close:hover{color:var(--yn-cream)}
+.yn-profile-row{padding:9px 0;border-bottom:1px solid var(--yn-line)}
+.yn-profile-row:last-child{border-bottom:none}
+.yn-profile-row-label{font-size:11px;color:var(--yn-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px}
+.yn-profile-row-value{font-size:14px;color:var(--yn-cream);word-break:break-word}
+.yn-profile-modal-logo{display:flex;justify-content:center;margin-bottom:14px}
+.yn-profile-modal-logo img{width:72px;height:72px;border-radius:50%;object-fit:cover;border:1px solid var(--yn-line)}
 
 .app-nav{
   display:flex;flex-direction:column;padding:14px 10px 16px;flex:1;overflow-y:auto;
@@ -121,26 +167,34 @@
 /* ---------- sidebar modes (desktop only - toggled via #yn-collapse-toggle,
    persisted in localStorage by shell.js): "pinned" is the classic always-
    expanded rail (default for anyone who's never touched the toggle).
-   "auto" rests as a 64px icon-only strip and expands to 220px only while
-   the mouse is over it (or it has focus-within, for keyboard users) -
-   pure overlay, see .app-sidebar's position:fixed above. The toggle
-   button flips between the two; while in auto mode its label/icon read
-   as a "pin open" action instead of "collapse". ---------- */
-.app-sidebar-spacer.auto{width:64px}
-.app-sidebar.auto{width:64px}
-.app-sidebar.auto:hover,
-.app-sidebar.auto:focus-within{
-  width:220px;box-shadow:8px 0 24px rgba(0,0,0,.35);
-}
-.app-sidebar.auto:not(:hover):not(:focus-within) .brand-label,
-.app-sidebar.auto:not(:hover):not(:focus-within) .app-nav-section-label,
-.app-sidebar.auto:not(:hover):not(:focus-within) .app-nav a span:not(.ico),
-.app-sidebar.auto:not(:hover):not(:focus-within) .logout-btn span:not(.ico){display:none}
-.app-sidebar.auto:not(:hover):not(:focus-within) .app-topbar{align-items:center;padding:20px 8px 16px}
-.app-sidebar.auto:not(:hover):not(:focus-within) .app-brand{justify-content:center}
-.app-sidebar.auto:not(:hover):not(:focus-within) .app-nav a{justify-content:center;padding:10px}
-.app-sidebar.auto:not(:hover):not(:focus-within) .logout-btn{padding:8px;justify-content:center}
+
+   "auto" rests as a slim 48px strip showing ONLY the fixed hamburger
+   button (.yn-sidebar-hamburger) - brand, nav, profile, everything else
+   is hidden, not just shrunk to icons. Clicking the hamburger adds
+   .open, which slides the full 220px sidebar out as an overlay; moving
+   the mouse off the sidebar (or clicking outside it) removes .open again
+   (see wireSidebarAutoHide in shell.js - this needs JS, not pure :hover,
+   since opening is click-triggered but closing is hover/click-away
+   triggered). The pin-open arrow button only exists inside the expanded
+   (.open) state and switches back to "pinned" permanently. ---------- */
+.app-sidebar-spacer.auto{width:48px}
+.app-sidebar.auto{width:48px}
+.app-sidebar.auto.open{width:220px;box-shadow:8px 0 24px rgba(0,0,0,.35)}
+.app-sidebar.auto:not(.open) .app-topbar,
+.app-sidebar.auto:not(.open) .app-nav,
+.app-sidebar.auto:not(.open) .sidebar-collapse-btn{display:none}
 .app-sidebar.auto .sidebar-collapse-btn .ico{transform:rotate(180deg)}
+
+.yn-sidebar-hamburger{
+  display:none;width:34px;height:34px;margin:14px 0 0 12px;flex-shrink:0;
+  background:var(--yn-panel-2);border:1px solid var(--yn-line);border-radius:8px;
+  align-items:center;justify-content:center;flex-direction:column;gap:4px;cursor:pointer;
+  transition:border-color .15s;
+}
+.yn-sidebar-hamburger .yn-bar{width:16px;height:2px;border-radius:1px;background:var(--yn-cream);transition:background .15s}
+.yn-sidebar-hamburger:hover{border-color:var(--yn-teal)}
+.yn-sidebar-hamburger:hover .yn-bar{background:var(--yn-teal)}
+.app-sidebar.auto .yn-sidebar-hamburger{display:flex}
 
 /* ---------- main content area ---------- */
 .app-main{flex:1;min-width:0;max-width:1080px;margin:0;padding:32px 32px 80px;box-sizing:border-box}
@@ -152,7 +206,10 @@
    i18n (data-i18n) and existing subtitle copy keep working unchanged. */
 .page-header{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin:0 0 26px}
 .page-header-logo{height:40px;width:auto;margin-bottom:4px}
-.page-header h1{margin:0;font-size:22px}
+.page-header h1{
+  margin:0;font-size:20px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--yn-cream);font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;
+}
 .page-header .sub{color:var(--yn-muted);font-size:13px;max-width:520px}
 
 /* ---------- reusable widgets used across dashboard/admin ---------- */
@@ -249,12 +306,17 @@ body.yn-drawer-locked{overflow:hidden}
   .app-shell{flex-direction:column}
   .app-sidebar-spacer{display:none}
   .app-sidebar{width:100%;height:auto;position:static;border-right:none;overflow-y:visible;box-shadow:none}
+  .app-sidebar.auto,.app-sidebar.auto.open{width:100%}
+  .yn-sidebar-hamburger{display:none !important} /* mobile uses the bottom nav + drawer instead */
   .app-topbar{display:none}
   .app-nav{display:none}
   .app-bottom-nav{display:flex}
   .app-drawer-backdrop{display:block}
   .app-drawer{display:flex}
   .app-main{padding:16px 14px 90px}
+  /* Desktop topbar (and its profile button) is hidden above - give mobile
+     its own slim top-right bar so the profile button/dropdown stays reachable. */
+  .yn-mobile-topbar{display:flex;justify-content:flex-end;padding:12px 14px 0}
 }
 
 /* ---------- glass mode ----------

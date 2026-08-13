@@ -34,6 +34,22 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS reset_token_expires_at TIMESTAMPTZ;
 -- background unless the tenant turns this on.
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS admin_use_rotating_backgrounds BOOLEAN NOT NULL DEFAULT false;
 
+-- Account tab fields - all optional, filled in by the owner after signup.
+-- Distinct from sites.portal_business_name/portal_logo_url (those are
+-- per-site captive-portal branding customers see; these are the account
+-- holder's own business/admin details shown in the profile panel).
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS admin_full_name TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS digital_address TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS country TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS business_location TEXT;
+
+-- Account/profile icon shown in the Account tab and the topbar profile
+-- button - stored as a data: URL (base64) directly in the row rather than
+-- on disk, since Render's filesystem is ephemeral and wouldn't survive a
+-- redeploy or restart. Kept small (see the 1.5MB multer limit in
+-- dashboard.js) since it round-trips through account-info on every page load.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS account_logo TEXT;
+
 -- Monthly platform license/subscription (replaces the old one-time
 -- "licensed forever" model). subscription_status drives whether the
 -- tenant's own auto-renewal is currently expected to succeed each month:
