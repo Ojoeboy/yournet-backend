@@ -135,6 +135,48 @@ async function authorizeClient(site, { clientMac, durationMinutes, rateLimitKbps
 }
 
 /**
+ * Revoke a previously-authorized client's access early (before its
+ * duration would naturally expire). Same stamgr command set as
+ * authorizeClient, just the "undo" command - does not block the device
+ * from re-requesting access, it just ends the current grant. Documented,
+ * long-stable classic-controller command; unlike authType=4/External
+ * Portal quirks elsewhere in this file, there's no version ambiguity here.
+ */
+async function unauthorizeClient(site, clientMac) {
+  const { basePath, headers } = await getAuthContext(site);
+  const unifiSite = site.unifi_site || 'default';
+  const res = await axios.post(
+    `${site.unifi_base_url}${basePath}/api/s/${unifiSite}/cmd/stamgr`,
+    { cmd: 'unauthorize-guest', mac: clientMac.toLowerCase() },
+    { httpsAgent: insecureAgent, headers, validateStatus: () => true }
+  );
+  if (res.status !== 200 || res.data?.meta?.rc !== 'ok') {
+    throw new Error(`UniFi unauthorize failed: ${res.data?.meta?.msg || `HTTP ${res.status}`}`);
+  }
+  return { ok: true };
+}
+
+/**
+ * Block/unblock a MAC outright (refuses network access entirely, not just
+ * "not currently authorized") - the stronger option next to
+ * authorize/unauthorize, for a device the admin wants off the network
+ * regardless of voucher/manual-grant status.
+ */
+async function setClientBlocked(site, clientMac, blocked) {
+  const { basePath, headers } = await getAuthContext(site);
+  const unifiSite = site.unifi_site || 'default';
+  const res = await axios.post(
+    `${site.unifi_base_url}${basePath}/api/s/${unifiSite}/cmd/stamgr`,
+    { cmd: blocked ? 'block-sta' : 'unblock-sta', mac: clientMac.toLowerCase() },
+    { httpsAgent: insecureAgent, headers, validateStatus: () => true }
+  );
+  if (res.status !== 200 || res.data?.meta?.rc !== 'ok') {
+    throw new Error(`UniFi ${blocked ? 'block' : 'unblock'} failed: ${res.data?.meta?.msg || `HTTP ${res.status}`}`);
+  }
+  return { ok: true };
+}
+
+/**
  * Basic reachability/health check used by the site status poller and the
  * admin "Test connection" button - confirms the base URL + credentials (or
  * API key) actually work, without authorizing anything.
@@ -174,4 +216,4 @@ async function listClients(site) {
   return res.data?.data || [];
 }
 
-module.exports = { authorizeClient, ping, listClients };
+module.exports = { authorizeClient, unauthorizeClient, setClientBlocked, ping, listClients };

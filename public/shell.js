@@ -12,9 +12,9 @@
   // in-app pages - update HELP_CONTACT below with the real details before
   // shipping; nothing else needs to change.
   const HELP_CONTACT = {
-    email: 'yournetcontrol@gmail.com',
-    whatsappNumber: '233546539112', // digits only, country code, no leading +
-    phoneNumber: '+233546539112',
+    email: 'support@example.com',
+    whatsappNumber: '233000000000', // digits only, country code, no leading +
+    phoneNumber: '+233000000000',
   };
 
   // "section" groups items in the desktop vertical sidebar only (see
@@ -78,19 +78,61 @@
     `;
   }
 
+  // Sidebar mode persists across pages/sessions via localStorage. Desktop
+  // only - the mobile layout already replaces the vertical sidebar
+  // entirely with the bottom bar + drawer (see @media rule in shell.css),
+  // so this has no effect below the 760px breakpoint.
+  //
+  // "pinned" (default, i.e. nothing saved yet) is the classic always-
+  // expanded 220px rail - unchanged from before this feature existed.
+  // "auto" rests as a 64px icon strip and expands to 220px, as a pure
+  // overlay, only while hovered/focused (pure CSS, see .app-sidebar.auto
+  // in shell.css) - the toggle button becomes a "pin open" action while
+  // in this mode. Reuses the pre-existing key/values so anyone who'd
+  // already collapsed the sidebar lands in "auto" (hover-to-peek) rather
+  // than losing their compact preference.
+  const COLLAPSE_KEY = 'yn_sidebar_collapsed';
+  function isAutoMode() {
+    return localStorage.getItem(COLLAPSE_KEY) === '1';
+  }
+  function applyMode(sidebarEl, spacerEl, auto) {
+    sidebarEl.classList.toggle('auto', auto);
+    spacerEl.classList.toggle('auto', auto);
+    const btn = document.getElementById('yn-collapse-toggle');
+    if (btn) btn.setAttribute('aria-label', auto ? 'Pin sidebar open' : 'Switch to auto-hide sidebar');
+  }
+  function setAutoMode(sidebarEl, spacerEl, auto) {
+    localStorage.setItem(COLLAPSE_KEY, auto ? '1' : '0');
+    applyMode(sidebarEl, spacerEl, auto);
+  }
+
   function render() {
     const el = document.getElementById('app-sidebar');
     if (!el) return;
+    el.classList.add('app-sidebar'); // #app-sidebar carries the id shell.js hooks into; the CSS lives on this class
     const active = window.YOURNET_ACTIVE_NAV || '';
     const primaryItems = NAV_ITEMS.filter((i) => i.primary);
     const secondaryActive = NAV_ITEMS.some((i) => !i.primary && i.key === active);
-    const logoutHtml = `<a href="#" class="logout-btn" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;">Log out</a>`;
+    const logoutHtml = `<a href="#" class="logout-btn" title="Log out" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;"><span class="ico">\u23FB</span><span>Log out</span></a>`;
+    const collapseBtnHtml = `
+      <button type="button" class="sidebar-collapse-btn" id="yn-collapse-toggle" aria-label="Collapse sidebar">
+        <span class="ico">\u276E</span>
+      </button>
+    `;
+    // Hidden until beforeinstallprompt actually fires (see wireInstallPrompt) -
+    // most browsers/OSes never fire it, so this stays hidden there by design.
+    const installBtnHtml = `
+      <button type="button" class="install-app-btn" id="yn-install-btn" aria-label="Install app" style="display:none">
+        <span class="ico">\u2B07</span><span>Install app</span>
+      </button>
+    `;
 
     el.innerHTML = `
       <div class="app-topbar">
         <div class="app-topbar-side"></div>
-        <div class="app-brand"><img src="/img/logo-icon.png" alt="" class="brand-logo-icon"> YourNet Control</div>
-        <div class="app-topbar-side right">${logoutHtml}</div>
+        <div class="app-brand"><img src="/img/logo-icon.png" alt="" class="brand-logo-icon"> <span class="brand-label">YourNet Control</span></div>
+        <div class="app-topbar-side right">${installBtnHtml}${logoutHtml}</div>
+        ${collapseBtnHtml}
       </div>
       <nav class="app-nav">
         ${buildNavGroups(NAV_ITEMS).map((group) => `
@@ -117,7 +159,7 @@
         <nav class="app-drawer-nav">
           ${NAV_ITEMS.map((item) => navLinkHtml(item, active)).join('')}
         </nav>
-        <div class="app-drawer-footer">${logoutHtml}</div>
+        <div class="app-drawer-footer">${installBtnHtml.replace('id="yn-install-btn"', 'id="yn-install-btn-drawer"')}${logoutHtml}</div>
       </div>
     `;
 
@@ -139,6 +181,61 @@
     if (openBtn) openBtn.addEventListener('click', openDrawer);
     if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
     if (backdrop) backdrop.addEventListener('click', closeDrawer);
+
+    // Spacer reserves #app-sidebar's resting width in the flex row, since
+    // the sidebar itself is position:fixed (so hover-expanding it never
+    // shifts .app-main - see shell.css). Created once, reused on re-render.
+    let spacer = el.nextElementSibling;
+    if (!spacer || !spacer.classList.contains('app-sidebar-spacer')) {
+      spacer = document.createElement('div');
+      spacer.className = 'app-sidebar-spacer';
+      el.insertAdjacentElement('afterend', spacer);
+    }
+
+    const collapseBtn = document.getElementById('yn-collapse-toggle');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', () => setAutoMode(el, spacer, !el.classList.contains('auto')));
+    }
+    // Apply saved mode now that the sidebar markup exists.
+    applyMode(el, spacer, isAutoMode());
+
+    document.querySelectorAll('.install-app-btn').forEach((installBtn) => {
+      // If beforeinstallprompt already fired earlier in this page's life
+      // (unlikely this early, but re-render() can run more than once),
+      // reveal the button immediately instead of waiting on a second event.
+      if (deferredInstallPrompt) installBtn.style.display = '';
+      installBtn.addEventListener('click', async () => {
+        if (!deferredInstallPrompt) return;
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        document.querySelectorAll('.install-app-btn').forEach((btn) => { btn.style.display = 'none'; });
+      });
+    });
+  }
+
+  // Centered page header (logo + title): wraps whatever <h1> the page
+  // already has - and its immediately-following .sub subtitle, if any -
+  // in a centered .page-header block with the YourNet logo above it.
+  // Runs once per load; skips pages with no <h1> in .app-main (e.g. the
+  // logged-out placeholder dashboard.html swaps in) and is idempotent so
+  // a page that calls render() again (rare) won't double-wrap.
+  function renderPageHeader() {
+    const main = document.querySelector('.app-main');
+    if (!main) return;
+    const h1 = main.querySelector('h1');
+    if (!h1 || h1.closest('.page-header')) return;
+    const header = document.createElement('div');
+    header.className = 'page-header';
+    const logo = document.createElement('img');
+    logo.src = '/img/logo-icon.png';
+    logo.alt = '';
+    logo.className = 'page-header-logo';
+    header.appendChild(logo);
+    h1.parentNode.insertBefore(header, h1);
+    header.appendChild(h1);
+    const next = header.nextElementSibling;
+    if (next && next.classList.contains('sub')) header.appendChild(next);
   }
 
   // Favicon/app-icon links - injected here rather than duplicated in every
@@ -156,6 +253,62 @@
       Object.keys(attrs).forEach((k) => { if (k !== 'id') link.setAttribute(k, attrs[k]); });
       link.id = attrs.id;
       document.head.appendChild(link);
+    });
+  }
+
+  // PWA install ("Add to Home Screen") for the admin app shell. Static
+  // YourNet branding (manifest.json/sw.js at the root), separate from the
+  // per-site tenant-branded portal PWA (/p/:siteId/manifest.json + sw.js,
+  // rendered dynamically in portalRenderer.js) - this one is for the owner/
+  // agent logging into their own dashboard, not the WiFi customer.
+  function ensurePwaMeta() {
+    if (!document.querySelector('link[rel="manifest"]')) {
+      const link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = '/manifest.json';
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('meta[name="theme-color"]')) {
+      const meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      meta.content = '#0d1a1e';
+      document.head.appendChild(meta);
+    }
+    if (!document.querySelector('meta[name="apple-mobile-web-app-capable"]')) {
+      const meta = document.createElement('meta');
+      meta.name = 'apple-mobile-web-app-capable';
+      meta.content = 'yes';
+      document.head.appendChild(meta);
+    }
+    if (!document.querySelector('link[rel="apple-touch-icon"]')) {
+      const link = document.createElement('link');
+      link.rel = 'apple-touch-icon';
+      link.href = '/icons/icon-192.png';
+      document.head.appendChild(link);
+    }
+  }
+
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+
+  // Chrome/Android/Edge fire beforeinstallprompt when the page qualifies
+  // (manifest + sw + served over https) and the browser hasn't already
+  // decided the user dismissed it too recently. Safari/iOS never fires
+  // this - there's no programmatic install prompt there, so the button
+  // simply never appears and Add to Home Screen stays a manual Share-sheet
+  // action on iOS, same as everywhere else on the web.
+  let deferredInstallPrompt = null;
+  function wireInstallPrompt() {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      document.querySelectorAll('.install-app-btn').forEach((btn) => { btn.style.display = ''; });
+    });
+    window.addEventListener('appinstalled', () => {
+      deferredInstallPrompt = null;
+      document.querySelectorAll('.install-app-btn').forEach((btn) => { btn.style.display = 'none'; });
     });
   }
 
@@ -252,9 +405,13 @@
 
   function init() {
     ensureFavicon();
+    ensurePwaMeta();
+    wireInstallPrompt();
     render();
+    renderPageHeader();
     renderMeshBg();
     maybeStartRotatingBackground();
+    registerServiceWorker();
   }
 
   if (document.readyState === 'loading') {

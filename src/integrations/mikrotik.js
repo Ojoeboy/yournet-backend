@@ -115,6 +115,32 @@ async function listHotspotProfiles(site) {
 }
 
 /**
+ * List every host RouterOS has seen on the hotspot interface, authorized
+ * or not (`/ip/hotspot/host/print`) - unlike listActiveClients (only
+ * already-authorized sessions), this is what lets an admin see a device
+ * that's connected to the network and hit the walled garden but hasn't
+ * logged in yet, so they can pick its MAC for a manual authorize. The
+ * `bypassed` field is RouterOS's own name for "already authorized" here
+ * (true once a hotspot user login - including one createHotspotUser just
+ * created - has taken effect for that host).
+ */
+async function listHotspotHosts(site) {
+  const conn = await connect(site);
+  try {
+    const rows = await conn.write('/ip/hotspot/host/print');
+    return rows.map((h) => ({
+      macAddress: h['mac-address'] || null,
+      address: h.address || null,
+      toAddress: h['to-address'] || null,
+      authorized: h.bypassed === 'true' || h.bypassed === true,
+      idleTime: h['idle-time'] || null,
+    }));
+  } finally {
+    conn.close();
+  }
+}
+
+/**
  * List currently active clients (for dashboard's "live clients" view).
  */
 async function listActiveClients(site) {
@@ -385,6 +411,7 @@ module.exports = {
   removeHotspotUser,
   ping,
   listHotspotProfiles,
+  listHotspotHosts,
   listActiveClients,
   listAccessPoints,
   createPppoeSecret,

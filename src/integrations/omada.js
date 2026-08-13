@@ -92,4 +92,48 @@ async function authorizeClient(site, { clientMac, apMac, ssidName, radioId, site
   return res.data;
 }
 
-module.exports = { getAccessToken, listDevices, listClients, authorizeClient };
+/**
+ * Manually authorize a client by MAC via the OPEN API's own client
+ * endpoint - NOT the External Portal API above. This is what a "browse
+ * connected devices, authorize a MAC, no voucher" admin screen needs,
+ * since authorizeClient() only fires as part of the voucher-redemption
+ * redirect flow and requires apMac/ssidName/radioId the redirect
+ * supplies automatically - none of which exist for a device an admin is
+ * authorizing cold from a dashboard.
+ *
+ * VERIFICATION STATUS - weaker than the rest of this file: TP-Link's own
+ * Open API reference docs (https://use1-omada-northbound.tplinkcloud.com,
+ * a Knife4j-generated portal) do not appear to publicly document a
+ * client-authorize-by-MAC endpoint. The path and method below come from a
+ * single independent report on TP-Link's own community forum (a user who
+ * says they found it by inspection, not from the docs):
+ *   POST /openapi/v1/{omadacId}/sites/{siteId}/hotspot/clients/{clientMac}/auth
+ * The request body shape (in particular whether a custom duration is
+ * honored, and under what key) is NOT confirmed from any source - `time`
+ * below is a guess based on the External Portal API's own field naming,
+ * not a verified Open API parameter. Treat this function as a starting
+ * point that needs a real smoke test against your controller version
+ * before depending on it, not a confirmed-working integration like
+ * listClients/listDevices above.
+ */
+async function authorizeClientManual(site, { clientMac, minutes }) {
+  const token = await getAccessToken(site);
+  const url = `${site.omada_base_url}/openapi/v1/${site.omada_omadac_id}/sites/${site.omada_site_id}/hotspot/clients/${clientMac}/auth`;
+  const res = await axios.post(url, {
+    time: minutes,
+  }, { headers: { Authorization: `AccessToken=${token}`, 'Content-Type': 'application/json' } });
+
+  if (res.data?.errorCode !== 0) {
+    throw new Error(`Omada manual authorize failed: ${res.data?.msg || 'unknown error'} - this endpoint is unverified against official docs, see comment above authorizeClientManual().`);
+  }
+  return { ok: true };
+}
+
+// No unauthorize/block-by-MAC Open API endpoint could be found or confirmed
+// from any source (official docs or otherwise) while building this. Rather
+// than guess at a path with zero corroboration, this is intentionally left
+// unimplemented - a revoke request for an Omada site should surface a
+// clear "not supported" error rather than silently failing or, worse,
+// calling a made-up endpoint. See routes/sites.js's revoke-client handler.
+
+module.exports = { getAccessToken, listDevices, listClients, authorizeClient, authorizeClientManual };

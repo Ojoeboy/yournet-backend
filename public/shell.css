@@ -30,20 +30,37 @@
 /* ---------- sidebar (desktop: fixed-width left column, grouped nav) ----------
    #app-sidebar is the historical element name (kept so admin.html/
    dashboard.html/billing.html/print.html need zero markup changes). On
-   desktop it renders as a full-height sticky left rail: brand up top,
-   then the nav grouped into labeled sections (see app-nav-group below). */
+   desktop it's a full-height rail: brand up top, then nav grouped into
+   labeled sections (see app-nav-group below).
+
+   It's position:fixed (not sticky) so its width can change - collapsed
+   64px <-> hover-expanded 220px - as a pure overlay with zero effect on
+   .app-main's layout. .app-sidebar-spacer (a plain flex child, injected
+   by shell.js right after #app-sidebar) is what actually reserves the
+   gap in the flex row; its width tracks the sidebar's *resting* width
+   for the current mode, never its momentary hover width. */
 .app-sidebar{
-  width:220px;flex-shrink:0;background:var(--yn-ink-deep);border-right:1px solid var(--yn-line);
-  position:sticky;top:0;height:100vh;overflow-y:auto;z-index:30;
-  display:flex;flex-direction:column;
+  width:220px;background:var(--yn-ink-deep);border-right:1px solid var(--yn-line);
+  position:fixed;top:0;left:0;height:100vh;overflow-y:auto;z-index:30;
+  display:flex;flex-direction:column;transition:width .2s ease,box-shadow .2s ease;
 }
+.app-sidebar-spacer{flex-shrink:0;width:220px;transition:width .2s ease}
 .app-topbar{
   display:flex;flex-direction:column;align-items:flex-start;
   padding:20px 18px 16px;gap:14px;border-bottom:1px solid var(--yn-line);
+  position:relative;
 }
+.sidebar-collapse-btn{
+  position:absolute;top:18px;right:-13px;width:26px;height:26px;border-radius:50%;
+  background:var(--yn-panel-2);border:1px solid var(--yn-line);color:var(--yn-muted);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:31;
+  transition:color .15s,border-color .15s,transform .2s ease;
+}
+.sidebar-collapse-btn:hover{color:var(--yn-teal);border-color:var(--yn-teal)}
+.sidebar-collapse-btn .ico{font-size:11px;transition:transform .2s ease}
 .app-topbar-side{min-width:0}
 .app-topbar-side:not(.right){display:none}
-.app-topbar-side.right{display:flex;width:100%}
+.app-topbar-side.right{display:flex;width:100%;gap:8px}
 .app-brand{
   display:flex;align-items:center;gap:10px;
   font-weight:800;font-size:16px;color:var(--yn-cream);white-space:nowrap;
@@ -64,6 +81,15 @@
   transition:border-color .15s,color .15s,background .15s;white-space:nowrap;
 }
 .logout-btn:hover{border-color:var(--yn-danger);color:var(--yn-danger);background:rgba(255,107,107,.08)}
+.install-app-btn{
+  display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.05);
+  color:var(--yn-cream);border:1px solid var(--yn-line);border-radius:9px;
+  padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;
+  transition:border-color .15s,color .15s,background .15s;
+}
+.install-app-btn:hover{border-color:var(--yn-teal);color:var(--yn-teal);background:rgba(46,196,182,.08)}
+.app-sidebar.auto:not(:hover):not(:focus-within) .install-app-btn span:not(.ico){display:none}
+.app-sidebar.auto:not(:hover):not(:focus-within) .install-app-btn{padding:8px;justify-content:center}
 
 .app-nav{
   display:flex;flex-direction:column;padding:14px 10px 16px;flex:1;overflow-y:auto;
@@ -92,8 +118,42 @@
 }
 .app-nav-group--help a{font-size:12.5px;font-weight:600}
 
+/* ---------- sidebar modes (desktop only - toggled via #yn-collapse-toggle,
+   persisted in localStorage by shell.js): "pinned" is the classic always-
+   expanded rail (default for anyone who's never touched the toggle).
+   "auto" rests as a 64px icon-only strip and expands to 220px only while
+   the mouse is over it (or it has focus-within, for keyboard users) -
+   pure overlay, see .app-sidebar's position:fixed above. The toggle
+   button flips between the two; while in auto mode its label/icon read
+   as a "pin open" action instead of "collapse". ---------- */
+.app-sidebar-spacer.auto{width:64px}
+.app-sidebar.auto{width:64px}
+.app-sidebar.auto:hover,
+.app-sidebar.auto:focus-within{
+  width:220px;box-shadow:8px 0 24px rgba(0,0,0,.35);
+}
+.app-sidebar.auto:not(:hover):not(:focus-within) .brand-label,
+.app-sidebar.auto:not(:hover):not(:focus-within) .app-nav-section-label,
+.app-sidebar.auto:not(:hover):not(:focus-within) .app-nav a span:not(.ico),
+.app-sidebar.auto:not(:hover):not(:focus-within) .logout-btn span:not(.ico){display:none}
+.app-sidebar.auto:not(:hover):not(:focus-within) .app-topbar{align-items:center;padding:20px 8px 16px}
+.app-sidebar.auto:not(:hover):not(:focus-within) .app-brand{justify-content:center}
+.app-sidebar.auto:not(:hover):not(:focus-within) .app-nav a{justify-content:center;padding:10px}
+.app-sidebar.auto:not(:hover):not(:focus-within) .logout-btn{padding:8px;justify-content:center}
+.app-sidebar.auto .sidebar-collapse-btn .ico{transform:rotate(180deg)}
+
 /* ---------- main content area ---------- */
 .app-main{flex:1;min-width:0;max-width:1080px;margin:0;padding:32px 32px 80px;box-sizing:border-box}
+
+/* ---------- page header (logo + title, centered) ----------
+   One per page, sits at the top of .app-main. Wraps whatever the page's
+   own <h1> (and optional .sub subtitle) already say - shell.js moves those
+   into this wrapper rather than duplicating the title text, so per-page
+   i18n (data-i18n) and existing subtitle copy keep working unchanged. */
+.page-header{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin:0 0 26px}
+.page-header-logo{height:40px;width:auto;margin-bottom:4px}
+.page-header h1{margin:0;font-size:22px}
+.page-header .sub{color:var(--yn-muted);font-size:13px;max-width:520px}
 
 /* ---------- reusable widgets used across dashboard/admin ---------- */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px}
@@ -180,13 +240,15 @@
 .app-drawer-nav a.active{background:rgba(46,196,182,.12);color:var(--yn-teal)}
 .app-drawer-nav a.active .ico{color:var(--yn-teal)}
 .app-drawer-footer{padding:14px 16px;border-top:1px solid var(--yn-line)}
-.app-drawer-footer .logout-btn{display:flex;justify-content:center}
+.app-drawer-footer{display:flex;flex-direction:column;gap:8px}
+.app-drawer-footer .logout-btn,.app-drawer-footer .install-app-btn{display:flex;justify-content:center}
 body.yn-drawer-locked{overflow:hidden}
 
 /* ---------- mobile: top bar collapses away, bottom bar + drawer take over ---------- */
 @media (max-width:760px){
   .app-shell{flex-direction:column}
-  .app-sidebar{width:100%;height:auto;position:static;border-right:none;overflow-y:visible}
+  .app-sidebar-spacer{display:none}
+  .app-sidebar{width:100%;height:auto;position:static;border-right:none;overflow-y:visible;box-shadow:none}
   .app-topbar{display:none}
   .app-nav{display:none}
   .app-bottom-nav{display:flex}

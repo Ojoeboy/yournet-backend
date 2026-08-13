@@ -265,6 +265,30 @@ CREATE TABLE IF NOT EXISTS vouchers (
 CREATE INDEX IF NOT EXISTS idx_vouchers_tenant_status ON vouchers(tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(tenant_id, code);
 
+-- Admin-triggered "manual MAC/IP authorize" grants - no voucher, no
+-- price, no code. Separate from `vouchers` (which always ties back to a
+-- package/price) so a manual bypass never shows up in voucher print runs,
+-- settlement sheets, or agent commission totals - it's an admin comping a
+-- device, not a sale. router_ref holds whatever identifier the router-side
+-- integration needs to revoke this later (MikroTik: the generated hotspot
+-- username; UniFi: not needed, MAC alone is enough; Omada: not needed).
+CREATE TABLE IF NOT EXISTS manual_client_authorizations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  site_id UUID NOT NULL REFERENCES sites(id),
+  authorized_by UUID REFERENCES tenant_users(id),
+  client_mac TEXT NOT NULL,
+  duration_minutes INTEGER NOT NULL,
+  note TEXT,
+  router_ref TEXT,
+  status TEXT NOT NULL DEFAULT 'active', -- 'active' | 'revoked' | 'expired'
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_manual_auth_tenant_site ON manual_client_authorizations(tenant_id, site_id, status);
+
 CREATE TABLE IF NOT EXISTS license_keys (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   key_code TEXT UNIQUE NOT NULL,

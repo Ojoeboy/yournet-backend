@@ -100,7 +100,7 @@
   @media print {
     @page{margin:6mm}
     body{background:#fff;color:#000}
-    .app-sidebar,.print-head,.toolbar,.empty{display:none}
+    .app-sidebar,.page-header,.print-head,.toolbar,.empty{display:none}
     .app-main{padding:0;max-width:none}
     .card{border-radius:6px}
     .card .del-btn{display:none}
@@ -150,9 +150,13 @@
   <main class="app-main">
 <div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
 
+<div class="page-header">
+  <img src="/img/logo-icon.png" alt="" class="page-header-logo">
+  <h1 data-i18n="printVouchersTitle">Print vouchers</h1>
+</div>
+
 <div class="print-head">
   <div>
-    <h1 data-i18n="printVouchersTitle">Print vouchers</h1>
     <div class="sub" data-i18n="printVouchersSub">Preview a batch, filter by agent, then print.</div>
   </div>
   <div id="status">Loading&hellip;</div>

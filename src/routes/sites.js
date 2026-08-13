@@ -446,4 +446,172 @@ router.delete('/:id/portal/custom-html', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ---------------------------------------------------------------------------
+// Manual client access - admin-triggered "authorize this MAC, no voucher"
+// bypass (checklist row 4). Separate concept from vouchers: no code, no
+// price, no package. Meraki is deliberately excluded from all three routes
+// below - its portal-redirect-only architecture means there is no API call
+// that can authorize a MAC the device hasn't already tried to connect
+// through, so a "type in a MAC, grant access" screen structurally cannot
+// work for it (see the router comparison this feature was scoped from).
+// ---------------------------------------------------------------------------
+
+const MAC_RE = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
+
+async function loadSite(req) {
+  const { rows } = await pool.query('SELECT * FROM sites WHERE id=$1 AND tenant_id=$2', [req.params.id, req.tenantId]);
+  return rows[0] || null;
+}
+
+function decryptedSite(site) {
+  return {
+    ...site,
+    mk_password_decrypted: decrypt(site.mk_password_encrypted),
+    omada_client_secret_decrypted: decrypt(site.omada_client_secret_encrypted),
+    unifi_password_decrypted: decrypt(site.unifi_password_encrypted),
+    unifi_api_key_decrypted: decrypt(site.unifi_api_key_encrypted),
+  };
+}
+
+// List devices the router/controller has actually seen on this site right
+// now - lets the admin pick a MAC off a real list instead of having to know
+// it from memory. Shape is normalized across vendors; `authorized` is best-
+// effort (Omada's Open API client list doesn't clearly expose this the same
+// way MikroTik/UniFi do, so it may come back null there rather than a
+// guessed true/false).
+router.get('/:id/clients', asyncHandler(async (req, res) => {
+  const site = await loadSite(req);
+  if (!site) return res.status(404).json({ error: 'Site not found' });
+  if (site.type === 'meraki') {
+    return res.status(400).json({ error: 'Meraki has no API for listing clients this way - see the Router integrations notes on the Setup page.' });
+  }
+
+  const decrypted = decryptedSite(site);
+  try {
+    if (site.type === 'mikrotik') {
+      const hosts = await mikrotik.listHotspotHosts(decrypted);
+      return res.json({ clients: hosts.map((h) => ({
+        mac: h.macAddress, ip: h.address, authorized: h.authorized, hostname: null,
+      })) });
+    }
+    if (site.type === 'unifi') {
+      const clients = await unifi.listClients(decrypted);
+      return res.json({ clients: clients.map((c) => ({
+        mac: c.mac, ip: c.ip, authorized: c.authorized === true, hostname: c.hostname || c.name || null,
+      })) });
+    }
+    // omada
+    // Field names below (mac/ip/name/deviceType) are the conventional
+    // Omada client-object shape from the older Web API - not confirmed
+    // against the Open API's actual response schema (see the verification
+    // caveat on omada.authorizeClientManual). Worst case here is a blank
+    // column in the picker, not a wrong action, since this route is
+    // read-only.
+    const clients = await omada.listClients(decrypted);
+    return res.json({ clients: clients.map((c) => ({
+      mac: c.mac, ip: c.ip, authorized: null, hostname: c.name || c.deviceType || null,
+    })) });
+  } catch (err) {
+    res.status(502).json({ error: 'Could not fetch the client list: ' + err.message });
+  }
+}));
+
+// Currently-active manual grants for this site (for the admin table + so a
+// revoke button has something to call against).
+router.get('/:id/manual-authorizations', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, client_mac, duration_minutes, note, status, created_at, expires_at
+     FROM manual_client_authorizations
+     WHERE tenant_id=$1 AND site_id=$2 AND status='active' ORDER BY created_at DESC`,
+    [req.tenantId, req.params.id]
+  );
+  res.json({ authorizations: rows });
+}));
+
+router.post('/:id/authorize-client', asyncHandler(async (req, res) => {
+  const site = await loadSite(req);
+  if (!site) return res.status(404).json({ error: 'Site not found' });
+  if (site.type === 'meraki') {
+    return res.status(400).json({ error: 'Meraki cannot pre-authorize a MAC from the dashboard - the device has to attempt connecting and go through the splash flow first. This bypass feature does not work for Meraki sites.' });
+  }
+
+  const { clientMac, durationMinutes, note } = req.body || {};
+  const missingError = validate.required(req.body || {}, ['clientMac', 'durationMinutes']);
+  if (missingError) return res.status(400).json({ error: missingError });
+  if (!MAC_RE.test(clientMac)) return res.status(400).json({ error: 'clientMac must look like AA:BB:CC:DD:EE:FF' });
+  if (!validate.isPositiveNumber(durationMinutes) || durationMinutes > 60 * 24 * 30) {
+    return res.status(400).json({ error: 'durationMinutes must be a positive number, up to 30 days (43200 minutes).' });
+  }
+
+  const decrypted = decryptedSite(site);
+  let routerRef = null;
+  try {
+    if (site.type === 'mikrotik') {
+      // No voucher code exists for a manual grant, but RouterOS hotspot
+      // users still need SOME unique name/password - generated here,
+      // never shown to anyone, since the device is bound by MAC anyway
+      // (see mikrotik.createHotspotUser's mac-address binding) so it
+      // never needs to be typed in.
+      const generatedCode = `manual-${clientMac.replace(/:/g, '')}-${Date.now()}`;
+      const result = await mikrotik.createHotspotUser(decrypted, {
+        code: generatedCode, durationMinutes, clientMac,
+      });
+      routerRef = result.providerRef;
+    } else if (site.type === 'unifi') {
+      await unifi.authorizeClient(decrypted, { clientMac, durationMinutes });
+    } else {
+      await omada.authorizeClientManual(decrypted, { clientMac, minutes: durationMinutes });
+    }
+  } catch (err) {
+    return res.status(502).json({ error: 'Router/controller rejected the authorization: ' + err.message });
+  }
+
+  const { rows } = await pool.query(
+    `INSERT INTO manual_client_authorizations
+       (tenant_id, site_id, authorized_by, client_mac, duration_minutes, note, router_ref, expires_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7, now() + ($5::text || ' minutes')::interval)
+     RETURNING id, client_mac, duration_minutes, note, status, created_at, expires_at`,
+    [req.tenantId, site.id, req.userId, clientMac, durationMinutes, note || null, routerRef]
+  );
+  res.json(rows[0]);
+}));
+
+router.post('/:id/revoke-client', asyncHandler(async (req, res) => {
+  const site = await loadSite(req);
+  if (!site) return res.status(404).json({ error: 'Site not found' });
+
+  const { rows: existing } = await pool.query(
+    `SELECT * FROM manual_client_authorizations WHERE id=$1 AND tenant_id=$2 AND site_id=$3 AND status='active'`,
+    [req.body?.id, req.tenantId, site.id]
+  );
+  if (!existing.length) return res.status(404).json({ error: 'Active manual authorization not found.' });
+  const auth = existing[0];
+
+  const decrypted = decryptedSite(site);
+  try {
+    if (site.type === 'mikrotik') {
+      await mikrotik.removeHotspotUser(decrypted, auth.router_ref);
+    } else if (site.type === 'unifi') {
+      await unifi.unauthorizeClient(decrypted, auth.client_mac);
+    } else if (site.type === 'omada') {
+      // Documented as unimplemented in integrations/omada.js - no
+      // verified endpoint exists, so this fails loudly rather than
+      // pretending to have revoked something it didn't touch.
+      return res.status(501).json({
+        error: 'Revoking an Omada manual grant early is not supported - no confirmed Open API endpoint for it exists. It will still expire on its own at the time originally set.',
+      });
+    } else {
+      return res.status(400).json({ error: 'Meraki sites have no manual grants to revoke.' });
+    }
+  } catch (err) {
+    return res.status(502).json({ error: 'Router/controller rejected the revoke: ' + err.message });
+  }
+
+  await pool.query(
+    `UPDATE manual_client_authorizations SET status='revoked', revoked_at=now() WHERE id=$1`,
+    [auth.id]
+  );
+  res.json({ ok: true });
+}));
+
 module.exports = router;

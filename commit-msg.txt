@@ -1,39 +1,40 @@
-feat(billing): add Plan Overview page, gateway contact email, and captive portal help contacts
+Add page headers, PWA install, and manual client authorization
 
-- Add tenants.plan_started_at and payment_gateways.contact_email columns
-  (additive migration via ALTER TABLE ... ADD COLUMN IF NOT EXISTS)
-- Wire plan_started_at into every real plan-start path (signup,
-  reactivate-by-key, license reactivation, starter/pro purchase) while
-  leaving the monthly auto-renewal job untouched, so it always reflects
-  the true start of the current cycle
-- Add GET /api/dashboard/plan-overview, aggregating plan name/price/
-  status/dates, linked gateways (contact email included, secrets
-  excluded), the tenant's own subscription_payments log, and a merged/
-  sorted customer payments log from voucher_orders + pppoe_payments
-- Add public/plan-overview.html: plan summary card, linked gateways
-  list, and a tabbed My Subscription / Customer Payments table
-- Sidebar: rename "Operations" to "Operations/Network", add "Plan" and
-  "Help" groups (Email/WhatsApp/Call, pinned to bottom with a divider,
-  open in new tab)
-- Setup page: add a "Contact email" field to the gateway card, wired
-  into saveGateway(), prefilled per-provider via a new loadedGateways
-  state var, and surfaced in the gateway table
+Implements the 3 remaining "Not built" items from the feature checklist
+(sidebar collapse/expand and hover auto-hide were already working, no
+changes needed there).
 
-- Add sites.portal_help_email and sites.portal_help_phone columns
-  (additive migration via ALTER TABLE ... ADD COLUMN IF NOT EXISTS)
-- Wire helpEmail/helpPhone through PATCH /api/sites/:id/portal, its
-  clear-field endpoint, and the public /portal/:siteId/config endpoint
-- Captive portal (public/portal.html) "Need help?" section now renders
-  any combination of WhatsApp / email / phone links per site, escaping
-  tenant-entered values before injecting into innerHTML
-- Setup page: add "Help email" and "Help phone number" fields to Portal
-  Branding, wired into load/save/clear alongside the existing WhatsApp
-  number field
+Centered page header (logo + title), all shell pages:
+- shell.js: renderPageHeader() auto-wraps each page's existing <h1> (+
+  its .sub subtitle) in a centered header, no per-page markup changes
+  needed on 6 of 7 pages
+- shell.css: new .page-header styles
+- print.html: hand-added header (its title+status layout didn't fit the
+  generic approach), hidden in @media print
 
-Still TODO before going live: replace the placeholder values in
-shell.js HELP_CONTACT (email, WhatsApp number, phone number) with real
-support contact details.
+PWA install ("Add to Home Screen") for the admin app:
+- New public/manifest.json + public/sw.js (static YourNet branding,
+  separate from the existing per-site tenant-branded portal PWA)
+- shell.js: registers the service worker, injects manifest/meta tags,
+  shows an "Install app" button on beforeinstallprompt (Chromium only -
+  no programmatic prompt exists on Safari/iOS)
 
-Run `npm run migrate` on deploy for the four new columns
-(tenants.plan_started_at, payment_gateways.contact_email,
-sites.portal_help_email, sites.portal_help_phone).
+Manual MAC/IP client authorization (no voucher):
+- schema.sql: new manual_client_authorizations table, kept separate from
+  vouchers so grants never appear in print runs/settlement/commissions
+- mikrotik.js: listHotspotHosts(); authorize/revoke reuse existing
+  createHotspotUser/removeHotspotUser
+- unifi.js: unauthorizeClient(), setClientBlocked()
+- omada.js: authorizeClientManual() - UNVERIFIED, sourced from a single
+  unofficial forum report rather than TP-Link's own docs; needs a real
+  smoke test before relying on it in production. No revoke/block-by-MAC
+  endpoint could be confirmed for Omada, left unimplemented on purpose
+  (returns 501 rather than a silent no-op)
+- sites.js: new routes - GET /:id/clients, GET /:id/manual-authorizations,
+  POST /:id/authorize-client, POST /:id/revoke-client. Meraki rejected
+  with 400 on all of these (structurally can't support this pattern)
+- admin.html: new "Manual access" tab - site picker, live device list
+  (falls back to manual MAC entry), duration, optional note, active
+  grants table with per-row revoke
+
+See CHECKLIST-2-3-4-APPLIED.md for full details and the Omada caveat.

@@ -90,6 +90,7 @@
   <button type="button" class="setup-tab" id="tab-package" onclick="switchTab('package')">2. Packages</button>
   <button type="button" class="setup-tab" id="tab-voucher" onclick="switchTab('voucher')">3. Vouchers</button>
   <button type="button" class="setup-tab" id="tab-gateway" onclick="switchTab('gateway')">4. Payment</button>
+  <button type="button" class="setup-tab" id="tab-access" onclick="switchTab('access')">Manual access</button>
 </div>
 
 <!-- ACCOUNT: prefs only now - login/signup moved to /login (see public/login.html) -->
@@ -438,6 +439,50 @@
   <div class="table-scroll"><table id="gatewayTable"></table></div>
 </div>
 
+<!-- MANUAL ACCESS: authorize a device by MAC with no voucher, and revoke it early -->
+<div class="card hidden" id="access-card">
+  <h2>Manual client access</h2>
+  <p style="font-size:12px;color:#6b8a91;margin-bottom:10px">
+    Grant a specific device internet access directly - no voucher code, no charge - useful for
+    comping a customer, letting staff on, or troubleshooting. Not available for Meraki sites: Meraki
+    can only authorize a device that has already tried to connect and hit the splash page itself,
+    so there's no API call that can pre-authorize a MAC from here.
+  </p>
+
+  <label>Site</label>
+  <select id="accessSite" onchange="loadAccessPanel()"></select>
+
+  <label>Device to authorize</label>
+  <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+    <div style="flex:1;min-width:220px">
+      <select id="accessClientPicker" onchange="onAccessClientPick()">
+        <option value="">— Type a MAC manually, or pick a device seen on the network —</option>
+      </select>
+    </div>
+    <button type="button" class="secondary" style="padding:10px 14px" onclick="loadAccessClients()">Refresh list</button>
+  </div>
+  <input id="accessMac" placeholder="AA:BB:CC:DD:EE:FF" style="margin-top:8px">
+
+  <label>Duration</label>
+  <select id="accessDuration">
+    <option value="30">30 minutes</option>
+    <option value="60" selected>1 hour</option>
+    <option value="180">3 hours</option>
+    <option value="360">6 hours</option>
+    <option value="1440">24 hours</option>
+    <option value="10080">7 days</option>
+  </select>
+
+  <label>Note (optional - who/why, for your own reference)</label>
+  <input id="accessNote" placeholder="e.g. Comped for a service outage">
+
+  <button onclick="authorizeManualClient()">Authorize</button>
+  <div class="msg" id="access-msg"></div>
+
+  <h3 style="margin-top:22px;font-size:14px;color:#9fb6bc">Active manual grants</h3>
+  <div class="table-scroll"><table id="accessAuthTable"></table></div>
+</div>
+
   </main>
 </div>
 
@@ -460,7 +505,7 @@
   // ---------- quick-setup tabs ----------
   const SETUP_TAB_CARDS = {
     account: 'account-card', site: 'site-card', portal: 'portal-card',
-    package: 'package-card', voucher: 'voucher-card', gateway: 'gateway-card'
+    package: 'package-card', voucher: 'voucher-card', gateway: 'gateway-card', access: 'access-card'
   };
 
   function switchTab(key) {
@@ -799,6 +844,7 @@
       loadPackageList();
       loadSiteManageList();
       loadAgentDropdown();
+      populateAccessSiteDropdown(sites);
     } catch (err) { /* not logged in yet */ }
   }
 
@@ -841,6 +887,105 @@
       // Backend returns a clear 409 explaining to deactivate instead when
       // the site is already in use - surface that message as-is.
       showMsg('site-manage-msg', err.message, 'err');
+    }
+  }
+
+  // ---------- manual client access (checklist row 4) ----------
+  function populateAccessSiteDropdown(sites) {
+    const sel = document.getElementById('accessSite');
+    if (!sel) return;
+    const current = sel.value;
+    // Meraki sites can't use this feature at all (see the card's own
+    // explanation) - still listed, greyed out, rather than silently
+    // vanishing, so it's clear the option was considered, not missed.
+    sel.innerHTML = sites.map(s =>
+      `<option value="${s.id}" data-type="${s.type}"${s.type === 'meraki' ? ' disabled' : ''}>${escapeHtmlAdmin(s.name)}${s.type === 'meraki' ? ' (not supported for Meraki)' : ''}</option>`
+    ).join('');
+    if (current && sites.some(s => s.id === current)) sel.value = current;
+    if (sel.value) loadAccessPanel();
+  }
+
+  function loadAccessPanel() {
+    loadAccessClients();
+    loadAccessAuthorizations();
+  }
+
+  async function loadAccessClients() {
+    const siteId = document.getElementById('accessSite').value;
+    const picker = document.getElementById('accessClientPicker');
+    if (!siteId || !picker) return;
+    picker.innerHTML = '<option value="">Loading...</option>';
+    try {
+      const { clients } = await api(`/api/sites/${siteId}/clients`, 'GET');
+      const placeholder = '<option value="">— Type a MAC manually, or pick a device seen on the network —</option>';
+      picker.innerHTML = placeholder + clients.map(c => {
+        const statusLabel = c.authorized === true ? 'already authorized' : c.authorized === false ? 'not authorized yet' : '';
+        const label = [c.mac, c.ip, c.hostname, statusLabel].filter(Boolean).join(' - ');
+        return `<option value="${escapeHtmlAdmin(c.mac)}">${escapeHtmlAdmin(label)}</option>`;
+      }).join('');
+    } catch (err) {
+      picker.innerHTML = '<option value="">Could not load - type the MAC manually below</option>';
+      showMsg('access-msg', err.message, 'err');
+    }
+  }
+
+  function onAccessClientPick() {
+    const picker = document.getElementById('accessClientPicker');
+    if (picker.value) document.getElementById('accessMac').value = picker.value;
+  }
+
+  async function authorizeManualClient() {
+    const siteId = document.getElementById('accessSite').value;
+    const clientMac = document.getElementById('accessMac').value.trim().toUpperCase();
+    const durationMinutes = Number(document.getElementById('accessDuration').value);
+    const note = document.getElementById('accessNote').value.trim();
+    if (!siteId) { showMsg('access-msg', 'Pick a site first.', 'err'); return; }
+    if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(clientMac)) {
+      showMsg('access-msg', 'Enter a valid MAC address, like AA:BB:CC:DD:EE:FF.', 'err');
+      return;
+    }
+    try {
+      await api(`/api/sites/${siteId}/authorize-client`, 'POST', { clientMac, durationMinutes, note: note || undefined });
+      showMsg('access-msg', `${clientMac} authorized.`, 'ok');
+      document.getElementById('accessMac').value = '';
+      document.getElementById('accessNote').value = '';
+      loadAccessPanel();
+    } catch (err) {
+      showMsg('access-msg', err.message, 'err');
+    }
+  }
+
+  async function loadAccessAuthorizations() {
+    const siteId = document.getElementById('accessSite').value;
+    const tbody = document.getElementById('accessAuthTable');
+    if (!siteId || !tbody) return;
+    try {
+      const { authorizations } = await api(`/api/sites/${siteId}/manual-authorizations`, 'GET');
+      tbody.innerHTML = '<tr><th>MAC</th><th>Note</th><th>Expires</th><th></th></tr>' +
+        (authorizations.map(a => `
+          <tr>
+            <td>${escapeHtmlAdmin(a.client_mac)}</td>
+            <td>${escapeHtmlAdmin(a.note || '')}</td>
+            <td>${new Date(a.expires_at).toLocaleString()}</td>
+            <td><button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" onclick="revokeManualClient('${a.id}')">Revoke</button></td>
+          </tr>
+        `).join('') || '<tr><td colspan="4">No active manual grants for this site.</td></tr>');
+    } catch (err) {
+      showMsg('access-msg', err.message, 'err');
+    }
+  }
+
+  async function revokeManualClient(id) {
+    const siteId = document.getElementById('accessSite').value;
+    if (!confirm('Revoke this device\'s access now?')) return;
+    try {
+      await api(`/api/sites/${siteId}/revoke-client`, 'POST', { id });
+      showMsg('access-msg', 'Access revoked.', 'ok');
+      loadAccessAuthorizations();
+    } catch (err) {
+      // Omada sites return a clear 501 here (no confirmed revoke endpoint
+      // exists) - surfaced as-is rather than presented as a generic failure.
+      showMsg('access-msg', err.message, 'err');
     }
   }
 
