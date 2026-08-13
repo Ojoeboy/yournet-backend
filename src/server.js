@@ -144,6 +144,10 @@ app.get('/pppoe', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'pppoe.html'));
 });
 
+app.get('/agents', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'agents.html'));
+});
+
 app.get('/license', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'license.html'));
 });

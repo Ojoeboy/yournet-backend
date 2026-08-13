@@ -101,52 +101,10 @@
       <div class="table-scroll"><table id="packagesTable"></table></div>
     </div>
 
-    <div class="card" id="agents-section">
-      <h2 data-i18n="agentsTitle">Agents</h2>
-      <div style="font-size:12px;color:#6b8a91;margin-bottom:8px">
-        Agents log in on their own at <code>/agent.html</code> to see their own sales/commission, and (once they've
-        set up a secret question) generate and print their own vouchers, capped at 100/day.
-      </div>
-
-      <div class="tabs" id="agentsSubTabs" style="display:flex;background:#0d1a1e;border:1px solid rgba(255,255,255,.1);
-        border-radius:10px;padding:3px;gap:2px;margin-bottom:14px;max-width:320px">
-        <button data-subtab="overview" class="active" onclick="setAgentsSubTab('overview')"
-          style="flex:1;padding:8px 6px;font-size:12.5px;font-weight:700;border:none;border-radius:7px;background:#2ec4b6;color:#04211d;cursor:pointer">Overview</button>
-        <button data-subtab="activity" onclick="setAgentsSubTab('activity')"
-          style="flex:1;padding:8px 6px;font-size:12.5px;font-weight:700;border:none;border-radius:7px;background:transparent;color:#9fb6bc;cursor:pointer">Activity Log</button>
-      </div>
-
-      <div id="agentsOverviewTab">
-        <div style="margin-bottom:10px">
-          <input id="agentName" data-i18n-placeholder="agentNamePlaceholder" placeholder="Agent name">
-          <input id="agentEmail" type="email" placeholder="Agent email (for their own login)">
-          <input id="agentCommission" data-i18n-placeholder="commissionPlaceholder" placeholder="Commission %" value="10" style="width:100px">
-          <input id="agentPassword" type="password" placeholder="Password (optional - blank = auto-generate)">
-        </div>
-        <div style="margin-bottom:10px">
-          <input id="agentSecretQuestion" placeholder="Secret question (e.g. What street did you grow up on?)" style="width:320px">
-          <input id="agentSecretAnswer" placeholder="Secret answer">
-          <button onclick="addAgent()" data-i18n="addAgentBtn">Add agent</button>
-        </div>
-        <div style="font-size:11px;color:#6b8a91;margin-bottom:10px">
-          The secret question protects the agent's own voucher-generation access - it's asked once per login before
-          they can generate, so a stolen password alone isn't enough.
-        </div>
-        <div class="table-scroll"><table id="agentsTable"></table></div>
-        <div class="msg" id="agentMsg"></div>
-      </div>
-
-      <div id="agentsActivityTab" class="hidden">
-        <div style="font-size:12px;color:#6b8a91;margin-bottom:8px">
-          Every agent-self-generated voucher batch, plus any wrong/locked secret-question attempts, most recent first.
-        </div>
-        <div id="activityList"></div>
-      </div>
-    </div>
   </main>
 </div>
 
-<script>window.YOURNET_ACTIVE_NAV = window.location.hash === '#agents-section' ? 'agents' : 'dashboard';</script>
+<script>window.YOURNET_ACTIVE_NAV = 'dashboard';</script>
 <script src="/shell.js"></script>
 <script src="/fontsize.js"></script>
 <script src="/i18n/translations.js"></script>
@@ -195,7 +153,6 @@
     renderSiteCards(s.sites);
     populateTrendSiteSelect(s.sites);
     reloadTrendCharts();
-    await loadAgents();
     await loadManualOrders();
     await checkGatewayNudge();
   }
@@ -532,143 +489,6 @@
   window.addEventListener('beforeunload', () => {
     Object.values(liveState).forEach(s => { if (s.timer) clearInterval(s.timer); });
   });
-
-  function setAgentsSubTab(tab) {
-    document.querySelectorAll('#agentsSubTabs button').forEach(b => {
-      const active = b.dataset.subtab === tab;
-      b.classList.toggle('active', active);
-      b.style.background = active ? '#2ec4b6' : 'transparent';
-      b.style.color = active ? '#04211d' : '#9fb6bc';
-    });
-    document.getElementById('agentsOverviewTab').classList.toggle('hidden', tab !== 'overview');
-    document.getElementById('agentsActivityTab').classList.toggle('hidden', tab !== 'activity');
-    if (tab === 'activity') loadAgentActivity();
-  }
-
-  async function loadAgents() {
-    const agents = await api('/api/agents');
-    const rowsHtml = [];
-    for (const a of agents) {
-      const secretBadge = a.hasSecretQuestion
-        ? ''
-        : `<br><button class="secondary" style="width:auto;padding:3px 8px;font-size:11px;margin-top:4px"
-             onclick="toggleSecretForm('${a.id}')">Set security question</button>
-           <div class="hidden" id="secretForm-${a.id}" style="margin-top:8px;padding:10px;background:#0d1a1e;
-             border:1px solid rgba(255,255,255,.12);border-radius:8px;text-align:left">
-             <label style="margin-top:0">Secret question</label>
-             <input id="secretQ-${a.id}" placeholder="e.g. What street did you grow up on?">
-             <label>Secret answer</label>
-             <input id="secretA-${a.id}" placeholder="Answer">
-             <div style="display:flex;gap:6px;margin-top:8px">
-               <button style="margin-top:0" onclick="saveSecretForm('${a.id}')">Save</button>
-               <button class="secondary" style="margin-top:0" onclick="toggleSecretForm('${a.id}')">Cancel</button>
-             </div>
-             <div class="msg" id="secretFormMsg-${a.id}"></div>
-           </div>`;
-      let summary;
-      try {
-        summary = await api(`/api/agents/${a.id}/summary`);
-      } catch (err) {
-        summary = { vouchersSold: '-', revenue: '-', commissionPct: a.commission_pct, commissionOwed: '-' };
-      }
-      rowsHtml.push(`<tr>
-        <td>${a.name}${secretBadge}</td>
-        <td>${summary.vouchersSold}</td>
-        <td>${currency} ${summary.revenue}</td>
-        <td>${summary.commissionPct}%</td>
-        <td>${currency} ${summary.commissionOwed}</td>
-      </tr>`);
-    }
-    document.getElementById('agentsTable').innerHTML =
-      '<tr><th>Agent</th><th>Sold</th><th>Revenue</th><th>Rate</th><th>Owed</th></tr>' +
-      (rowsHtml.length ? rowsHtml.join('') : '<tr><td colspan="5" style="color:#6b8a91">No agents yet</td></tr>');
-  }
-
-  function toggleSecretForm(id) {
-    document.getElementById(`secretForm-${id}`).classList.toggle('hidden');
-  }
-
-  async function saveSecretForm(id) {
-    const question = document.getElementById(`secretQ-${id}`).value.trim();
-    const answer = document.getElementById(`secretA-${id}`).value.trim();
-    const msg = document.getElementById(`secretFormMsg-${id}`);
-    if (!question || !answer) {
-      msg.textContent = 'Both fields are required.';
-      msg.className = 'msg err';
-      return;
-    }
-    try {
-      await api(`/api/agents/${id}`, 'PATCH', { secretQuestion: question, secretAnswer: answer });
-      await loadAgents();
-    } catch (err) {
-      msg.textContent = err.message;
-      msg.className = 'msg err';
-    }
-  }
-
-  async function addAgent() {
-    const msg = document.getElementById('agentMsg');
-    try {
-      const password = document.getElementById('agentPassword').value;
-      const result = await api('/api/agents', 'POST', {
-        name: document.getElementById('agentName').value,
-        email: document.getElementById('agentEmail').value,
-        commissionPct: document.getElementById('agentCommission').value === '' ? 10 : Number(document.getElementById('agentCommission').value),
-        password: password || undefined,
-        secretQuestion: document.getElementById('agentSecretQuestion').value,
-        secretAnswer: document.getElementById('agentSecretAnswer').value,
-      });
-      msg.textContent = result.tempPassword
-        ? `Agent added. Temp password (share this with them, shown only once): ${result.tempPassword}`
-        : 'Agent added.';
-      document.getElementById('agentName').value = '';
-      document.getElementById('agentEmail').value = '';
-      document.getElementById('agentPassword').value = '';
-      document.getElementById('agentSecretQuestion').value = '';
-      document.getElementById('agentSecretAnswer').value = '';
-      await loadAgents();
-    } catch (err) {
-      msg.textContent = err.message;
-    }
-  }
-
-  const ACTIVITY_LABELS = {
-    voucher_batch: { label: 'Generated vouchers', color: '#6bd68a' },
-    secret_question_failed: { label: 'Wrong security answer', color: '#e8c777' },
-    secret_question_locked: { label: 'Locked out (too many wrong answers)', color: '#ff6b6b' },
-  };
-
-  async function loadAgentActivity() {
-    const list = document.getElementById('activityList');
-    list.innerHTML = '<div style="color:#6b8a91;font-size:13px">Loading&hellip;</div>';
-    try {
-      const entries = await api('/api/agents/activity');
-      if (!entries.length) {
-        list.innerHTML = '<div style="color:#6b8a91;font-size:13px">No agent activity yet.</div>';
-        return;
-      }
-      list.innerHTML = entries.map(e => {
-        const meta = ACTIVITY_LABELS[e.type] || { label: e.type, color: '#9fb6bc' };
-        const when = new Date(e.created_at).toLocaleString();
-        const who = e.agent_name_snapshot || 'Unknown agent';
-        let detailText = '';
-        if (e.type === 'voucher_batch' && e.detail) {
-          detailText = `${e.detail.quantity} voucher(s)${e.detail.batch ? ' - batch ' + e.detail.batch : ''}`;
-        } else if (e.detail && e.detail.attempts) {
-          detailText = `Attempt #${e.detail.attempts}`;
-        }
-        return `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:13px">
-          <div>
-            <span style="color:${meta.color};font-weight:700">${meta.label}</span>
-            <div style="color:#9fb6bc;font-size:12px">${who}${detailText ? ' &middot; ' + detailText : ''}</div>
-          </div>
-          <div style="color:#6b8a91;font-size:11px;white-space:nowrap">${when}</div>
-        </div>`;
-      }).join('');
-    } catch (err) {
-      list.innerHTML = `<div class="msg err">${err.message}</div>`;
-    }
-  }
 
   loadDashboard();
 </script>

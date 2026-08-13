@@ -8,7 +8,7 @@
     { key: 'dashboard', href: '/dashboard.html', icon: '\u25C9', label: 'Dashboard' },
     { key: 'setup', href: '/admin', icon: '\u2699', label: 'Setup' },
     { key: 'vouchers', href: '/print.html', icon: '\u2637', label: 'Vouchers' },
-    { key: 'agents', href: '/dashboard.html#agents-section', icon: '\u25A4', label: 'Agents' },
+    { key: 'agents', href: '/agents', icon: '\u25A4', label: 'Agents' },
     { key: 'pppoe', href: '/pppoe', icon: '\u21C4', label: 'PPPoE' },
     { key: 'billing', href: '/billing.html', icon: '\u26A1', label: 'Billing' },
   ];
@@ -21,7 +21,7 @@
     el.innerHTML = `
       <div class="app-topbar">
         <div class="app-topbar-side"></div>
-        <div class="app-brand"><span class="dot"></span> YourNet Control</div>
+        <div class="app-brand"><img src="/img/logo-icon.png" alt="" class="brand-logo-icon"> YourNet Control</div>
         <div class="app-topbar-side right">
           <a href="#" class="logout-btn" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;">Log out</a>
         </div>
@@ -34,6 +34,24 @@
         `).join('')}
       </nav>
     `;
+  }
+
+  // Favicon/app-icon links - injected here rather than duplicated in every
+  // page's <head> so every page that includes shell.js picks them up
+  // automatically, including ones added later.
+  function ensureFavicon() {
+    if (document.getElementById('yn-favicon-32')) return;
+    const links = [
+      { id: 'yn-favicon-32', rel: 'icon', type: 'image/png', sizes: '32x32', href: '/icons/favicon-32.png' },
+      { id: 'yn-favicon-16', rel: 'icon', type: 'image/png', sizes: '16x16', href: '/icons/favicon-16.png' },
+      { id: 'yn-apple-touch', rel: 'apple-touch-icon', href: '/icons/icon-192.png' },
+    ];
+    links.forEach((attrs) => {
+      const link = document.createElement('link');
+      Object.keys(attrs).forEach((k) => { if (k !== 'id') link.setAttribute(k, attrs[k]); });
+      link.id = attrs.id;
+      document.head.appendChild(link);
+    });
   }
 
   // Connectivity mesh background - ported from the Bitnet captive-portal
@@ -128,6 +146,7 @@
   }
 
   function init() {
+    ensureFavicon();
     render();
     renderMeshBg();
     maybeStartRotatingBackground();

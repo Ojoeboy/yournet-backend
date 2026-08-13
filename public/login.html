@@ -4,7 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>YourNet Control - Log in</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
 <style>
+  .brand-logo{display:block;width:150px;height:auto;margin:0 auto 14px;border-radius:14px}
   *{box-sizing:border-box}
   body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
     margin:0;padding:40px 20px;max-width:400px;margin-inline:auto}
@@ -56,8 +60,9 @@
 <div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
 
 <div class="card">
-  <h1 id="cardTitle">YourNet Control</h1>
-  <div class="sub" id="cardSub">Log in to manage your business.</div>
+  <img class="brand-logo" src="/img/logo.png" alt="YourNet Control">
+  <h1 id="cardTitle" style="text-align:center">YourNet Control</h1>
+  <div class="sub" id="cardSub" style="text-align:center">Log in to manage your business.</div>
 
   <!-- LOGIN (default) -->
   <div class="panel active" id="panel-login">
