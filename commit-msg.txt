@@ -1,15 +1,13 @@
-Add portal logo upload, "use account logo", and client-side resize/crop
+Fix silent email-send failures: log actual SMTP result instead of swallowing errors
 
-- POST /api/sites/:id/portal-logo: multer memory upload (1.5MB limit,
-  PNG/JPEG/WEBP/GIF), base64-encodes into sites.portal_logo_url —
-  same never-touches-disk pattern as the account logo, so it survives
-  Render free-tier redeploys
-- logoUrl added to CLEARABLE_PORTAL_FIELDS so the portal logo can
-  actually be cleared, not just set (old PATCH /portal used COALESCE)
-- admin.html: Portal tab logo field now has upload, "use account
-  saved logo", remove, and preview, alongside the existing paste-a-URL
-  input; upload/use-account-logo save immediately
-- New public/logo-editor.js: opens a crop modal on file select for
-  both account and portal logo uploads — auto-fit (contain, no
-  cropping) by default, or a manual draggable/resizable square crop;
-  re-encodes under 1.5MB client-side before upload
+- sendEmail() in src/integrations/emailService.js now logs
+  [EMAIL SENT] with messageId/response on success, and
+  [EMAIL FAILED] with the real error message on failure, then
+  rethrows so it's never lost
+- Previously, transporter.sendMail() errors were silently eaten by
+  callers' .catch(() => {}) in routes/auth.js and routes/agents.js,
+  so a revoked/invalid Gmail App Password failed with zero trace -
+  signup still returned success with no email ever sent
+- No behavior change for callers (still fire-and-forget) - this only
+  adds visibility into Render logs for verification/reset/agent
+  welcome emails

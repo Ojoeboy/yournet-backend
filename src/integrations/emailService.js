@@ -41,12 +41,21 @@ async function sendEmail({ to, subject, html }) {
     return;
   }
 
-  await getTransporter().sendMail({
-    from: process.env.EMAIL_FROM || `YourNet Control <${process.env.GMAIL_USER}>`,
-    to,
-    subject,
-    html,
-  });
+  try {
+    const info = await getTransporter().sendMail({
+      from: process.env.EMAIL_FROM || `YourNet Control <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html,
+    });
+    console.log(`[EMAIL SENT] To: ${to} | Subject: ${subject} | messageId: ${info.messageId} | response: ${info.response}`);
+  } catch (err) {
+    // Surface the real SMTP failure reason (bad auth, revoked app password,
+    // Gmail rate limit, etc.) instead of letting callers' .catch(()=>{})
+    // swallow it into total silence.
+    console.error(`[EMAIL FAILED] To: ${to} | Subject: ${subject} | error: ${err.message}`);
+    throw err;
+  }
 }
 
 async function sendPasswordResetEmail(toEmail, resetLink) {
