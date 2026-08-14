@@ -1,27 +1,44 @@
-Add account profile fields+logo, topbar profile menu, click-to-open sidebar, and header styling fixes
+fix(i18n): add missing translation keys; redesign profile widget; refresh brand logo everywhere
 
-- Account tab: business name, admin full name, digital address, country,
-  business location fields with Save/Update button; new tenants columns
-  (admin_full_name, digital_address, country, business_location) and
-  GET/PATCH /api/dashboard/account-info
+i18n
+- Add 8 keys that were missing from translations.js and rendering as raw
+  camelCase (e.g. "printVouchersTitle" instead of "Print vouchers"):
+  printVouchersTitle, printVouchersSub, agent, batch, layout, status,
+  existingPackagesTitle, payWithPaystackBtn — across all 12 languages
+  (en, fr, tw, es, pt, sw, zh, ru, ja, de, hi, ar).
+- Update page-header titles so they match their sidebar nav labels:
+  admin.html "YourNet Admin" -> "Setup"; print.html "Print vouchers" ->
+  "Vouchers"; billing.html "Choose a plan" -> "Billing" (translated
+  consistently across all 12 languages, not just English).
 
-- Account/profile logo upload: multer (memory storage, 1.5MB limit,
-  image/* only) encodes to a base64 data URL stored in new
-  tenants.account_logo column; POST/DELETE /api/dashboard/logo
+Profile widget (shell.js, shell.css, admin.html)
+- Move the round profile button out of the sidebar entirely; render it
+  into each page's #yournetLangSwitcherContainer (top-right corner,
+  next to the language switcher) instead. Pages without that container
+  (plan-overview.html) get one created for them.
+- Dropdown now shows business name / admin's full name / country
+  directly (fetched fresh from /api/dashboard/account-info on every
+  open), with Log out as the last item — replaces the old two-item
+  "View profile" -> modal flow. Removed the now-unused profile modal
+  JS and CSS.
+- Round button still shows the tenant's uploaded logo via the existing
+  loadProfileLogo/applyProfileLogo path.
+- Account tab: reordered fields so "Upload logo" is last, immediately
+  before Save/Update. Save/Update now also calls
+  window.yournetRefreshProfileInfo() so the dropdown reflects edits
+  immediately without a page reload.
 
-- Topbar profile button (desktop + new mobile-only bar): round icon
-  (shows uploaded logo once set) opens a dropdown with "View profile"
-  (business name, admin full name, email, country) and "Log out"
-
-- Sidebar auto-hide redesign: replaces hover-expanding icon rail with a
-  fixed hamburger-only 48px strip; click opens the full 220px sidebar,
-  closes on mouse-leave or click-outside (touch/keyboard safe); pinned
-  mode unchanged
-
-- Header styling: .page-header (and print.html's .print-head) now bold,
-  uppercase, letter-spaced across all shell pages; extended the same
-  centered logo+title treatment to agent.html, which sits outside the
-  admin shell and previously had no header treatment
-
-New dependency: multer (^1.4.5-lts.1) - run npm install.
-Schema changes are additive/idempotent - run npm run migrate.
+Brand logo
+- Replace img/logo-icon.png, img/logo.png, icons/favicon-16.png,
+  icons/favicon-32.png, icons/icon-192.png, and icons/icon-512.png
+  with a circular crop of the new ring-badge artwork (center/radius
+  fit to the outer ring so all four tabs - WIFI HOTSPOT, CONNECTIVITY,
+  MANAGE, BILLING - stay intact, small transparent margin outside the
+  ring, anti-aliased edge).
+- img/logo.png (login page + create-account tab, same login.html) was
+  previously a different, uncropped rectangular asset - now matches
+  the same badge used everywhere else, resized for its 150px card slot.
+- agent.html and print.html needed no changes - they already pointed
+  at img/logo-icon.png, so they picked up the new badge automatically.
+- Bump service worker cache (yournet-admin-shell-v1 -> v2) so installed
+  PWA users pick up the new logo instead of a stale cached copy.

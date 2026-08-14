@@ -149,18 +149,6 @@
     const primaryItems = NAV_ITEMS.filter((i) => i.primary);
     const secondaryActive = NAV_ITEMS.some((i) => !i.primary && i.key === active);
     const logoutHtml = `<a href="#" class="logout-btn" title="Log out" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;"><span class="ico">\u23FB</span><span>Log out</span></a>`;
-    // Round profile button (topbar-right, desktop; and the mobile-only bar
-    // below) - click opens a small dropdown with "View profile" + "Log out".
-    // idSuffix keeps ids unique between the desktop and mobile copies.
-    const profileHtml = (idSuffix) => `
-      <div class="yn-profile-wrap" id="yn-profile-wrap-${idSuffix}">
-        <button type="button" class="yn-profile-btn" aria-label="Profile" aria-haspopup="true" aria-expanded="false">\u{1F464}</button>
-        <div class="yn-profile-menu" role="menu">
-          <button type="button" class="yn-profile-menu-item" data-yn-view-profile>View profile</button>
-          <button type="button" class="yn-profile-menu-item yn-danger" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;">Log out</button>
-        </div>
-      </div>
-    `;
     const collapseBtnHtml = `
       <button type="button" class="sidebar-collapse-btn" id="yn-collapse-toggle" aria-label="Collapse sidebar">
         <span class="ico">\u276E</span>
@@ -178,13 +166,10 @@
       <button type="button" class="yn-sidebar-hamburger" id="yn-sidebar-hamburger" aria-label="Open sidebar" aria-expanded="false">
         <span class="yn-bar"></span><span class="yn-bar"></span><span class="yn-bar"></span><span class="yn-bar"></span>
       </button>
-      <div class="yn-mobile-topbar">
-        ${profileHtml('mobile')}
-      </div>
       <div class="app-topbar">
         <div class="app-topbar-side"></div>
         <div class="app-brand"><img src="/img/logo-icon.png" alt="" class="brand-logo-icon"> <span class="brand-label">YourNet Control</span></div>
-        <div class="app-topbar-side right">${installBtnHtml}${profileHtml('desktop')}</div>
+        <div class="app-topbar-side right">${installBtnHtml}</div>
         ${collapseBtnHtml}
       </div>
       <nav class="app-nav">
@@ -253,9 +238,6 @@
     applyMode(el, spacer, isAutoMode());
     wireAutoSidebarHamburger(el);
 
-    wireProfileControls();
-    loadProfileLogo();
-
     document.querySelectorAll('.install-app-btn').forEach((installBtn) => {
       // If beforeinstallprompt already fired earlier in this page's life
       // (unlikely this early, but re-render() can run more than once),
@@ -269,6 +251,59 @@
         document.querySelectorAll('.install-app-btn').forEach((btn) => { btn.style.display = 'none'; });
       });
     });
+  }
+
+  // Round profile button - lives in the same top-right corner as the page's
+  // language switcher (#yournetLangSwitcherContainer), not the sidebar. Its
+  // round face shows the tenant's uploaded business logo (falls back to a
+  // plain person glyph until one's on file). Click opens a dropdown showing
+  // business name / admin's full name / country - fetched fresh from
+  // /api/dashboard/account-info every time it's opened, so saving changes on
+  // the Account tab (admin.html) is reflected the next time it's opened,
+  // with no page reload needed. Log out is always the last item.
+  function renderTopRightProfile() {
+    if (document.getElementById('yn-profile-wrap')) return; // idempotent
+    const main = document.querySelector('.app-main');
+    if (!main) return;
+    let container = document.getElementById('yournetLangSwitcherContainer');
+    if (!container) {
+      // Pages without an i18n switcher (e.g. plan-overview.html) still get
+      // the same top-right corner spot, just without a language dropdown
+      // sharing it.
+      container = document.createElement('div');
+      container.id = 'yournetLangSwitcherContainer';
+      container.style.cssText = 'display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:10px';
+      main.insertBefore(container, main.firstChild);
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'yn-profile-wrap';
+    wrap.id = 'yn-profile-wrap';
+    wrap.innerHTML = `
+      <button type="button" class="yn-profile-btn" aria-label="Profile" aria-haspopup="true" aria-expanded="false">\u{1F464}</button>
+      <div class="yn-profile-menu" role="menu">
+        <div class="yn-profile-info" id="yn-profile-info">
+          <div class="yn-profile-row">
+            <div class="yn-profile-row-label">Business name</div>
+            <div class="yn-profile-row-value" id="yn-profile-business">\u2014</div>
+          </div>
+          <div class="yn-profile-row">
+            <div class="yn-profile-row-label">Admin's full name</div>
+            <div class="yn-profile-row-value" id="yn-profile-admin">\u2014</div>
+          </div>
+          <div class="yn-profile-row">
+            <div class="yn-profile-row-label">Country</div>
+            <div class="yn-profile-row-value" id="yn-profile-country">\u2014</div>
+          </div>
+        </div>
+        <button type="button" class="yn-profile-menu-item yn-danger" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;">Log out</button>
+      </div>
+    `;
+    // Inserted first so a language <select> added afterwards (by
+    // i18n-loader.js, which runs after shell.js on DOMContentLoaded) lands
+    // to its right - same corner, profile button first.
+    container.insertBefore(wrap, container.firstChild);
+    wireProfileControls();
+    loadProfileLogo();
   }
 
   // Swaps the round profile button's default person icon for the tenant's
@@ -301,74 +336,15 @@
   }
   window.yournetRefreshProfileLogo = loadProfileLogo;
 
-  // Profile button (topbar-right on desktop, its own mobile-only bar on
-  // small screens) - toggles a small dropdown: "View profile" opens the
-  // read-only panel below, "Log out" reuses the same logic as logoutHtml.
-  function wireProfileControls() {
-    const wraps = document.querySelectorAll('.yn-profile-wrap');
-    wraps.forEach((wrap) => {
-      const btn = wrap.querySelector('.yn-profile-btn');
-      if (!btn || btn.dataset.wired) return;
-      btn.dataset.wired = '1';
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isOpen = wrap.classList.contains('open');
-        wraps.forEach((w) => w.classList.remove('open'));
-        if (!isOpen) {
-          wrap.classList.add('open');
-          btn.setAttribute('aria-expanded', 'true');
-        } else {
-          btn.setAttribute('aria-expanded', 'false');
-        }
-      });
-      const viewBtn = wrap.querySelector('[data-yn-view-profile]');
-      if (viewBtn) {
-        viewBtn.addEventListener('click', () => {
-          wrap.classList.remove('open');
-          btn.setAttribute('aria-expanded', 'false');
-          openProfileModal();
-        });
-      }
-    });
-    if (!document.body.dataset.ynProfileOutsideWired) {
-      document.body.dataset.ynProfileOutsideWired = '1';
-      document.addEventListener('click', () => {
-        document.querySelectorAll('.yn-profile-wrap.open').forEach((w) => {
-          w.classList.remove('open');
-          const b = w.querySelector('.yn-profile-btn');
-          if (b) b.setAttribute('aria-expanded', 'false');
-        });
-      });
-    }
-  }
-
-  // Read-only profile panel: business name, admin's full name, email,
-  // country - pulled from the same /api/dashboard/account-info endpoint
-  // the Account tab (admin.html) reads and writes.
-  function ensureProfileModal() {
-    let modal = document.getElementById('yn-profile-modal');
-    if (modal) return modal;
-    modal = document.createElement('div');
-    modal.id = 'yn-profile-modal';
-    modal.className = 'yn-profile-modal-backdrop';
-    modal.innerHTML = `
-      <div class="yn-profile-modal">
-        <button type="button" class="yn-profile-modal-close" aria-label="Close">&times;</button>
-        <h2>Profile</h2>
-        <div class="yn-profile-modal-body" id="yn-profile-modal-body">Loading&hellip;</div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('open'); });
-    modal.querySelector('.yn-profile-modal-close').addEventListener('click', () => modal.classList.remove('open'));
-    return modal;
-  }
-
-  async function openProfileModal() {
-    const modal = ensureProfileModal();
-    modal.classList.add('open');
-    const body = document.getElementById('yn-profile-modal-body');
-    body.textContent = 'Loading\u2026';
+  // Fetches business name / admin's full name / country fresh from the
+  // server and fills the dropdown - called every time it's opened, so it
+  // can never show stale info left over from a previous session or an edit
+  // made on the Account tab.
+  async function loadProfileInfo() {
+    const businessEl = document.getElementById('yn-profile-business');
+    const adminEl = document.getElementById('yn-profile-admin');
+    const countryEl = document.getElementById('yn-profile-country');
+    if (!businessEl) return;
     try {
       const token = localStorage.getItem('yournet_token');
       const res = await fetch('/api/dashboard/account-info', {
@@ -376,30 +352,46 @@
       });
       const info = await res.json();
       if (!res.ok) throw new Error(info.error || 'Could not load profile');
-      const row = (label, value) => `
-        <div class="yn-profile-row">
-          <div class="yn-profile-row-label">${label}</div>
-          <div class="yn-profile-row-value">${value ? escapeHtml(value) : '\u2014'}</div>
-        </div>
-      `;
-      const logoHtml = info.logoUrl
-        ? `<div class="yn-profile-modal-logo"><img src="${info.logoUrl}" alt=""></div>`
-        : '';
-      body.innerHTML = logoHtml + [
-        row('Business name', info.businessName),
-        row("Admin's full name", info.adminFullName),
-        row('Email', info.email),
-        row('Country', info.country),
-      ].join('');
+      businessEl.textContent = info.businessName || '\u2014';
+      adminEl.textContent = info.adminFullName || '\u2014';
+      countryEl.textContent = info.country || '\u2014';
     } catch (err) {
-      body.textContent = err.message || 'Could not load profile.';
+      businessEl.textContent = adminEl.textContent = countryEl.textContent = '\u2014';
     }
   }
+  // admin.html's Account tab calls this after a successful save, so the
+  // dropdown reflects the new business name/admin name/country right away
+  // if it happens to be open - no reload, no need to reopen it first.
+  window.yournetRefreshProfileInfo = loadProfileInfo;
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-    }[c]));
+  // Profile button - toggles the dropdown open/closed and loads fresh
+  // account info each time it opens. Log out reuses the same logic as the
+  // drawer's logoutHtml.
+  function wireProfileControls() {
+    const wrap = document.getElementById('yn-profile-wrap');
+    if (!wrap) return;
+    const btn = wrap.querySelector('.yn-profile-btn');
+    if (!btn || btn.dataset.wired) return;
+    btn.dataset.wired = '1';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = wrap.classList.contains('open');
+      if (!isOpen) {
+        wrap.classList.add('open');
+        btn.setAttribute('aria-expanded', 'true');
+        loadProfileInfo();
+      } else {
+        wrap.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    });
+    if (!document.body.dataset.ynProfileOutsideWired) {
+      document.body.dataset.ynProfileOutsideWired = '1';
+      document.addEventListener('click', () => {
+        wrap.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+      });
+    }
   }
 
   // Centered page header (logo + title): wraps whatever <h1> the page
@@ -597,6 +589,7 @@
     wireInstallPrompt();
     render();
     renderPageHeader();
+    renderTopRightProfile();
     renderMeshBg();
     maybeStartRotatingBackground();
     registerServiceWorker();

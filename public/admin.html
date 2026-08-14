@@ -80,7 +80,7 @@
   <div id="app-sidebar"></div>
   <main class="app-main">
 <div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
-<h1>YourNet Admin</h1>
+<h1>Setup</h1>
 <div class="sub">Click-through setup - no raw API calls needed</div>
 
 <div class="setup-tabs" id="setup-tabs">
@@ -98,18 +98,6 @@
   <h2>Account</h2>
 
   <div id="account-details" style="padding-top:4px">
-    <label>Profile / business logo</label>
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
-      <img id="acctLogoPreview" src="" alt="" style="display:none;width:64px;height:64px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,.15)">
-      <div id="acctLogoPlaceholder" style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:24px;color:#6b8a91">👤</div>
-      <div>
-        <input type="file" id="acctLogoFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="uploadAccountLogo()">
-        <button type="button" class="secondary" style="padding:8px 12px;font-size:12px" onclick="document.getElementById('acctLogoFile').click()">Upload logo</button>
-        <button type="button" class="secondary hidden" id="acctLogoRemoveBtn" style="padding:8px 12px;font-size:12px" onclick="removeAccountLogo()">Remove</button>
-      </div>
-    </div>
-    <div class="msg" id="account-logo-msg"></div>
-
     <label>Business name</label>
     <input id="acctBusinessName" placeholder="e.g. BITTNET Internet Services">
 
@@ -124,6 +112,18 @@
 
     <label>Business location</label>
     <input id="acctBusinessLocation" placeholder="e.g. Sunyani, Bono Region">
+
+    <label>Profile / business logo</label>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+      <img id="acctLogoPreview" src="" alt="" style="display:none;width:64px;height:64px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,.15)">
+      <div id="acctLogoPlaceholder" style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:24px;color:#6b8a91">👤</div>
+      <div>
+        <input type="file" id="acctLogoFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="uploadAccountLogo()">
+        <button type="button" class="secondary" style="padding:8px 12px;font-size:12px" onclick="document.getElementById('acctLogoFile').click()">Upload logo</button>
+        <button type="button" class="secondary hidden" id="acctLogoRemoveBtn" style="padding:8px 12px;font-size:12px" onclick="removeAccountLogo()">Remove</button>
+      </div>
+    </div>
+    <div class="msg" id="account-logo-msg"></div>
 
     <div style="display:flex;gap:10px;margin-top:12px">
       <button type="button" id="acctSaveBtn" onclick="saveAccountDetails()">Save</button>
@@ -745,6 +745,7 @@
       showMsg('account-details-msg', 'Saved.', 'ok');
       document.getElementById('acctSaveBtn').classList.add('hidden');
       document.getElementById('acctUpdateBtn').classList.remove('hidden');
+      if (window.yournetRefreshProfileInfo) window.yournetRefreshProfileInfo();
     } catch (err) {
       showMsg('account-details-msg', err.message, 'err');
     }

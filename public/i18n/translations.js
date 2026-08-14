@@ -68,10 +68,15 @@ window.YOURNET_I18N = {
     priceLabel: 'Price (GHS)', durationLabel: 'Duration (minutes)',
     speedDownLabel: 'Speed down (e.g. 10M)', speedUpLabel: 'Speed up (e.g. 4M)',
     savePackageBtn: 'Save package',
+    existingPackagesTitle: 'Existing packages',
 
     // Admin - vouchers
     step4Title: 'Step 4 - Generate vouchers', packageLabel: 'Package', siteLabel: 'Site',
     quantityLabel: 'How many?', generateBtn: 'Generate',
+
+    // Vouchers - print page
+    printVouchersTitle: 'Vouchers', printVouchersSub: 'Preview a batch, filter by agent, then print.',
+    agent: 'Agent', batch: 'Batch', layout: 'Layout', status: 'Status',
 
     // License purchase
     ownIt: 'Get YourNet Control', oneTime: 'to activate',
@@ -87,7 +92,8 @@ window.YOURNET_I18N = {
     addAgentBtn: 'Add agent',
 
     // Billing (subscription)
-    choosePlan: 'Choose a plan', perMonth: '/ month',
+    choosePlan: 'Billing', perMonth: '/ month',
+    payWithPaystackBtn: 'Pay with Paystack',
 
     // Settlement
     settlementTitle: 'Agent Settlement Sheet', loadBtn: 'Load',
@@ -130,9 +136,14 @@ window.YOURNET_I18N = {
     priceLabel: 'Prix (GHS)', durationLabel: 'Durée (minutes)',
     speedDownLabel: 'Vitesse descendante (ex. 10M)', speedUpLabel: 'Vitesse montante (ex. 4M)',
     savePackageBtn: 'Enregistrer le forfait',
+    existingPackagesTitle: 'Forfaits existants',
 
     step4Title: 'Étape 4 - Générer des bons', packageLabel: 'Forfait', siteLabel: 'Site',
     quantityLabel: 'Combien ?', generateBtn: 'Générer',
+
+    // Vouchers - print page
+    printVouchersTitle: 'Bons', printVouchersSub: 'Prévisualisez un lot, filtrez par agent, puis imprimez.',
+    agent: 'Agent', batch: 'Lot', layout: 'Mise en page', status: 'Statut',
 
     ownIt: 'Obtenez YourNet Control', oneTime: 'pour activer',
     chooseHowToPay: 'Choisissez comment payer', payNowBtn: 'Payer maintenant',
@@ -145,7 +156,8 @@ window.YOURNET_I18N = {
     agentsTitle: 'Agents', agentNamePlaceholder: "Nom de l'agent", commissionPlaceholder: 'Commission %',
     addAgentBtn: 'Ajouter un agent',
 
-    choosePlan: 'Choisissez un forfait', perMonth: '/ mois',
+    choosePlan: 'Facturation', perMonth: '/ mois',
+    payWithPaystackBtn: 'Payer avec Paystack',
 
     settlementTitle: "Feuille de règlement de l'agent", loadBtn: 'Charger',
 
@@ -186,9 +198,14 @@ window.YOURNET_I18N = {
     priceLabel: 'Bo (GHS)', durationLabel: 'Mmerɛ (simma)',
     speedDownLabel: 'Ahoɔhare a ɛba fam (sɛ nhwɛso 10M)', speedUpLabel: 'Ahoɔhare a ɛkɔ soro (sɛ nhwɛso 4M)',
     savePackageBtn: 'Sie package no',
+    existingPackagesTitle: 'Packages a ɛwɔ hɔ dedaw',
 
     step4Title: 'Aketesia 4 - Yɛ vouchers', packageLabel: 'Package', siteLabel: 'Site',
     quantityLabel: 'Ahe na wopɛ?', generateBtn: 'Yɛ',
+
+    // Vouchers - print page
+    printVouchersTitle: 'Vouchers', printVouchersSub: 'Hwɛ batch no ansa, paw agent, na fa print.',
+    agent: 'Agent', batch: 'Batch', layout: 'Layout', status: 'Status',
 
     ownIt: 'Nya YourNet Control', oneTime: 'ma nkabom',
     chooseHowToPay: 'Paw sɛnea wobɛtua ka', payNowBtn: 'Tua ka seesei',
@@ -201,7 +218,8 @@ window.YOURNET_I18N = {
     agentsTitle: 'Agents', agentNamePlaceholder: 'Agent din', commissionPlaceholder: 'Commission %',
     addAgentBtn: 'Fa agent foforo ka ho',
 
-    choosePlan: 'Paw plan', perMonth: '/ ɔsram',
+    choosePlan: 'Billing', perMonth: '/ ɔsram',
+    payWithPaystackBtn: 'Fa Paystack tua ka',
 
     settlementTitle: 'Agent Settlement Sheet', loadBtn: 'Twe si',
 
@@ -242,9 +260,14 @@ window.YOURNET_I18N = {
     priceLabel: 'Precio (GHS)', durationLabel: 'Duración (minutos)',
     speedDownLabel: 'Velocidad de bajada (ej. 10M)', speedUpLabel: 'Velocidad de subida (ej. 4M)',
     savePackageBtn: 'Guardar paquete',
+    existingPackagesTitle: 'Paquetes existentes',
 
     step4Title: 'Paso 4 - Generar vouchers', packageLabel: 'Paquete', siteLabel: 'Sitio',
     quantityLabel: '¿Cuántos?', generateBtn: 'Generar',
+
+    // Vouchers - print page
+    printVouchersTitle: 'Cupones', printVouchersSub: 'Vista previa de un lote, filtra por agente y luego imprime.',
+    agent: 'Agente', batch: 'Lote', layout: 'Diseño', status: 'Estado',
 
     ownIt: 'Obtén YourNet Control', oneTime: 'para activar',
     chooseHowToPay: 'Elige cómo pagar', payNowBtn: 'Pagar ahora',
@@ -257,7 +280,8 @@ window.YOURNET_I18N = {
     agentsTitle: 'Agentes', agentNamePlaceholder: 'Nombre del agente', commissionPlaceholder: 'Comisión %',
     addAgentBtn: 'Agregar agente',
 
-    choosePlan: 'Elige un plan', perMonth: '/ mes',
+    choosePlan: 'Facturación', perMonth: '/ mes',
+    payWithPaystackBtn: 'Pagar con Paystack',
 
     settlementTitle: 'Hoja de liquidación del agente', loadBtn: 'Cargar',
 
@@ -298,9 +322,14 @@ window.YOURNET_I18N = {
     priceLabel: 'Preço (GHS)', durationLabel: 'Duração (minutos)',
     speedDownLabel: 'Velocidade de download (ex. 10M)', speedUpLabel: 'Velocidade de upload (ex. 4M)',
     savePackageBtn: 'Salvar pacote',
+    existingPackagesTitle: 'Pacotes existentes',
 
     step4Title: 'Passo 4 - Gerar vouchers', packageLabel: 'Pacote', siteLabel: 'Site',
     quantityLabel: 'Quantos?', generateBtn: 'Gerar',
+
+    // Vouchers - print page
+    printVouchersTitle: 'Vouchers', printVouchersSub: 'Visualize um lote, filtre por agente e depois imprima.',
+    agent: 'Agente', batch: 'Lote', layout: 'Layout', status: 'Status',
 
     ownIt: 'Obtenha o YourNet Control', oneTime: 'para ativar',
     chooseHowToPay: 'Escolha como pagar', payNowBtn: 'Pagar agora',
@@ -313,7 +342,8 @@ window.YOURNET_I18N = {
     agentsTitle: 'Agentes', agentNamePlaceholder: 'Nome do agente', commissionPlaceholder: 'Comissão %',
     addAgentBtn: 'Adicionar agente',
 
-    choosePlan: 'Escolha um plano', perMonth: '/ mês',
+    choosePlan: 'Faturamento', perMonth: '/ mês',
+    payWithPaystackBtn: 'Pagar com Paystack',
 
     settlementTitle: 'Folha de acerto do agente', loadBtn: 'Carregar',
 
@@ -354,9 +384,14 @@ window.YOURNET_I18N = {
     priceLabel: 'Bei (GHS)', durationLabel: 'Muda (dakika)',
     speedDownLabel: 'Kasi ya kupakua (mf. 10M)', speedUpLabel: 'Kasi ya kupakia (mf. 4M)',
     savePackageBtn: 'Hifadhi kifurushi',
+    existingPackagesTitle: 'Vifurushi vilivyopo',
 
     step4Title: 'Hatua 4 - Tengeneza voucha', packageLabel: 'Kifurushi', siteLabel: 'Tovuti',
     quantityLabel: 'Ngapi?', generateBtn: 'Tengeneza',
+
+    // Vouchers - print page
+    printVouchersTitle: 'Vocha', printVouchersSub: 'Hakiki kundi, chuja kwa wakala, kisha chapisha.',
+    agent: 'Wakala', batch: 'Kundi', layout: 'Mpangilio', status: 'Hali',
 
     ownIt: 'Pata YourNet Control', oneTime: 'kuamilisha',
     chooseHowToPay: 'Chagua jinsi ya kulipa', payNowBtn: 'Lipa sasa',
@@ -369,7 +404,8 @@ window.YOURNET_I18N = {
     agentsTitle: 'Mawakala', agentNamePlaceholder: 'Jina la wakala', commissionPlaceholder: 'Kamisheni %',
     addAgentBtn: 'Ongeza wakala',
 
-    choosePlan: 'Chagua mpango', perMonth: '/ mwezi',
+    choosePlan: 'Malipo', perMonth: '/ mwezi',
+    payWithPaystackBtn: 'Lipa kwa Paystack',
 
     settlementTitle: 'Karatasi ya Malipo ya Wakala', loadBtn: 'Pakia',
 
@@ -410,9 +446,14 @@ window.YOURNET_I18N = {
     priceLabel: '价格（GHS）', durationLabel: '时长（分钟）',
     speedDownLabel: '下载速度（例如10M）', speedUpLabel: '上传速度（例如4M）',
     savePackageBtn: '保存套餐',
+    existingPackagesTitle: '现有套餐',
 
     step4Title: '第四步 - 生成代金券', packageLabel: '套餐', siteLabel: '站点',
     quantityLabel: '数量？', generateBtn: '生成',
+
+    // Vouchers - print page
+    printVouchersTitle: '代金券', printVouchersSub: '预览一批，按代理商筛选，然后打印。',
+    agent: '代理商', batch: '批次', layout: '布局', status: '状态',
 
     ownIt: '获取YourNet Control', oneTime: '以激活',
     chooseHowToPay: '选择支付方式', payNowBtn: '立即支付',
@@ -425,7 +466,8 @@ window.YOURNET_I18N = {
     agentsTitle: '代理商', agentNamePlaceholder: '代理商姓名', commissionPlaceholder: '佣金百分比',
     addAgentBtn: '添加代理商',
 
-    choosePlan: '选择套餐', perMonth: '/月',
+    choosePlan: '账单', perMonth: '/月',
+    payWithPaystackBtn: '使用 Paystack 支付',
 
     settlementTitle: '代理结算单', loadBtn: '加载',
 
@@ -466,9 +508,14 @@ window.YOURNET_I18N = {
     priceLabel: 'Цена (GHS)', durationLabel: 'Продолжительность (минуты)',
     speedDownLabel: 'Скорость загрузки (напр. 10M)', speedUpLabel: 'Скорость отдачи (напр. 4M)',
     savePackageBtn: 'Сохранить пакет',
+    existingPackagesTitle: 'Существующие пакеты',
 
     step4Title: 'Шаг 4 - Создать вучеры', packageLabel: 'Пакет', siteLabel: 'Сайт',
     quantityLabel: 'Сколько?', generateBtn: 'Создать',
+
+    // Vouchers - print page
+    printVouchersTitle: 'Ваучеры', printVouchersSub: 'Просмотрите партию, отфильтруйте по агенту, затем распечатайте.',
+    agent: 'Агент', batch: 'Партия', layout: 'Макет', status: 'Статус',
 
     ownIt: 'Получить YourNet Control', oneTime: 'для активации',
     chooseHowToPay: 'Выберите способ оплаты', payNowBtn: 'Оплатить сейчас',
@@ -481,7 +528,8 @@ window.YOURNET_I18N = {
     agentsTitle: 'Агенты', agentNamePlaceholder: 'Имя агента', commissionPlaceholder: 'Комиссия %',
     addAgentBtn: 'Добавить агента',
 
-    choosePlan: 'Выберите план', perMonth: '/ месяц',
+    choosePlan: 'Биллинг', perMonth: '/ месяц',
+    payWithPaystackBtn: 'Оплатить через Paystack',
 
     settlementTitle: 'Расчётный лист агента', loadBtn: 'Загрузить',
 
@@ -522,9 +570,14 @@ window.YOURNET_I18N = {
     priceLabel: '価格（GHS）', durationLabel: '期間（分）',
     speedDownLabel: 'ダウンロード速度（例：10M）', speedUpLabel: 'アップロード速度（例：4M）',
     savePackageBtn: 'パッケージを保存',
+    existingPackagesTitle: '既存のパッケージ',
 
     step4Title: 'ステップ4 - バウチャーを生成', packageLabel: 'パッケージ', siteLabel: 'サイト',
     quantityLabel: '数量は？', generateBtn: '生成',
+
+    // Vouchers - print page
+    printVouchersTitle: 'バウチャー', printVouchersSub: 'バッチをプレビューし、代理店でフィルタしてから印刷します。',
+    agent: '代理店', batch: 'バッチ', layout: 'レイアウト', status: 'ステータス',
 
     ownIt: 'YourNet Controlを入手', oneTime: 'で有効化',
     chooseHowToPay: '支払い方法を選択', payNowBtn: '今すぐ支払う',
@@ -537,7 +590,8 @@ window.YOURNET_I18N = {
     agentsTitle: '代理店', agentNamePlaceholder: '代理店名', commissionPlaceholder: '手数料 %',
     addAgentBtn: '代理店を追加',
 
-    choosePlan: 'プランを選択', perMonth: '/ 月',
+    choosePlan: '請求', perMonth: '/ 月',
+    payWithPaystackBtn: 'Paystackで支払う',
 
     settlementTitle: '代理店決済シート', loadBtn: '読み込む',
 
@@ -578,9 +632,14 @@ window.YOURNET_I18N = {
     priceLabel: 'Preis (GHS)', durationLabel: 'Dauer (Minuten)',
     speedDownLabel: 'Download-Geschwindigkeit (z. B. 10M)', speedUpLabel: 'Upload-Geschwindigkeit (z. B. 4M)',
     savePackageBtn: 'Paket speichern',
+    existingPackagesTitle: 'Vorhandene Pakete',
 
     step4Title: 'Schritt 4 - Gutscheine erstellen', packageLabel: 'Paket', siteLabel: 'Standort',
     quantityLabel: 'Wie viele?', generateBtn: 'Erstellen',
+
+    // Vouchers - print page
+    printVouchersTitle: 'Gutscheine', printVouchersSub: 'Einen Stapel in der Vorschau ansehen, nach Vertreter filtern und dann drucken.',
+    agent: 'Vertreter', batch: 'Stapel', layout: 'Layout', status: 'Status',
 
     ownIt: 'YourNet Control holen', oneTime: 'zur Aktivierung',
     chooseHowToPay: 'Zahlungsart wählen', payNowBtn: 'Jetzt bezahlen',
@@ -593,7 +652,8 @@ window.YOURNET_I18N = {
     agentsTitle: 'Vertreter', agentNamePlaceholder: 'Name des Vertreters', commissionPlaceholder: 'Provision %',
     addAgentBtn: 'Vertreter hinzufügen',
 
-    choosePlan: 'Plan wählen', perMonth: '/ Monat',
+    choosePlan: 'Abrechnung', perMonth: '/ Monat',
+    payWithPaystackBtn: 'Mit Paystack bezahlen',
 
     settlementTitle: 'Abrechnungsblatt für Vertreter', loadBtn: 'Laden',
 
@@ -634,9 +694,14 @@ window.YOURNET_I18N = {
     priceLabel: 'कीमत (GHS)', durationLabel: 'अवधि (मिनट)',
     speedDownLabel: 'डाउनलोड स्पीड (जैसे 10M)', speedUpLabel: 'अपलोड स्पीड (जैसे 4M)',
     savePackageBtn: 'पैकेज सहेजें',
+    existingPackagesTitle: 'मौजूदा पैकेज',
 
     step4Title: 'चरण 4 - वाउचर बनाएं', packageLabel: 'पैकेज', siteLabel: 'साइट',
     quantityLabel: 'कितने?', generateBtn: 'बनाएं',
+
+    // Vouchers - print page
+    printVouchersTitle: 'वाउचर', printVouchersSub: 'बैच का पूर्वावलोकन करें, एजेंट के अनुसार फ़िल्टर करें, फिर प्रिंट करें।',
+    agent: 'एजेंट', batch: 'बैच', layout: 'लेआउट', status: 'स्थिति',
 
     ownIt: 'YourNet Control लें', oneTime: 'सक्रिय करने के लिए',
     chooseHowToPay: 'भुगतान का तरीका चुनें', payNowBtn: 'अभी भुगतान करें',
@@ -649,7 +714,8 @@ window.YOURNET_I18N = {
     agentsTitle: 'एजेंट', agentNamePlaceholder: 'एजेंट का नाम', commissionPlaceholder: 'कमीशन %',
     addAgentBtn: 'एजेंट जोड़ें',
 
-    choosePlan: 'प्लान चुनें', perMonth: '/ महीना',
+    choosePlan: 'बिलिंग', perMonth: '/ महीना',
+    payWithPaystackBtn: 'Paystack से भुगतान करें',
 
     settlementTitle: 'एजेंट सेटलमेंट शीट', loadBtn: 'लोड करें',
 
@@ -690,9 +756,14 @@ window.YOURNET_I18N = {
     priceLabel: 'السعر (GHS)', durationLabel: 'المدة (بالدقائق)',
     speedDownLabel: 'سرعة التنزيل (مثال 10M)', speedUpLabel: 'سرعة الرفع (مثال 4M)',
     savePackageBtn: 'حفظ الباقة',
+    existingPackagesTitle: 'الباقات الحالية',
 
     step4Title: 'الخطوة 4 - إنشاء قسائم', packageLabel: 'الباقة', siteLabel: 'الموقع',
     quantityLabel: 'كم العدد؟', generateBtn: 'إنشاء',
+
+    // Vouchers - print page
+    printVouchersTitle: 'القسائم', printVouchersSub: 'عاين دفعة، صفّها حسب الوكيل، ثم اطبع.',
+    agent: 'الوكيل', batch: 'الدفعة', layout: 'التخطيط', status: 'الحالة',
 
     ownIt: 'احصل على YourNet Control', oneTime: 'للتفعيل',
     chooseHowToPay: 'اختر طريقة الدفع', payNowBtn: 'ادفع الآن',
@@ -705,7 +776,8 @@ window.YOURNET_I18N = {
     agentsTitle: 'الوكلاء', agentNamePlaceholder: 'اسم الوكيل', commissionPlaceholder: 'نسبة العمولة %',
     addAgentBtn: 'إضافة وكيل',
 
-    choosePlan: 'اختر خطة', perMonth: '/ شهرياً',
+    choosePlan: 'الفواتير', perMonth: '/ شهرياً',
+    payWithPaystackBtn: 'ادفع عبر Paystack',
 
     settlementTitle: 'كشف تسوية الوكيل', loadBtn: 'تحميل',
 
