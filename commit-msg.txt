@@ -1,13 +1,10 @@
-Fix silent email-send failures: log actual SMTP result instead of swallowing errors
+Fix Gmail SMTP connection timeout by forcing IPv4 and explicit host/port
 
-- sendEmail() in src/integrations/emailService.js now logs
-  [EMAIL SENT] with messageId/response on success, and
-  [EMAIL FAILED] with the real error message on failure, then
-  rethrows so it's never lost
-- Previously, transporter.sendMail() errors were silently eaten by
-  callers' .catch(() => {}) in routes/auth.js and routes/agents.js,
-  so a revoked/invalid Gmail App Password failed with zero trace -
-  signup still returned success with no email ever sent
-- No behavior change for callers (still fire-and-forget) - this only
-  adds visibility into Render logs for verification/reset/agent
-  welcome emails
+- getTransporter() in src/integrations/emailService.js now connects to
+  smtp.gmail.com:465 explicitly with family:4, instead of the 'gmail'
+  shorthand
+- Render's containers resolve smtp.gmail.com to IPv6 by default, and
+  that connection hangs until timeout ("Connection timeout" in logs) -
+  the 'service: gmail' shorthand gave no way to force IPv4
+- Also sets connectionTimeout:15000 so a real failure surfaces in
+  ~15s instead of nodemailer's much longer default

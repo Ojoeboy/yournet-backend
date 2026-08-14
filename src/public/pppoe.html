@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PPPoE Subscribers</title>
+<link rel="stylesheet" href="/shell.css">
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--yn-ink);color:var(--yn-cream);margin:0}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{font-size:13px;color:var(--yn-muted);margin:0 0 20px}
+  .tabs{display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--yn-line)}
+  .tab{padding:10px 16px;font-size:13.5px;font-weight:700;color:var(--yn-muted);cursor:pointer;
+    border-bottom:2px solid transparent;user-select:none}
+  .tab.active{color:var(--yn-teal);border-bottom-color:var(--yn-teal)}
+  .panel{display:none}
+  .panel.active{display:block}
+
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  select,input,textarea{padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:var(--yn-panel);color:#fff;font-size:13.5px}
+  input::placeholder{color:var(--yn-muted)}
+  button{padding:9px 16px;border:none;border-radius:8px;background:var(--yn-gold);color:var(--yn-ink);
+    font-weight:700;cursor:pointer;font-size:13.5px}
+  button.secondary{background:rgba(255,255,255,.08);color:var(--yn-cream);border:1px solid var(--yn-line)}
+  button.danger{background:rgba(255,107,107,.15);color:var(--yn-danger);border:1px solid rgba(255,107,107,.3)}
+  button.small{padding:6px 10px;font-size:12px}
+  button:disabled{opacity:.5;cursor:not-allowed}
+
+  .card{background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:14px;padding:18px;margin-bottom:14px}
+  .plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-bottom:20px}
+  .plan-card h3{margin:0 0 4px;color:var(--yn-teal);font-size:15px}
+  .plan-card .price{font-size:20px;font-weight:800;color:var(--yn-gold2);margin:6px 0}
+  .plan-card .meta{font-size:12px;color:var(--yn-muted);line-height:1.6}
+  .plan-card.inactive{opacity:.5}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:10px 12px;color:var(--yn-muted);font-size:11px;text-transform:uppercase;
+    letter-spacing:.04em;border-bottom:1px solid var(--yn-line)}
+  td{padding:10px 12px;border-bottom:1px solid var(--yn-line);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .actions{display:flex;gap:6px;flex-wrap:wrap}
+
+  .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;text-transform:capitalize}
+  .badge.active{background:rgba(46,196,182,.15);color:var(--yn-teal)}
+  .badge.overdue{background:rgba(255,197,90,.15);color:var(--yn-gold2)}
+  .badge.suspended{background:rgba(255,107,107,.15);color:var(--yn-danger)}
+  .badge.cancelled{background:rgba(255,255,255,.08);color:var(--yn-muted)}
+
+  #status{font-size:13px;color:var(--yn-muted);margin-bottom:14px}
+  .msg{margin-bottom:14px;font-size:13px;padding:10px 14px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(255,107,107,.12);color:var(--yn-danger)}
+  .msg.ok{background:rgba(46,196,182,.12);color:var(--yn-teal)}
+
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;
+    justify-content:center;z-index:100;padding:20px}
+  .modal-backdrop.show{display:flex}
+  .modal{background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:14px;padding:22px;
+    width:100%;max-width:420px;max-height:88vh;overflow:auto}
+  .modal h2{margin:0 0 16px;font-size:16px;color:var(--yn-teal)}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;color:var(--yn-muted);margin-bottom:5px;font-weight:600}
+  .field input,.field select,.field textarea{width:100%}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  .password-reveal{background:rgba(46,196,182,.1);border:1px solid var(--yn-teal);border-radius:8px;
+    padding:12px;font-family:monospace;font-size:14px;color:var(--yn-teal);margin-top:12px;word-break:break-all}
+  .hint{font-size:11.5px;color:var(--yn-muted);margin-top:4px;line-height:1.4}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
+<div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
+<h1>PPPoE Subscribers</h1>
+<p class="sub">Recurring internet-subscriber billing on your Mikrotik routers - separate from one-time hotspot vouchers.</p>
+
+<div class="msg" id="msg"></div>
+
+<div class="tabs">
+  <div class="tab active" data-panel="subscribers-panel">Subscribers</div>
+  <div class="tab" data-panel="plans-panel">Plans</div>
+</div>
+
+<!-- ===================== PLANS PANEL ===================== -->
+<div class="panel" id="plans-panel">
+  <div class="toolbar">
+    <button onclick="openPlanModal()">+ New Plan</button>
+    <button class="secondary" onclick="loadPlans()">Refresh</button>
+  </div>
+  <div id="planStatus" class="sub">Loading plans...</div>
+  <div class="plan-grid" id="planGrid"></div>
+</div>
+
+<!-- ===================== SUBSCRIBERS PANEL ===================== -->
+<div class="panel active" id="subscribers-panel">
+  <div class="toolbar">
+    <button onclick="openSubscriberModal()">+ New Subscriber</button>
+    <select id="statusFilter" onchange="loadSubscribers()">
+      <option value="">All statuses</option>
+      <option value="active">Active</option>
+      <option value="overdue">Overdue</option>
+      <option value="suspended">Suspended</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+    <button class="secondary" onclick="loadSubscribers()">Refresh</button>
+  </div>
+  <div id="status" class="sub">Loading subscribers...</div>
+  <div class="card" style="padding:0;overflow:auto">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th><th>Username</th><th>Site</th><th>Plan</th><th>Status</th><th>Due date</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="subscriberRows"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===================== NEW PLAN MODAL ===================== -->
+<div class="modal-backdrop" id="planModal">
+  <div class="modal">
+    <h2>New Plan</h2>
+    <div class="field"><label>Label</label><input id="planLabel" placeholder="e.g. 10Mbps Home"></div>
+    <div class="field"><label>Price (GHS / month)</label><input id="planPrice" type="number" min="1" step="0.01"></div>
+    <div class="field"><label>Billing period (days)</label><input id="planPeriod" type="number" min="1" value="30"></div>
+    <div class="field">
+      <label>Rate limit (optional, e.g. 5M/10M)</label>
+      <input id="planRateLimit" placeholder="download/upload, e.g. 10M/10M">
+      <div class="hint">Leave blank if you'll use a router profile instead.</div>
+    </div>
+    <div class="field">
+      <label>Router profile name (optional)</label>
+      <input id="planRouterProfile" placeholder="an existing /ppp/profile on the router">
+      <div class="hint">If set, this overrides the rate limit above.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="secondary" onclick="closeModal('planModal')">Cancel</button>
+      <button onclick="createPlan()">Create Plan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== NEW SUBSCRIBER MODAL ===================== -->
+<div class="modal-backdrop" id="subscriberModal">
+  <div class="modal">
+    <h2>New PPPoE Subscriber</h2>
+    <div class="field"><label>Full name</label><input id="subName" placeholder="Customer name"></div>
+    <div class="field"><label>Phone (optional)</label><input id="subPhone" placeholder="e.g. 0244000000"></div>
+    <div class="field"><label>Email (optional)</label><input id="subEmail" type="email"></div>
+    <div class="field"><label>Site (router)</label><select id="subSite"></select></div>
+    <div class="field"><label>Plan</label><select id="subPlan"></select></div>
+    <div class="field">
+      <label>Username (PPPoE login)</label>
+      <input id="subUsername" placeholder="letters, numbers, dot, underscore, hyphen">
+      <div class="hint">3-64 characters. This is what the customer's router will use to connect.</div>
+    </div>
+    <div class="field">
+      <label>Password (optional)</label>
+      <input id="subPassword" placeholder="Leave blank to auto-generate a strong password">
+    </div>
+    <div class="modal-actions">
+      <button class="secondary" onclick="closeModal('subscriberModal')">Cancel</button>
+      <button onclick="createSubscriber()">Create Subscriber</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== CREDENTIAL REVEAL MODAL (one-time) ===================== -->
+<div class="modal-backdrop" id="credModal">
+  <div class="modal">
+    <h2 id="credTitle">Subscriber Credentials</h2>
+    <p class="hint">Save this now - it will not be shown again. Give it to the customer to set up their PPPoE connection.</p>
+    <div class="field"><label>Username</label><div class="password-reveal" id="credUsername"></div></div>
+    <div class="field"><label>Password</label><div class="password-reveal" id="credPassword"></div></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('credModal')">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== RECORD PAYMENT MODAL ===================== -->
+<div class="modal-backdrop" id="paymentModal">
+  <div class="modal">
+    <h2>Record Payment</h2>
+    <input type="hidden" id="paySubscriberId">
+    <div class="field"><label>Amount (GHS)</label><input id="payAmount" type="number" min="1" step="0.01"></div>
+    <div class="field">
+      <label>Method</label>
+      <select id="payMethod">
+        <option value="cash">Cash</option>
+        <option value="momo">Mobile Money</option>
+        <option value="bank">Bank</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="field"><label>Reference (optional)</label><input id="payReference" placeholder="receipt no. / MoMo trx id"></div>
+    <div class="field">
+      <label>Extend by (days, optional)</label>
+      <input id="payPeriodDays" type="number" min="1" placeholder="defaults to the subscriber's plan period">
+    </div>
+    <div class="modal-actions">
+      <button class="secondary" onclick="closeModal('paymentModal')">Cancel</button>
+      <button onclick="submitPayment()">Record & Renew</button>
+    </div>
+  </div>
+</div>
+
+  </main>
+</div>
+
+<script>window.YOURNET_ACTIVE_NAV = 'pppoe';</script>
+<script src="/shell.js"></script>
+<script src="/fontsize.js"></script>
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<script>
+const token = localStorage.getItem('yournet_token');
+if (!token) {
+  document.getElementById('status').textContent = 'Please log in via /login first, then come back to this page.';
+}
+
+let sitesCache = [];
+let plansCache = [];
+
+function showMsg(text, isErr) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg show ' + (isErr ? 'err' : 'ok');
+  setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...(opts.headers || {}) },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+// ---- tabs ----
+document.querySelectorAll('.tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(tab.dataset.panel).classList.add('active');
+  });
+});
+
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+
+// ---- plans ----
+async function loadPlans() {
+  const statusEl = document.getElementById('planStatus');
+  try {
+    plansCache = await api('/api/pppoe/plans');
+    statusEl.textContent = `${plansCache.length} plan(s)`;
+    const grid = document.getElementById('planGrid');
+    grid.innerHTML = '';
+    for (const p of plansCache) {
+      const div = document.createElement('div');
+      div.className = 'card plan-card' + (p.active ? '' : ' inactive');
+      div.innerHTML = `
+        <h3>${escapeHtml(p.label)}</h3>
+        <div class="price">GHS ${Number(p.price).toFixed(2)}<span style="font-size:12px;color:var(--yn-muted)"> / ${p.billing_period_days}d</span></div>
+        <div class="meta">
+          ${p.router_profile ? `Router profile: ${escapeHtml(p.router_profile)}` : (p.rate_limit ? `Rate limit: ${escapeHtml(p.rate_limit)}` : 'No rate limit set')}<br>
+          ${p.active ? 'Active' : 'Inactive'}
+        </div>
+        <div class="actions" style="margin-top:10px">
+          <button class="small secondary" onclick="togglePlanActive('${p.id}', ${!p.active})">${p.active ? 'Deactivate' : 'Activate'}</button>
+        </div>
+      `;
+      grid.appendChild(div);
+    }
+  } catch (err) {
+    statusEl.textContent = 'Could not load plans: ' + err.message;
+  }
+}
+
+function openPlanModal() {
+  document.getElementById('planLabel').value = '';
+  document.getElementById('planPrice').value = '';
+  document.getElementById('planPeriod').value = 30;
+  document.getElementById('planRateLimit').value = '';
+  document.getElementById('planRouterProfile').value = '';
+  openModal('planModal');
+}
+
+async function createPlan() {
+  try {
+    await api('/api/pppoe/plans', {
+      method: 'POST',
+      body: JSON.stringify({
+        label: document.getElementById('planLabel').value.trim(),
+        price: Number(document.getElementById('planPrice').value),
+        billingPeriodDays: Number(document.getElementById('planPeriod').value) || 30,
+        rateLimit: document.getElementById('planRateLimit').value.trim() || undefined,
+        routerProfile: document.getElementById('planRouterProfile').value.trim() || undefined,
+      }),
+    });
+    closeModal('planModal');
+    showMsg('Plan created.');
+    loadPlans();
+  } catch (err) {
+    showMsg(err.message, true);
+  }
+}
+
+async function togglePlanActive(id, active) {
+  try {
+    await api(`/api/pppoe/plans/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) });
+    loadPlans();
+  } catch (err) {
+    showMsg(err.message, true);
+  }
+}
+
+// ---- subscribers ----
+async function loadSites() {
+  sitesCache = await api('/api/sites');
+  const select = document.getElementById('subSite');
+  select.innerHTML = sitesCache
+    .filter((s) => s.type === 'mikrotik')
+    .map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`)
+    .join('') || '<option value="">No Mikrotik sites yet</option>';
+}
+
+function populatePlanSelect() {
+  const select = document.getElementById('subPlan');
+  select.innerHTML = plansCache
+    .filter((p) => p.active)
+    .map((p) => `<option value="${p.id}">${escapeHtml(p.label)} - GHS ${Number(p.price).toFixed(2)}</option>`)
+    .join('') || '<option value="">No active plans - create one first</option>';
+}
+
+async function loadSubscribers() {
+  const statusEl = document.getElementById('status');
+  const filter = document.getElementById('statusFilter').value;
+  try {
+    const rows = await api('/api/pppoe/subscribers' + (filter ? `?status=${filter}` : ''));
+    statusEl.textContent = `${rows.length} subscriber(s)`;
+    const tbody = document.getElementById('subscriberRows');
+    tbody.innerHTML = '';
+    const siteNameById = Object.fromEntries(sitesCache.map((s) => [s.id, s.name]));
+    const planLabelById = Object.fromEntries(plansCache.map((p) => [p.id, p.label]));
+
+    for (const sub of rows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(sub.full_name)}${sub.phone ? `<br><span class="hint">${escapeHtml(sub.phone)}</span>` : ''}</td>
+        <td><code>${escapeHtml(sub.username)}</code></td>
+        <td>${escapeHtml(siteNameById[sub.site_id] || '-')}</td>
+        <td>${escapeHtml(planLabelById[sub.plan_id] || '-')}</td>
+        <td><span class="badge ${sub.status}">${sub.status}</span></td>
+        <td>${sub.next_due_date ? new Date(sub.next_due_date).toLocaleDateString() : '-'}</td>
+        <td class="actions">
+          <button class="small" onclick="openPaymentModal('${sub.id}')">Renew</button>
+          ${sub.status === 'active' ? `<button class="small secondary" onclick="suspendSubscriber('${sub.id}')">Suspend</button>` : ''}
+          ${sub.status === 'suspended' || sub.status === 'overdue' ? `<button class="small secondary" onclick="reactivateSubscriber('${sub.id}')">Reactivate</button>` : ''}
+          ${sub.status !== 'cancelled' ? `<button class="small secondary" onclick="resetPassword('${sub.id}')">Reset PW</button>` : ''}
+          ${sub.status !== 'cancelled' ? `<button class="small danger" onclick="cancelSubscriber('${sub.id}')">Cancel</button>` : ''}
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+  } catch (err) {
+    statusEl.textContent = 'Could not load subscribers: ' + err.message;
+  }
+}
+
+async function openSubscriberModal() {
+  if (!sitesCache.length) await loadSites();
+  if (!plansCache.length) await loadPlans();
+  populatePlanSelect();
+  document.getElementById('subName').value = '';
+  document.getElementById('subPhone').value = '';
+  document.getElementById('subEmail').value = '';
+  document.getElementById('subUsername').value = '';
+  document.getElementById('subPassword').value = '';
+  openModal('subscriberModal');
+}
+
+async function createSubscriber() {
+  try {
+    const body = {
+      fullName: document.getElementById('subName').value.trim(),
+      phone: document.getElementById('subPhone').value.trim() || undefined,
+      email: document.getElementById('subEmail').value.trim() || undefined,
+      siteId: document.getElementById('subSite').value,
+      planId: document.getElementById('subPlan').value,
+      username: document.getElementById('subUsername').value.trim(),
+      password: document.getElementById('subPassword').value.trim() || undefined,
+    };
+    const created = await api('/api/pppoe/subscribers', { method: 'POST', body: JSON.stringify(body) });
+    closeModal('subscriberModal');
+    showCredentials(created.username, created.password);
+    loadSubscribers();
+  } catch (err) {
+    showMsg(err.message, true);
+  }
+}
+
+function showCredentials(username, password) {
+  document.getElementById('credUsername').textContent = username;
+  document.getElementById('credPassword').textContent = password;
+  openModal('credModal');
+}
+
+async function suspendSubscriber(id) {
+  if (!confirm('Suspend this subscriber? Their connection will be cut immediately.')) return;
+  try {
+    await api(`/api/pppoe/subscribers/${id}/suspend`, { method: 'PATCH' });
+    showMsg('Subscriber suspended.');
+    loadSubscribers();
+  } catch (err) { showMsg(err.message, true); }
+}
+
+async function reactivateSubscriber(id) {
+  try {
+    await api(`/api/pppoe/subscribers/${id}/reactivate`, { method: 'PATCH' });
+    showMsg('Subscriber reactivated.');
+    loadSubscribers();
+  } catch (err) { showMsg(err.message, true); }
+}
+
+async function resetPassword(id) {
+  if (!confirm("Reset this subscriber's password? Their current session will be disconnected.")) return;
+  try {
+    const result = await api(`/api/pppoe/subscribers/${id}/reset-password`, { method: 'POST' });
+    showCredentials(result.username, result.password);
+  } catch (err) { showMsg(err.message, true); }
+}
+
+async function cancelSubscriber(id) {
+  if (!confirm('Cancel this subscriber? Their router account will be removed. This cannot be undone from here.')) return;
+  try {
+    await api(`/api/pppoe/subscribers/${id}`, { method: 'DELETE' });
+    showMsg('Subscriber cancelled.');
+    loadSubscribers();
+  } catch (err) { showMsg(err.message, true); }
+}
+
+function openPaymentModal(id) {
+  document.getElementById('paySubscriberId').value = id;
+  document.getElementById('payAmount').value = '';
+  document.getElementById('payMethod').value = 'cash';
+  document.getElementById('payReference').value = '';
+  document.getElementById('payPeriodDays').value = '';
+  openModal('paymentModal');
+}
+
+async function submitPayment() {
+  const id = document.getElementById('paySubscriberId').value;
+  try {
+    await api(`/api/pppoe/subscribers/${id}/record-payment`, {
+      method: 'POST',
+      body: JSON.stringify({
+        amount: Number(document.getElementById('payAmount').value),
+        method: document.getElementById('payMethod').value,
+        reference: document.getElementById('payReference').value.trim() || undefined,
+        periodDays: document.getElementById('payPeriodDays').value ? Number(document.getElementById('payPeriodDays').value) : undefined,
+      }),
+    });
+    closeModal('paymentModal');
+    showMsg('Payment recorded and subscriber renewed.');
+    loadSubscribers();
+  } catch (err) {
+    showMsg(err.message, true);
+  }
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+// ---- boot ----
+(async function init() {
+  if (!token) return;
+  await Promise.all([loadSites(), loadPlans()]);
+  loadSubscribers();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YourNet Admin</title>
+<script>
+  // Runs before anything below is parsed or painted, so an unauthenticated
+  // visitor never sees a flash of the setup wizard before being sent to
+  // /login - the later check in the main script (further down this file)
+  // still runs too and is what the rest of the page relies on for `token`,
+  // this one's only job is to stop the page from ever being visible first.
+  if (!localStorage.getItem('yournet_token')) {
+    window.location.replace('/login');
+  }
+</script>
+<link rel="stylesheet" href="/shell.css">
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;margin:0}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{color:#6b8a91;font-size:13px;margin-bottom:20px}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 12px;color:#2ec4b6}
+  /* Glass mode: shell.js adds this class to <body> once a rotating photo
+     background is actually on, so the card goes see-through only then. */
+  body.yn-glass .card{background:rgba(19,34,40,.35);backdrop-filter:blur(16px) saturate(150%);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);border-color:rgba(255,255,255,.16)}
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    body.yn-glass .card{background:#132228}
+  }
+  label{display:block;font-size:11px;color:#6b8a91;text-transform:uppercase;margin:10px 0 4px}
+  input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);
+    background:#0d1a1e;color:#fff;font-size:14px}
+  button{margin-top:14px;padding:11px 16px;border:none;border-radius:8px;background:#e8a33d;
+    color:#0d1a1e;font-weight:700;cursor:pointer;font-size:14px}
+  button.secondary{background:#1a363e;color:#e8f0f1}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:140px}
+  .row>div{flex:1}
+  .msg{margin-top:10px;font-size:13px;padding:8px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.ok{background:rgba(46,196,182,.12);color:#2ec4b6}
+  .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
+  .hidden{display:none}
+  .pwd-wrap{position:relative}
+  .pwd-wrap input{padding-right:40px}
+  .pwd-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;
+    border:none;cursor:pointer;font-size:16px;padding:4px 6px;margin:0;color:#6b8a91;line-height:1}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;min-width:420px;border-collapse:collapse;font-size:13px;margin-top:8px}
+  td,th{padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+  .code{font-family:monospace;font-weight:700;color:#ffc55a}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:rgba(255,255,255,.08)}
+
+  /* ---------- quick-setup tabs (replaces the old straight scroll-through-everything layout) ---------- */
+  .setup-tabs{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    margin-bottom:18px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .setup-tab{flex:0 0 auto;background:none;border:none;color:#6b8a91;font-size:12.5px;font-weight:700;
+    padding:10px 14px;margin:0 0 -1px;cursor:pointer;white-space:nowrap;
+    border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+  .setup-tab:hover:not(.locked){color:#e8f0f1}
+  .setup-tab.active{color:#2ec4b6;border-bottom-color:#2ec4b6}
+  .setup-tab.locked{color:#3d4f54;cursor:not-allowed}
+  .setup-tab .lock{margin-left:3px;font-size:10px;opacity:.7}
+
+  /* ---------- toggle switch (replaces the plain checkbox) ---------- */
+  .switch{position:relative;display:inline-block;width:38px;height:21px;flex-shrink:0}
+  .switch input{opacity:0;width:0;height:0;position:absolute}
+  .switch .slider{position:absolute;inset:0;background:#1a363e;border:1px solid rgba(255,255,255,.14);
+    border-radius:22px;cursor:pointer;transition:background .2s,border-color .2s}
+  .switch .slider:before{content:"";position:absolute;height:15px;width:15px;left:2px;top:2px;
+    background:#6b8a91;border-radius:50%;transition:transform .2s,background .2s}
+  .switch input:checked+.slider{background:rgba(46,196,182,.25);border-color:#2ec4b6}
+  .switch input:checked+.slider:before{transform:translateX(17px);background:#2ec4b6}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
+<div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
+<h1>Setup</h1>
+<div class="sub">Click-through setup - no raw API calls needed</div>
+
+<div class="setup-tabs" id="setup-tabs">
+  <button type="button" class="setup-tab" id="tab-account" onclick="switchTab('account')">Account</button>
+  <button type="button" class="setup-tab active" id="tab-site" onclick="switchTab('site')">1. Router</button>
+  <button type="button" class="setup-tab" id="tab-portal" onclick="switchTab('portal')">Portal</button>
+  <button type="button" class="setup-tab" id="tab-package" onclick="switchTab('package')">2. Packages</button>
+  <button type="button" class="setup-tab" id="tab-voucher" onclick="switchTab('voucher')">3. Vouchers</button>
+  <button type="button" class="setup-tab" id="tab-gateway" onclick="switchTab('gateway')">4. Payment</button>
+  <button type="button" class="setup-tab" id="tab-access" onclick="switchTab('access')">Manual access</button>
+</div>
+
+<!-- ACCOUNT: business/admin details + prefs - login/signup moved to /login (see public/login.html) -->
+<div class="card hidden" id="account-card">
+  <h2>Account</h2>
+
+  <div id="account-details" style="padding-top:4px">
+    <label>Business name</label>
+    <input id="acctBusinessName" placeholder="e.g. BITTNET Internet Services">
+
+    <label>Admin's full name</label>
+    <input id="acctAdminFullName" placeholder="e.g. Ojoe Mensah">
+
+    <label>Digital Address</label>
+    <input id="acctDigitalAddress" placeholder="e.g. BS-0123-4567">
+
+    <label>Country</label>
+    <input id="acctCountry" placeholder="e.g. Ghana">
+
+    <label>Business location</label>
+    <input id="acctBusinessLocation" placeholder="e.g. Sunyani, Bono Region">
+
+    <label>Profile / business logo</label>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+      <img id="acctLogoPreview" src="" alt="" style="display:none;width:64px;height:64px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,.15)">
+      <div id="acctLogoPlaceholder" style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:24px;color:#6b8a91">👤</div>
+      <div>
+        <input type="file" id="acctLogoFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="onAccountLogoFileSelected(event)">
+        <button type="button" class="secondary" style="padding:8px 12px;font-size:12px" onclick="document.getElementById('acctLogoFile').click()">Upload logo</button>
+        <button type="button" class="secondary hidden" id="acctLogoRemoveBtn" style="padding:8px 12px;font-size:12px" onclick="removeAccountLogo()">Remove</button>
+      </div>
+    </div>
+    <div class="msg" id="account-logo-msg"></div>
+
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button type="button" id="acctSaveBtn" onclick="saveAccountDetails()">Save</button>
+      <button type="button" class="secondary hidden" id="acctUpdateBtn" onclick="saveAccountDetails()">Update</button>
+    </div>
+    <div class="msg" id="account-details-msg"></div>
+  </div>
+
+  <hr style="border-color:rgba(255,255,255,.08);margin:22px 0">
+
+  <div id="account-prefs" style="padding-top:4px">
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+      <span class="switch">
+        <input type="checkbox" id="adminUseRotatingBackgrounds" onchange="saveAdminBackgroundSetting()">
+        <span class="slider"></span>
+      </span>
+      <span style="text-transform:none;font-size:13px;color:#e8f0f1">
+        Use free rotating photo backgrounds on these admin/dashboard pages (instead of the default mesh, changes every 2 min)
+      </span>
+    </label>
+    <div class="msg" id="account-prefs-msg"></div>
+  </div>
+</div>
+
+<!-- STEP 2: Add Site -->
+<div class="card hidden" id="site-card">
+  <h2 data-i18n="step2Title">Step 2 - Add your router or controller</h2>
+  <label data-i18n="siteNameLabel">Site name</label>
+  <input id="siteName" placeholder="Main compound">
+  <label>Equipment type</label>
+  <select id="siteType" onchange="renderSiteTypeFields()">
+    <option value="mikrotik">Mikrotik RouterOS</option>
+    <option value="omada">TP-Link Omada</option>
+    <option value="unifi">Ubiquiti UniFi (self-hosted controller)</option>
+    <option value="meraki">Cisco Meraki (cloud dashboard)</option>
+  </select>
+
+  <div id="siteFields-mikrotik" class="site-fields">
+    <label data-i18n="routerIpLabel">Router IP address</label>
+    <input id="mkHost" placeholder="e.g. 192.168.88.1">
+    <div class="row">
+      <div><label data-i18n="apiPortLabel">API port</label><input id="mkPort" value="8728"></div>
+      <div>
+        <label data-i18n="hotspotProfileLabel">Hotspot profile</label>
+        <select id="mkProfile">
+          <option value="default" selected>default</option>
+        </select>
+        <button type="button" class="secondary" style="margin-top:6px;padding:8px 10px;font-size:12px" onclick="fetchHotspotProfiles()">Fetch from router</button>
+        <div class="msg" id="mkProfile-msg"></div>
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px">
+      <span class="switch">
+        <input type="checkbox" id="mkUseTls" onchange="onMkTlsToggle()">
+        <span class="slider"></span>
+      </span>
+      <span style="text-transform:none;font-size:13px;color:#e8f0f1" data-i18n="mkUseTlsLabel">
+        Connect over API-SSL (encrypted, port 8729) instead of the plain API
+      </span>
+    </label>
+    <p style="font-size:12px;color:#6b8a91" data-i18n="mkUseTlsHint">
+      Only turn this on if API-SSL is enabled on the router and the plain API
+      is disabled. The connection won't verify the router's certificate
+      (RouterOS's API-SSL certs are self-signed), so this protects the
+      traffic in transit but not against a swapped router.
+    </p>
+    <label data-i18n="routerUsernameLabel">Router API username</label>
+    <input id="mkUser" placeholder="admin">
+    <label data-i18n="routerPasswordLabel">Router API password</label>
+    <div class="pwd-wrap">
+      <input id="mkPass" type="password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('mkPass')" aria-label="Show password">👁</button>
+    </div>
+    <button class="secondary" onclick="openRscWizard()" data-i18n="rscWizardBtn">Mikrotik config wizard</button>
+  </div>
+
+  <div id="siteFields-omada" class="site-fields hidden">
+    <p style="font-size:12px;color:#6b8a91">
+      Enable Open API under Global View &gt; Settings &gt; Platform Integration on your
+      Omada Controller (Standard tier or higher) to get these values.
+    </p>
+    <label>Controller base URL</label>
+    <input id="omBaseUrl" placeholder="https://your-controller:8043">
+    <label>Omadac ID</label>
+    <input id="omOmadacId">
+    <label>Omada site ID</label>
+    <input id="omSiteId">
+    <label>Client ID</label>
+    <input id="omClientId">
+    <label>Client secret</label>
+    <div class="pwd-wrap">
+      <input id="omClientSecret" type="password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('omClientSecret')" aria-label="Show password">👁</button>
+    </div>
+  </div>
+
+  <div id="siteFields-unifi" class="site-fields hidden">
+    <label>UniFi auth mode</label>
+    <select id="ufAuthMode" onchange="renderUnifiAuthFields()">
+      <option value="classic">Self-hosted controller / Cloud Key (username+password)</option>
+      <option value="unifios">UniFi OS Console - UDM/UDM-Pro/UDR (API key)</option>
+    </select>
+
+    <p id="ufHint-classic" style="font-size:12px;color:#6b8a91">
+      For a self-hosted controller or Cloud Key. Set this site's portal URL as the
+      "External portal server" under Settings &gt; Guest Control on your controller.
+    </p>
+    <p id="ufHint-unifios" class="hidden" style="font-size:12px;color:#6b8a91">
+      For a UDM, UDM-Pro, UDR, or Cloud Gateway. Create an API key under
+      Settings &gt; Control Plane &gt; Integrations on the console, then paste it below.
+    </p>
+
+    <label>Controller base URL</label>
+    <input id="ufBaseUrl" placeholder="https://192.168.1.5:8443 (classic) or https://192.168.1.1 (UniFi OS)">
+    <label>UniFi site name</label>
+    <input id="ufSite" value="default">
+
+    <div id="ufFields-classic">
+      <label>Controller username</label>
+      <input id="ufUser" placeholder="admin">
+      <label>Controller password</label>
+      <div class="pwd-wrap">
+        <input id="ufPass" type="password">
+        <button type="button" class="pwd-toggle" onclick="togglePwd('ufPass')" aria-label="Show password">👁</button>
+      </div>
+    </div>
+
+    <div id="ufFields-unifios" class="hidden">
+      <label>API key</label>
+      <div class="pwd-wrap">
+        <input id="ufApiKey" type="password">
+        <button type="button" class="pwd-toggle" onclick="togglePwd('ufApiKey')" aria-label="Show key">👁</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="siteFields-meraki" class="site-fields hidden">
+    <p style="font-size:12px;color:#6b8a91">
+      Set this site's portal URL as the "Custom splash URL" under Wireless/Security &amp; SD-WAN
+      &gt; Configure &gt; Splash page on your Meraki network, and set "Where should users go
+      after the splash page" to "The URL they were trying to fetch". Note: unlike the other
+      equipment types, Meraki's access grant is completed by the customer's own device, not
+      by this server - see the code comments in src/integrations/meraki.js for why.
+    </p>
+    <label>Dashboard API key</label>
+    <div class="pwd-wrap">
+      <input id="mrApiKey" type="password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('mrApiKey')" aria-label="Show key">👁</button>
+    </div>
+    <label>Network ID</label>
+    <input id="mrNetworkId" placeholder="e.g. N_1234567890">
+  </div>
+
+  <button onclick="addSite()" data-i18n="saveSiteBtn">Save site</button>
+  <button class="secondary" onclick="testSite()" data-i18n="testConnectionBtn">Test connection</button>
+  <div class="msg" id="site-msg"></div>
+
+  <h3 style="margin-top:22px;font-size:14px;color:#9fb6bc">Manage sites</h3>
+  <div class="table-scroll"><table id="siteManageTable"></table></div>
+  <div class="msg" id="site-manage-msg"></div>
+</div>
+
+<!-- STEP 2.5: Portal branding -->
+<div class="card hidden" id="portal-card">
+  <h2>Customize your portal page (optional)</h2>
+  <p style="font-size:12px;color:#6b8a91;margin-bottom:10px">
+    This is the page your customers see when they join your WiFi. Leave it as-is for the
+    default YourNet look, or brand it with your own name, logo, and color.
+  </p>
+  <label>Site</label>
+  <select id="portalSite" onchange="loadPortalBranding()"></select>
+
+  <label>Business name shown on the portal</label>
+  <input id="portalBusinessName" placeholder="e.g. BITTNET WiFi">
+  <label>Portal logo (optional - a small square image works best)</label>
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
+    <img id="portalLogoPreview" src="" alt="" style="display:none;width:64px;height:64px;border-radius:12px;object-fit:cover;border:1px solid rgba(255,255,255,.15)">
+    <div id="portalLogoPlaceholder" style="width:64px;height:64px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:24px;color:#6b8a91">🖼️</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <input type="file" id="portalLogoFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="onPortalLogoFileSelected(event)">
+      <button type="button" class="secondary" style="padding:8px 12px;font-size:12px" onclick="document.getElementById('portalLogoFile').click()">Upload logo</button>
+      <button type="button" class="secondary" style="padding:8px 12px;font-size:12px" onclick="useAccountLogoForPortal()">Use account saved logo</button>
+      <button type="button" class="secondary hidden" id="portalLogoRemoveBtn" style="padding:8px 12px;font-size:12px" onclick="removePortalLogo()">Remove</button>
+    </div>
+  </div>
+  <label>...or paste a logo image URL instead</label>
+  <input id="portalLogoUrl" placeholder="https://..." onchange="applyPortalLogo(this.value)">
+  <label>Brand color</label>
+  <input id="portalPrimaryColor" type="color" value="#e8a33d" style="height:42px;padding:4px">
+  <label>Background image URL (optional)</label>
+  <input id="portalBackgroundImageUrl" placeholder="https://...">
+  <label>Caution / notice text shown to customers (optional)</label>
+  <input id="portalCautionText" placeholder="e.g. Do not share your voucher code with anyone.">
+  <label>WhatsApp help number (optional - shown as a "Need help?" chat link)</label>
+  <input id="portalWhatsappNumber" placeholder="e.g. 233241234567 (with country code, no + or spaces)">
+  <label>Help email (optional - shown as a "Need help?" email link)</label>
+  <input id="portalHelpEmail" type="email" placeholder="e.g. support@yourbusiness.com">
+  <label>Help phone number (optional - shown as a "Need help?" call link)</label>
+  <input id="portalHelpPhone" placeholder="e.g. +233241234567">
+  <label>MoMo number for manual payments (optional)</label>
+  <input id="portalMomoNumber" placeholder="e.g. 024 123 4567">
+  <label>MoMo registered account name (optional)</label>
+  <input id="portalMomoName" placeholder="e.g. Kwame Mensah">
+
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:14px">
+    <span class="switch">
+      <input type="checkbox" id="portalUseRotatingBackgrounds" checked>
+      <span class="slider"></span>
+    </span>
+    <span style="text-transform:none;font-size:13px;color:#e8f0f1">
+      Use free rotating photo backgrounds when no background image URL is set (changes every 2 min) - click "Save branding" below to apply
+    </span>
+  </label>
+
+  <button onclick="savePortalBranding()">Save branding</button>
+  <button class="secondary" onclick="previewPortal()">Preview portal</button>
+  <div class="msg" id="portal-msg"></div>
+  <p style="font-size:11px;color:#6b8a91;margin-top:6px">
+    Background image, caution notice, WhatsApp link, and MoMo details only appear on the
+    portal once you've set up online payment (for automatic voucher purchase) and/or filled
+    these fields. Leave any field blank to hide that section on the portal page. Setting a
+    background image URL above takes priority over the rotating photos.
+  </p>
+
+  <div style="margin-top:18px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px">
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+      <span class="switch">
+        <input type="checkbox" id="portalAdvancedToggle" onchange="toggleAdvancedPortal()">
+        <span class="slider"></span>
+      </span>
+      <span style="text-transform:none;font-size:13px;color:#e8f0f1">Advanced: use my own custom HTML page instead</span>
+    </label>
+    <div id="portal-advanced" class="hidden" style="margin-top:10px">
+      <p style="font-size:12px;color:#6b8a91">
+        Paste a complete HTML page below. It replaces the portal above entirely - branding
+        fields will be ignored while this is active. Your page must POST the customer's
+        voucher code as JSON to <code style="color:#ffc55a">/portal/{siteId}/redeem</code>
+        (with your real site ID in place of <code style="color:#ffc55a">{siteId}</code>) to
+        actually connect them - this endpoint doesn't change.
+      </p>
+      <textarea id="portalCustomHtml" rows="10" style="width:100%;padding:10px;border-radius:8px;
+        border:1px solid rgba(255,255,255,.12);background:#0d1a1e;color:#fff;font-size:12px;
+        font-family:monospace" placeholder="<!DOCTYPE html>..."></textarea>
+      <button onclick="saveCustomHtml()">Save custom HTML</button>
+      <button class="secondary" onclick="revertCustomHtml()">Revert to default portal</button>
+    </div>
+  </div>
+</div>
+
+<!-- STEP 3: Packages -->
+<div class="card hidden" id="package-card">
+  <h2 data-i18n="step3Title">Step 3 - Create a package</h2>
+  <label data-i18n="pkgLabelLabel">Label</label>
+  <input id="pkgLabel" placeholder="6 Hours">
+  <div class="row">
+    <div><label data-i18n="priceLabel">Price (<span id="pkgPriceCurrency">GHS</span>)</label><input id="pkgPrice" placeholder="5"></div>
+    <div>
+      <label data-i18n="durationLabel">Duration</label>
+      <div class="row" style="gap:6px">
+        <input id="pkgDurationValue" placeholder="6" style="flex:1;min-width:70px">
+        <select id="pkgDurationUnit" style="flex:1;min-width:110px">
+          <option value="minutes">Minutes</option>
+          <option value="hours" selected>Hours</option>
+          <option value="days">Days</option>
+          <option value="months">Months</option>
+          <option value="years">Years</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="row">
+    <div><label data-i18n="speedDownLabel">Speed down (e.g. 10M)</label><input id="pkgDown" placeholder="10M"></div>
+    <div><label data-i18n="speedUpLabel">Speed up (e.g. 4M)</label><input id="pkgUp" placeholder="4M"></div>
+  </div>
+  <button id="pkgSaveBtn" onclick="addPackage()" data-i18n="savePackageBtn">Save package</button>
+  <div class="msg" id="package-msg"></div>
+
+  <h2 style="margin-top:24px" data-i18n="existingPackagesTitle">Existing packages</h2>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Label</th><th>Price</th><th>Duration</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="packageRows"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- STEP 4: Vouchers -->
+<div class="card hidden" id="voucher-card">
+  <h2 data-i18n="step4Title">Step 4 - Generate vouchers</h2>
+  <label data-i18n="packageLabel">Package</label>
+  <select id="voucherPackage"></select>
+  <label data-i18n="siteLabel">Site</label>
+  <select id="voucherSite"></select>
+  <label>Agent (optional - who's selling these)</label>
+  <select id="voucherAgent"><option value="">- Not assigned to an agent -</option></select>
+  <label>Batch label (optional - for settlement/reconciliation)</label>
+  <input id="voucherBatch" placeholder="e.g. 2026-08-10-morning">
+  <label data-i18n="quantityLabel">How many?</label>
+  <input id="voucherQty" value="5">
+  <button onclick="generateVouchers()" data-i18n="generateBtn">Generate</button>
+  <div class="msg" id="voucher-msg"></div>
+  <div class="table-scroll"><table id="voucherTable"></table></div>
+</div>
+
+<!-- STEP 5: Payment gateway (optional - lets customers buy vouchers online) -->
+<div class="card hidden" id="gateway-card">
+  <h2>Step 5 - Accept online payments (optional)</h2>
+  <p style="font-size:12px;color:#6b8a91;margin-bottom:10px">
+    Link your own Paystack or Hubtel account so customers can pay online and get a voucher instantly.
+    Payments go straight to YOUR account, not the platform's.
+  </p>
+  <label>Provider</label>
+  <select id="gwProvider" onchange="renderGatewayFields()">
+    <option value="paystack">Paystack</option>
+    <option value="hubtel">Hubtel</option>
+    <option value="flutterwave" id="gwProviderFlutterwaveOpt" style="display:none">Flutterwave</option>
+  </select>
+
+  <div id="gwFields-paystack" class="gw-fields">
+    <label>Secret key</label>
+    <div class="pwd-wrap">
+      <input id="gwPaystackSecret" type="password" placeholder="sk_live_...">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('gwPaystackSecret')" aria-label="Show password">👁</button>
+    </div>
+    <label>Public key</label>
+    <input id="gwPaystackPublic" placeholder="pk_live_...">
+  </div>
+
+  <div id="gwFields-hubtel" class="gw-fields hidden">
+    <label>Client ID</label>
+    <input id="gwHubtelClientId" placeholder="Client ID">
+    <label>Client secret</label>
+    <div class="pwd-wrap">
+      <input id="gwHubtelClientSecret" type="password" placeholder="Client secret">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('gwHubtelClientSecret')" aria-label="Show password">👁</button>
+    </div>
+    <label>Merchant account number</label>
+    <input id="gwHubtelMerchant" placeholder="e.g. 11334">
+  </div>
+
+  <div id="gwFields-flutterwave" class="gw-fields hidden">
+    <label>Secret key</label>
+    <div class="pwd-wrap">
+      <input id="gwFlutterwaveSecret" type="password" placeholder="FLWSECK-...">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('gwFlutterwaveSecret')" aria-label="Show password">👁</button>
+    </div>
+    <label>Public key</label>
+    <input id="gwFlutterwavePublic" placeholder="FLWPUBK-...">
+  </div>
+
+  <label>Contact email</label>
+  <input id="gwContactEmail" type="email" placeholder="e.g. billing@yourbusiness.com">
+  <p style="font-size:11px;color:#6b8a91;margin:2px 0 10px">
+    Shown on your Plan Overview page next to this gateway - not sent to the provider.
+  </p>
+
+  <button onclick="saveGateway()">Save credentials</button>
+  <button class="secondary" onclick="activateGateway()">Make this the active gateway</button>
+  <div class="msg" id="gateway-msg"></div>
+  <div class="table-scroll"><table id="gatewayTable"></table></div>
+</div>
+
+<!-- MANUAL ACCESS: authorize a device by MAC with no voucher, and revoke it early -->
+<div class="card hidden" id="access-card">
+  <h2>Manual client access</h2>
+  <p style="font-size:12px;color:#6b8a91;margin-bottom:10px">
+    Grant a specific device internet access directly - no voucher code, no charge - useful for
+    comping a customer, letting staff on, or troubleshooting. Not available for Meraki sites: Meraki
+    can only authorize a device that has already tried to connect and hit the splash page itself,
+    so there's no API call that can pre-authorize a MAC from here.
+  </p>
+
+  <label>Site</label>
+  <select id="accessSite" onchange="loadAccessPanel()"></select>
+
+  <label>Device to authorize</label>
+  <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+    <div style="flex:1;min-width:220px">
+      <select id="accessClientPicker" onchange="onAccessClientPick()">
+        <option value="">— Type a MAC manually, or pick a device seen on the network —</option>
+      </select>
+    </div>
+    <button type="button" class="secondary" style="padding:10px 14px" onclick="loadAccessClients()">Refresh list</button>
+  </div>
+  <input id="accessMac" placeholder="AA:BB:CC:DD:EE:FF" style="margin-top:8px">
+
+  <label>Duration</label>
+  <select id="accessDuration">
+    <option value="30">30 minutes</option>
+    <option value="60" selected>1 hour</option>
+    <option value="180">3 hours</option>
+    <option value="360">6 hours</option>
+    <option value="1440">24 hours</option>
+    <option value="10080">7 days</option>
+  </select>
+
+  <label>Note (optional - who/why, for your own reference)</label>
+  <input id="accessNote" placeholder="e.g. Comped for a service outage">
+
+  <button onclick="authorizeManualClient()">Authorize</button>
+  <div class="msg" id="access-msg"></div>
+
+  <h3 style="margin-top:22px;font-size:14px;color:#9fb6bc">Active manual grants</h3>
+  <div class="table-scroll"><table id="accessAuthTable"></table></div>
+</div>
+
+  </main>
+</div>
+
+<script>window.YOURNET_ACTIVE_NAV = 'setup';</script>
+<script src="/logo-editor.js"></script>
+<script src="/shell.js"></script>
+<script src="/fontsize.js"></script>
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<script>
+  // Safety net - the guard at the very top of <head> is what actually
+  // prevents the flash of content; this just makes sure `token` is set
+  // for the rest of this script and catches the (very unlikely) case
+  // where that earlier check didn't fire.
+  let token = localStorage.getItem('yournet_token') || null;
+  let tenant = null;
+  if (!token) {
+    window.location.replace('/login');
+  }
+
+  // ---------- quick-setup tabs ----------
+  const SETUP_TAB_CARDS = {
+    account: 'account-card', site: 'site-card', portal: 'portal-card',
+    package: 'package-card', voucher: 'voucher-card', gateway: 'gateway-card', access: 'access-card'
+  };
+
+  function switchTab(key) {
+    const tabEl = document.getElementById('tab-' + key);
+    if (!tabEl) return;
+    Object.keys(SETUP_TAB_CARDS).forEach(function (k) {
+      document.getElementById(SETUP_TAB_CARDS[k]).classList.toggle('hidden', k !== key);
+      document.getElementById('tab-' + k).classList.toggle('active', k === key);
+    });
+  }
+
+  function showMsg(id, text, type) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = 'msg show ' + type;
+  }
+
+  // Flip the API-port placeholder to match plain (8728) vs API-SSL (8729)
+  // when the TLS switch is toggled - but only if the port field still holds
+  // whichever default it started with, so we never clobber a value the
+  // installer typed in on purpose (e.g. a port-forwarded custom port).
+  function onMkTlsToggle() {
+    const portInput = document.getElementById('mkPort');
+    const useTls = document.getElementById('mkUseTls').checked;
+    if (portInput.value === '8728' || portInput.value === '8729' || portInput.value === '') {
+      portInput.value = useTls ? '8729' : '8728';
+    }
+  }
+
+  async function fetchHotspotProfiles() {
+    const msgEl = document.getElementById('mkProfile-msg');
+    const selectEl = document.getElementById('mkProfile');
+    const host = document.getElementById('mkHost').value.trim();
+    const username = document.getElementById('mkUser').value.trim();
+    const password = document.getElementById('mkPass').value;
+    if (!host || !username || !password) {
+      showMsg('mkProfile-msg', 'Fill in the router IP, username, and password first.', 'err');
+      return;
+    }
+    showMsg('mkProfile-msg', 'Connecting to router...', 'ok');
+    try {
+      const data = await api('/api/sites/mikrotik/hotspot-profiles', 'POST', {
+        host,
+        port: document.getElementById('mkPort').value.trim() || undefined,
+        username,
+        password,
+        useTls: document.getElementById('mkUseTls').checked,
+      });
+      if (!data.profiles || !data.profiles.length) {
+        showMsg('mkProfile-msg', 'Connected, but the router has no hotspot profiles configured yet.', 'err');
+        return;
+      }
+      const current = selectEl.value;
+      selectEl.innerHTML = data.profiles.map((p) =>
+        `<option value="${p}"${p === current ? ' selected' : ''}>${p}</option>`
+      ).join('');
+      showMsg('mkProfile-msg', 'Loaded ' + data.profiles.length + ' profile(s) from the router.', 'ok');
+    } catch (err) {
+      showMsg('mkProfile-msg', err.message, 'err');
+    }
+  }
+
+  function togglePwd(id) {
+    const input = document.getElementById(id);
+    const btn = input.nextElementSibling;
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = '🙈';
+      btn.setAttribute('aria-label', 'Hide password');
+    } else {
+      input.type = 'password';
+      btn.textContent = '👁';
+      btn.setAttribute('aria-label', 'Show password');
+    }
+  }
+
+  function currencyLabel() {
+    return localStorage.getItem('yournet_currency') || 'GHS';
+  }
+
+  async function api(path, method, body) {
+    const res = await fetch(path, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  }
+
+  // Runs once on load, only when a token is already present (the guard
+  // above already redirected away if not). Replaces the old onAuthed()
+  // that used to fire after signup/login on this same page.
+  function initSetupPage() {
+    const pkgCurEl = document.getElementById('pkgPriceCurrency');
+    if (pkgCurEl) pkgCurEl.textContent = currencyLabel();
+    switchTab('site');
+    loadSitesAndPackages();
+    loadGateways();
+    loadAdminBackgroundSetting();
+    loadAccountDetails();
+  }
+
+  async function loadAccountDetails() {
+    try {
+      const info = await api('/api/dashboard/account-info', 'GET');
+      document.getElementById('acctBusinessName').value = info.businessName || '';
+      document.getElementById('acctAdminFullName').value = info.adminFullName || '';
+      document.getElementById('acctDigitalAddress').value = info.digitalAddress || '';
+      document.getElementById('acctCountry').value = info.country || '';
+      document.getElementById('acctBusinessLocation').value = info.businessLocation || '';
+      applyAccountLogo(info.logoUrl);
+      // Once a business name is on file, this is an edit going forward -
+      // swap the button label so it reads "Update" instead of "Save".
+      const hasExisting = !!(info.businessName || info.adminFullName || info.digitalAddress
+        || info.country || info.businessLocation);
+      document.getElementById('acctSaveBtn').classList.toggle('hidden', hasExisting);
+      document.getElementById('acctUpdateBtn').classList.toggle('hidden', !hasExisting);
+    } catch (err) {
+      // Non-critical - leave the form blank (Save state) if this fails.
+    }
+  }
+
+  function applyAccountLogo(logoUrl) {
+    const img = document.getElementById('acctLogoPreview');
+    const placeholder = document.getElementById('acctLogoPlaceholder');
+    const removeBtn = document.getElementById('acctLogoRemoveBtn');
+    if (logoUrl) {
+      img.src = logoUrl;
+      img.style.display = '';
+      placeholder.style.display = 'none';
+      removeBtn.classList.remove('hidden');
+    } else {
+      img.style.display = 'none';
+      img.src = '';
+      placeholder.style.display = '';
+      removeBtn.classList.add('hidden');
+    }
+  }
+
+  function onAccountLogoFileSelected(evt) {
+    const fileInput = evt.target;
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    LogoEditor.open(file, {
+      onConfirm: (processedFile) => { uploadAccountLogo(processedFile); fileInput.value = ''; },
+      onCancel: () => { fileInput.value = ''; },
+    });
+  }
+
+  async function uploadAccountLogo(file) {
+    if (!file) return;
+    if (file.size > 1.5 * 1024 * 1024) {
+      showMsg('account-logo-msg', 'Image is too large - please use one under 1.5MB.', 'err');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('logo', file);
+    try {
+      const res = await fetch('/api/dashboard/logo', {
+        method: 'POST',
+        headers: token ? { Authorization: 'Bearer ' + token } : {},
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      applyAccountLogo(data.logoUrl);
+      showMsg('account-logo-msg', 'Logo updated.', 'ok');
+      if (window.yournetRefreshProfileLogo) window.yournetRefreshProfileLogo();
+    } catch (err) {
+      showMsg('account-logo-msg', err.message, 'err');
+    }
+  }
+
+  async function removeAccountLogo() {
+    try {
+      await api('/api/dashboard/logo', 'DELETE');
+      applyAccountLogo(null);
+      showMsg('account-logo-msg', 'Logo removed.', 'ok');
+      if (window.yournetRefreshProfileLogo) window.yournetRefreshProfileLogo();
+    } catch (err) {
+      showMsg('account-logo-msg', err.message, 'err');
+    }
+  }
+
+  function applyPortalLogo(logoUrl) {
+    const img = document.getElementById('portalLogoPreview');
+    const placeholder = document.getElementById('portalLogoPlaceholder');
+    const removeBtn = document.getElementById('portalLogoRemoveBtn');
+    if (logoUrl) {
+      img.src = logoUrl;
+      img.style.display = '';
+      placeholder.style.display = 'none';
+      removeBtn.classList.remove('hidden');
+    } else {
+      img.style.display = 'none';
+      img.src = '';
+      placeholder.style.display = '';
+      removeBtn.classList.add('hidden');
+    }
+  }
+
+  function onPortalLogoFileSelected(evt) {
+    const fileInput = evt.target;
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) { showMsg('portal-msg', 'Save a site first.', 'err'); fileInput.value = ''; return; }
+    LogoEditor.open(file, {
+      onConfirm: (processedFile) => { uploadPortalLogo(processedFile); fileInput.value = ''; },
+      onCancel: () => { fileInput.value = ''; },
+    });
+  }
+
+  async function uploadPortalLogo(file) {
+    const siteId = document.getElementById('portalSite').value;
+    if (!file) return;
+    if (!siteId) { showMsg('portal-msg', 'Save a site first.', 'err'); return; }
+    if (file.size > 1.5 * 1024 * 1024) {
+      showMsg('portal-msg', 'Image is too large - please use one under 1.5MB.', 'err');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('logo', file);
+    try {
+      const res = await fetch(`/api/sites/${siteId}/portal-logo`, {
+        method: 'POST',
+        headers: token ? { Authorization: 'Bearer ' + token } : {},
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      document.getElementById('portalLogoUrl').value = data.logoUrl;
+      applyPortalLogo(data.logoUrl);
+      showMsg('portal-msg', 'Portal logo updated.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function useAccountLogoForPortal() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
+    try {
+      const profile = await api('/api/dashboard/profile', 'GET');
+      if (!profile.logoUrl) return showMsg('portal-msg', 'No account logo saved yet - upload one in Account first.', 'err');
+      await api(`/api/sites/${siteId}/portal`, 'PATCH', { logoUrl: profile.logoUrl });
+      document.getElementById('portalLogoUrl').value = profile.logoUrl;
+      applyPortalLogo(profile.logoUrl);
+      showMsg('portal-msg', 'Portal logo set from your account logo.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function removePortalLogo() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return;
+    try {
+      await api(`/api/sites/${siteId}/portal/clear-field`, 'POST', { field: 'logoUrl' });
+      document.getElementById('portalLogoUrl').value = '';
+      applyPortalLogo(null);
+      showMsg('portal-msg', 'Portal logo removed.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function saveAccountDetails() {
+    const businessName = document.getElementById('acctBusinessName').value.trim();
+    if (!businessName) {
+      showMsg('account-details-msg', 'Business name is required.', 'err');
+      return;
+    }
+    try {
+      await api('/api/dashboard/account-info', 'PATCH', {
+        businessName,
+        adminFullName: document.getElementById('acctAdminFullName').value.trim(),
+        digitalAddress: document.getElementById('acctDigitalAddress').value.trim(),
+        country: document.getElementById('acctCountry').value.trim(),
+        businessLocation: document.getElementById('acctBusinessLocation').value.trim(),
+      });
+      showMsg('account-details-msg', 'Saved.', 'ok');
+      document.getElementById('acctSaveBtn').classList.add('hidden');
+      document.getElementById('acctUpdateBtn').classList.remove('hidden');
+      if (window.yournetRefreshProfileInfo) window.yournetRefreshProfileInfo();
+    } catch (err) {
+      showMsg('account-details-msg', err.message, 'err');
+    }
+  }
+
+  async function loadAdminBackgroundSetting() {
+    try {
+      const settings = await api('/api/dashboard/background-settings', 'GET');
+      document.getElementById('adminUseRotatingBackgrounds').checked = !!settings.useRotatingBackgrounds;
+    } catch (err) {
+      // Non-critical - leave the checkbox at its default (unchecked) if this fails.
+    }
+  }
+
+  async function saveAdminBackgroundSetting() {
+    const useRotatingBackgrounds = document.getElementById('adminUseRotatingBackgrounds').checked;
+    try {
+      await api('/api/dashboard/background-settings', 'PATCH', { useRotatingBackgrounds });
+      showMsg('account-prefs-msg', 'Saved. Refresh any open admin page to see it take effect.', 'ok');
+    } catch (err) {
+      showMsg('account-prefs-msg', err.message, 'err');
+    }
+  }
+
+  function renderSiteTypeFields() {
+    document.querySelectorAll('.site-fields').forEach(el => el.classList.add('hidden'));
+    const type = document.getElementById('siteType').value;
+    document.getElementById('siteFields-' + type).classList.remove('hidden');
+    if (type === 'unifi') renderUnifiAuthFields();
+  }
+
+  function renderUnifiAuthFields() {
+    const mode = document.getElementById('ufAuthMode').value;
+    document.getElementById('ufFields-classic').classList.toggle('hidden', mode !== 'classic');
+    document.getElementById('ufFields-unifios').classList.toggle('hidden', mode !== 'unifios');
+    document.getElementById('ufHint-classic').classList.toggle('hidden', mode !== 'classic');
+    document.getElementById('ufHint-unifios').classList.toggle('hidden', mode !== 'unifios');
+  }
+
+  function buildSitePayload() {
+    const type = document.getElementById('siteType').value;
+    const payload = { name: document.getElementById('siteName').value, type };
+    if (type === 'mikrotik') {
+      const mkUseTls = document.getElementById('mkUseTls').checked;
+      payload.mikrotik = {
+        host: document.getElementById('mkHost').value,
+        port: Number(document.getElementById('mkPort').value) || (mkUseTls ? 8729 : 8728),
+        hotspotProfile: document.getElementById('mkProfile').value,
+        username: document.getElementById('mkUser').value,
+        password: document.getElementById('mkPass').value,
+        useTls: mkUseTls,
+      };
+    } else if (type === 'omada') {
+      payload.omada = {
+        baseUrl: document.getElementById('omBaseUrl').value,
+        omadacId: document.getElementById('omOmadacId').value,
+        siteId: document.getElementById('omSiteId').value,
+        clientId: document.getElementById('omClientId').value,
+        clientSecret: document.getElementById('omClientSecret').value,
+      };
+    } else if (type === 'unifi') {
+      payload.unifi = {
+        baseUrl: document.getElementById('ufBaseUrl').value,
+        site: document.getElementById('ufSite').value || 'default',
+        authMode: document.getElementById('ufAuthMode').value,
+        username: document.getElementById('ufUser').value,
+        password: document.getElementById('ufPass').value,
+        apiKey: document.getElementById('ufApiKey').value,
+      };
+    } else if (type === 'meraki') {
+      payload.meraki = {
+        dashboardApiKey: document.getElementById('mrApiKey').value,
+        networkId: document.getElementById('mrNetworkId').value,
+      };
+    }
+    return payload;
+  }
+
+  async function addSite() {
+    try {
+      await api('/api/sites', 'POST', buildSitePayload());
+      showMsg('site-msg', 'Site saved. Click "Test connection" to verify.', 'ok');
+      loadSitesAndPackages();
+    } catch (err) {
+      showMsg('site-msg', err.message, 'err');
+    }
+  }
+
+  async function openRscWizard() {
+    try {
+      const sites = await api('/api/sites', 'GET');
+      if (!sites.length) return showMsg('site-msg', 'Save the site first.', 'err');
+      const site = sites[sites.length - 1];
+      window.open(`/rsc-wizard.html?siteId=${site.id}`, '_blank');
+    } catch (err) {
+      showMsg('site-msg', err.message, 'err');
+    }
+  }
+
+  async function testSite() {
+    try {
+      const sites = await api('/api/sites', 'GET');
+      if (!sites.length) return showMsg('site-msg', 'Save the site first.', 'err');
+      const site = sites[sites.length - 1];
+      const result = await api(`/api/sites/${site.id}/test`, 'POST');
+      if (result.online) {
+        showMsg('site-msg', 'Connected! Router identity: ' + (result.identity || 'unknown'), 'ok');
+      } else {
+        showMsg('site-msg', 'Could not connect: ' + (result.error || 'unknown error'), 'err');
+      }
+    } catch (err) {
+      showMsg('site-msg', err.message, 'err');
+    }
+  }
+
+  const DURATION_MULTIPLIERS = { minutes: 1, hours: 60, days: 1440, months: 43200, years: 525600 };
+
+  // A slow connection + an owner tapping "Save package" twice (easy to do
+  // on mobile while waiting) used to fire two identical POST requests, each
+  // creating its own real row - the portal then correctly displayed every
+  // row it was given, which included the duplicate. Guard against both the
+  // double-click (isSubmittingPackage) and a genuine double-tap that lands
+  // before React/DOM even disables the button, by disabling it immediately
+  // and re-enabling only in `finally`.
+  let isSubmittingPackage = false;
+  async function addPackage() {
+    if (isSubmittingPackage) return;
+    isSubmittingPackage = true;
+    const btn = document.getElementById('pkgSaveBtn');
+    const originalLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    try {
+      const value = Number(document.getElementById('pkgDurationValue').value);
+      const unit = document.getElementById('pkgDurationUnit').value;
+      if (!value || value <= 0) throw new Error('Enter a duration greater than 0.');
+      const durationMinutes = Math.round(value * DURATION_MULTIPLIERS[unit]);
+
+      await api('/api/packages', 'POST', {
+        label: document.getElementById('pkgLabel').value,
+        price: Number(document.getElementById('pkgPrice').value),
+        durationMinutes,
+        rateLimitDown: document.getElementById('pkgDown').value || null,
+        rateLimitUp: document.getElementById('pkgUp').value || null,
+      });
+      showMsg('package-msg', 'Package saved.', 'ok');
+      document.getElementById('pkgLabel').value = '';
+      document.getElementById('pkgPrice').value = '';
+      document.getElementById('pkgDurationValue').value = '';
+      document.getElementById('pkgDown').value = '';
+      document.getElementById('pkgUp').value = '';
+      loadSitesAndPackages();
+    } catch (err) {
+      showMsg('package-msg', err.message, 'err');
+    } finally {
+      isSubmittingPackage = false;
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  }
+
+  // Renders duration back into whichever unit divides evenly and gives the
+  // smallest whole number - so a package saved as "2 days" shows as
+  // "2 days", not "2880 minutes".
+  function formatDuration(minutes) {
+    const units = [['years', 525600], ['months', 43200], ['days', 1440], ['hours', 60], ['minutes', 1]];
+    for (const [name, mult] of units) {
+      if (minutes % mult === 0 && minutes / mult >= 1 && (name === 'minutes' || minutes / mult < (name === 'hours' ? 48 : name === 'days' ? 62 : 100))) {
+        const n = minutes / mult;
+        return `${n} ${name === 'minutes' && n === 1 ? 'minute' : name}`;
+      }
+    }
+    return `${minutes} minutes`;
+  }
+
+  async function loadPackageList() {
+    try {
+      const packages = await api('/api/packages?all=true', 'GET');
+      const tbody = document.getElementById('packageRows');
+      if (!tbody) return;
+      tbody.innerHTML = packages.map(p => `
+        <tr${p.active ? '' : ' style="opacity:.5"'}>
+          <td>${escapeHtmlAdmin(p.label)}</td>
+          <td>${currencyLabel()} ${Number(p.price).toFixed(2)}</td>
+          <td>${formatDuration(p.duration_minutes)}</td>
+          <td>${p.active ? 'Active' : 'Inactive'}</td>
+          <td style="white-space:nowrap">
+            <button class="secondary" style="padding:6px 10px;font-size:12px" onclick="togglePackageActive('${p.id}', ${!p.active})">${p.active ? 'Deactivate' : 'Activate'}</button>
+            <button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" onclick="deletePackage('${p.id}')">Delete</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5">No packages yet.</td></tr>';
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  async function togglePackageActive(id, active) {
+    try {
+      await api(`/api/packages/${id}`, 'PATCH', { active });
+      loadSitesAndPackages();
+    } catch (err) {
+      showMsg('package-msg', err.message, 'err');
+    }
+  }
+
+  async function deletePackage(id) {
+    if (!confirm('Delete this package? This only works if it has never been used for a voucher.')) return;
+    try {
+      await api(`/api/packages/${id}`, 'DELETE');
+      showMsg('package-msg', 'Package deleted.', 'ok');
+      loadSitesAndPackages();
+    } catch (err) {
+      // Backend returns a clear 409 explaining to deactivate instead when
+      // the package is already in use - surface that message as-is.
+      showMsg('package-msg', err.message, 'err');
+    }
+  }
+
+  function escapeHtmlAdmin(str) {
+    return String(str ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  }
+
+  async function loadSitesAndPackages() {
+    try {
+      const sites = await api('/api/sites', 'GET');
+      const siteSelect = document.getElementById('voucherSite');
+      siteSelect.innerHTML = sites.map(s => `<option value="${s.id}">${s.name} (${s.status})</option>`).join('');
+
+      const portalSiteSelect = document.getElementById('portalSite');
+      portalSiteSelect.innerHTML = sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+      if (sites.length) loadPortalBranding();
+
+      const packages = await api('/api/packages', 'GET');
+      const pkgSelect = document.getElementById('voucherPackage');
+      pkgSelect.innerHTML = packages.map(p => `<option value="${p.id}">${p.label} - ${currencyLabel()} ${p.price}</option>`).join('');
+      loadPackageList();
+      loadSiteManageList();
+      loadAgentDropdown();
+      populateAccessSiteDropdown(sites);
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  async function loadSiteManageList() {
+    try {
+      const sites = await api('/api/sites?all=true', 'GET');
+      const tbody = document.getElementById('siteManageTable');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><th>Site</th><th>Status</th><th>Active</th><th></th></tr>' +
+        (sites.map(s => `
+          <tr${s.active ? '' : ' style="opacity:.5"'}>
+            <td>${escapeHtmlAdmin(s.name)}</td>
+            <td>${escapeHtmlAdmin(s.status)}</td>
+            <td>${s.active ? 'Active' : 'Inactive'}</td>
+            <td style="white-space:nowrap">
+              <button class="secondary" style="padding:6px 10px;font-size:12px" onclick="toggleSiteActive('${s.id}', ${!s.active})">${s.active ? 'Deactivate' : 'Activate'}</button>
+              <button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" onclick="deleteSite('${s.id}')">Delete</button>
+            </td>
+          </tr>
+        `).join('') || '<tr><td colspan="4">No sites yet.</td></tr>');
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  async function toggleSiteActive(id, active) {
+    try {
+      await api(`/api/sites/${id}`, 'PATCH', { active });
+      loadSitesAndPackages();
+    } catch (err) {
+      showMsg('site-manage-msg', err.message, 'err');
+    }
+  }
+
+  async function deleteSite(id) {
+    if (!confirm('Delete this site? This only works if it has never had vouchers, orders, or PPPoE subscribers.')) return;
+    try {
+      await api(`/api/sites/${id}`, 'DELETE');
+      showMsg('site-manage-msg', 'Site deleted.', 'ok');
+      loadSitesAndPackages();
+    } catch (err) {
+      // Backend returns a clear 409 explaining to deactivate instead when
+      // the site is already in use - surface that message as-is.
+      showMsg('site-manage-msg', err.message, 'err');
+    }
+  }
+
+  // ---------- manual client access (checklist row 4) ----------
+  function populateAccessSiteDropdown(sites) {
+    const sel = document.getElementById('accessSite');
+    if (!sel) return;
+    const current = sel.value;
+    // Meraki sites can't use this feature at all (see the card's own
+    // explanation) - still listed, greyed out, rather than silently
+    // vanishing, so it's clear the option was considered, not missed.
+    sel.innerHTML = sites.map(s =>
+      `<option value="${s.id}" data-type="${s.type}"${s.type === 'meraki' ? ' disabled' : ''}>${escapeHtmlAdmin(s.name)}${s.type === 'meraki' ? ' (not supported for Meraki)' : ''}</option>`
+    ).join('');
+    if (current && sites.some(s => s.id === current)) sel.value = current;
+    if (sel.value) loadAccessPanel();
+  }
+
+  function loadAccessPanel() {
+    loadAccessClients();
+    loadAccessAuthorizations();
+  }
+
+  async function loadAccessClients() {
+    const siteId = document.getElementById('accessSite').value;
+    const picker = document.getElementById('accessClientPicker');
+    if (!siteId || !picker) return;
+    picker.innerHTML = '<option value="">Loading...</option>';
+    try {
+      const { clients } = await api(`/api/sites/${siteId}/clients`, 'GET');
+      const placeholder = '<option value="">— Type a MAC manually, or pick a device seen on the network —</option>';
+      picker.innerHTML = placeholder + clients.map(c => {
+        const statusLabel = c.authorized === true ? 'already authorized' : c.authorized === false ? 'not authorized yet' : '';
+        const label = [c.mac, c.ip, c.hostname, statusLabel].filter(Boolean).join(' - ');
+        return `<option value="${escapeHtmlAdmin(c.mac)}">${escapeHtmlAdmin(label)}</option>`;
+      }).join('');
+    } catch (err) {
+      picker.innerHTML = '<option value="">Could not load - type the MAC manually below</option>';
+      showMsg('access-msg', err.message, 'err');
+    }
+  }
+
+  function onAccessClientPick() {
+    const picker = document.getElementById('accessClientPicker');
+    if (picker.value) document.getElementById('accessMac').value = picker.value;
+  }
+
+  async function authorizeManualClient() {
+    const siteId = document.getElementById('accessSite').value;
+    const clientMac = document.getElementById('accessMac').value.trim().toUpperCase();
+    const durationMinutes = Number(document.getElementById('accessDuration').value);
+    const note = document.getElementById('accessNote').value.trim();
+    if (!siteId) { showMsg('access-msg', 'Pick a site first.', 'err'); return; }
+    if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(clientMac)) {
+      showMsg('access-msg', 'Enter a valid MAC address, like AA:BB:CC:DD:EE:FF.', 'err');
+      return;
+    }
+    try {
+      await api(`/api/sites/${siteId}/authorize-client`, 'POST', { clientMac, durationMinutes, note: note || undefined });
+      showMsg('access-msg', `${clientMac} authorized.`, 'ok');
+      document.getElementById('accessMac').value = '';
+      document.getElementById('accessNote').value = '';
+      loadAccessPanel();
+    } catch (err) {
+      showMsg('access-msg', err.message, 'err');
+    }
+  }
+
+  async function loadAccessAuthorizations() {
+    const siteId = document.getElementById('accessSite').value;
+    const tbody = document.getElementById('accessAuthTable');
+    if (!siteId || !tbody) return;
+    try {
+      const { authorizations } = await api(`/api/sites/${siteId}/manual-authorizations`, 'GET');
+      tbody.innerHTML = '<tr><th>MAC</th><th>Note</th><th>Expires</th><th></th></tr>' +
+        (authorizations.map(a => `
+          <tr>
+            <td>${escapeHtmlAdmin(a.client_mac)}</td>
+            <td>${escapeHtmlAdmin(a.note || '')}</td>
+            <td>${new Date(a.expires_at).toLocaleString()}</td>
+            <td><button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" onclick="revokeManualClient('${a.id}')">Revoke</button></td>
+          </tr>
+        `).join('') || '<tr><td colspan="4">No active manual grants for this site.</td></tr>');
+    } catch (err) {
+      showMsg('access-msg', err.message, 'err');
+    }
+  }
+
+  async function revokeManualClient(id) {
+    const siteId = document.getElementById('accessSite').value;
+    if (!confirm('Revoke this device\'s access now?')) return;
+    try {
+      await api(`/api/sites/${siteId}/revoke-client`, 'POST', { id });
+      showMsg('access-msg', 'Access revoked.', 'ok');
+      loadAccessAuthorizations();
+    } catch (err) {
+      // Omada sites return a clear 501 here (no confirmed revoke endpoint
+      // exists) - surfaced as-is rather than presented as a generic failure.
+      showMsg('access-msg', err.message, 'err');
+    }
+  }
+
+  async function loadPortalBranding() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return;
+    try {
+      const branding = await api(`/api/sites/${siteId}/portal`, 'GET');
+      document.getElementById('portalBusinessName').value = branding.portal_business_name || '';
+      document.getElementById('portalLogoUrl').value = branding.portal_logo_url || '';
+      applyPortalLogo(branding.portal_logo_url);
+      document.getElementById('portalPrimaryColor').value = branding.portal_primary_color || '#e8a33d';
+      document.getElementById('portalBackgroundImageUrl').value = branding.portal_background_image_url || '';
+      document.getElementById('portalCautionText').value = branding.portal_caution_text || '';
+      document.getElementById('portalWhatsappNumber').value = branding.portal_whatsapp_number || '';
+      document.getElementById('portalHelpEmail').value = branding.portal_help_email || '';
+      document.getElementById('portalHelpPhone').value = branding.portal_help_phone || '';
+      document.getElementById('portalMomoNumber').value = branding.portal_momo_number || '';
+      document.getElementById('portalMomoName').value = branding.portal_momo_name || '';
+      document.getElementById('portalCustomHtml').value = branding.portal_custom_html || '';
+      document.getElementById('portalAdvancedToggle').checked = !!branding.portal_custom_html;
+      document.getElementById('portalUseRotatingBackgrounds').checked = branding.portal_use_rotating_backgrounds !== false;
+      toggleAdvancedPortal();
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function savePortalBranding() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
+    try {
+      await api(`/api/sites/${siteId}/portal`, 'PATCH', {
+        businessName: document.getElementById('portalBusinessName').value || null,
+        logoUrl: document.getElementById('portalLogoUrl').value || null,
+        primaryColor: document.getElementById('portalPrimaryColor').value || null,
+        backgroundImageUrl: document.getElementById('portalBackgroundImageUrl').value || null,
+        cautionText: document.getElementById('portalCautionText').value || null,
+        whatsappNumber: document.getElementById('portalWhatsappNumber').value || null,
+        helpEmail: document.getElementById('portalHelpEmail').value || null,
+        helpPhone: document.getElementById('portalHelpPhone').value || null,
+        momoNumber: document.getElementById('portalMomoNumber').value || null,
+        momoName: document.getElementById('portalMomoName').value || null,
+        useRotatingBackgrounds: document.getElementById('portalUseRotatingBackgrounds').checked,
+      });
+      // PATCH only sets values (COALESCE) - any of these seven fields left
+      // blank in the form needs an explicit clear so an admin can actually
+      // remove a background image / caution note / WhatsApp / email / phone /
+      // MoMo detail once set, instead of it being stuck forever.
+      const clearable = {
+        logoUrl: 'portalLogoUrl',
+        backgroundImageUrl: 'portalBackgroundImageUrl',
+        cautionText: 'portalCautionText',
+        whatsappNumber: 'portalWhatsappNumber',
+        helpEmail: 'portalHelpEmail',
+        helpPhone: 'portalHelpPhone',
+        momoNumber: 'portalMomoNumber',
+        momoName: 'portalMomoName',
+      };
+      for (const [field, inputId] of Object.entries(clearable)) {
+        if (!document.getElementById(inputId).value) {
+          await api(`/api/sites/${siteId}/portal/clear-field`, 'POST', { field }).catch(() => {});
+        }
+      }
+      showMsg('portal-msg', 'Branding saved.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function saveCustomHtml() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
+    const html = document.getElementById('portalCustomHtml').value;
+    if (!html.trim()) return showMsg('portal-msg', 'Paste your HTML first, or use "Revert to default portal" instead.', 'err');
+    try {
+      await api(`/api/sites/${siteId}/portal`, 'PATCH', { customHtml: html });
+      showMsg('portal-msg', 'Custom portal saved. Preview it to confirm redemption works.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function revertCustomHtml() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return;
+    try {
+      await fetch(`/api/sites/${siteId}/portal/custom-html`, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      document.getElementById('portalCustomHtml').value = '';
+      document.getElementById('portalAdvancedToggle').checked = false;
+      toggleAdvancedPortal();
+      showMsg('portal-msg', 'Reverted to the default portal.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  function toggleAdvancedPortal() {
+    const on = document.getElementById('portalAdvancedToggle').checked;
+    document.getElementById('portal-advanced').classList.toggle('hidden', !on);
+  }
+
+  function previewPortal() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
+    window.open(`/p/${siteId}`, '_blank');
+  }
+
+  async function generateVouchers() {
+    try {
+      const agentId = document.getElementById('voucherAgent').value;
+      const batch = document.getElementById('voucherBatch').value.trim();
+      const data = await api('/api/vouchers/generate', 'POST', {
+        packageId: document.getElementById('voucherPackage').value,
+        siteId: document.getElementById('voucherSite').value,
+        quantity: Number(document.getElementById('voucherQty').value) || 1,
+        agentId: agentId || undefined,
+        batch: batch || undefined,
+      });
+      showMsg('voucher-msg', `Generated ${data.count} vouchers.`, 'ok');
+      const table = document.getElementById('voucherTable');
+      table.innerHTML = '<tr><th>Code</th><th>Status</th></tr>' +
+        data.vouchers.map(v => `<tr><td class="code">${v.code}</td><td><span class="pill">${v.status}</span></td></tr>`).join('');
+    } catch (err) {
+      showMsg('voucher-msg', err.message, 'err');
+    }
+  }
+
+  async function loadAgentDropdown() {
+    try {
+      const agents = await api('/api/agents', 'GET');
+      const sel = document.getElementById('voucherAgent');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">- Not assigned to an agent -</option>' +
+        agents.map(a => `<option value="${a.id}">${escapeHtmlAdmin(a.name)}</option>`).join('');
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  // This page is reached only with a token already set (the guard at the
+  // top of this script redirects to /login otherwise), so initialize
+  // straight away instead of waiting on a login/signup submit.
+  initSetupPage();
+
+  // Populated by loadGateways() - lets renderGatewayFields() prefill the
+  // shared Contact email box with whatever was last saved for whichever
+  // provider is selected, so switching providers in the dropdown doesn't
+  // show a stale/blank value.
+  let loadedGateways = [];
+
+  function renderGatewayFields() {
+    document.querySelectorAll('.gw-fields').forEach(el => el.classList.add('hidden'));
+    const provider = document.getElementById('gwProvider').value;
+    document.getElementById('gwFields-' + provider).classList.remove('hidden');
+    const existing = loadedGateways.find(g => g.provider === provider);
+    document.getElementById('gwContactEmail').value = existing?.contact_email || '';
+  }
+
+  async function saveGateway() {
+    const provider = document.getElementById('gwProvider').value;
+    const body = { provider, contactEmail: document.getElementById('gwContactEmail').value.trim() };
+    if (provider === 'paystack') {
+      body.paystackSecretKey = document.getElementById('gwPaystackSecret').value;
+      body.paystackPublicKey = document.getElementById('gwPaystackPublic').value;
+    } else if (provider === 'hubtel') {
+      body.hubtelClientId = document.getElementById('gwHubtelClientId').value;
+      body.hubtelClientSecret = document.getElementById('gwHubtelClientSecret').value;
+      body.hubtelMerchantAccountNumber = document.getElementById('gwHubtelMerchant').value;
+    } else if (provider === 'flutterwave') {
+      body.flutterwaveSecretKey = document.getElementById('gwFlutterwaveSecret').value;
+      body.flutterwavePublicKey = document.getElementById('gwFlutterwavePublic').value;
+    }
+    try {
+      await api('/api/payment-gateways', 'POST', body);
+      showMsg('gateway-msg', provider + ' credentials saved.', 'ok');
+      loadGateways();
+    } catch (err) {
+      showMsg('gateway-msg', err.message, 'err');
+    }
+  }
+
+  async function activateGateway() {
+    const provider = document.getElementById('gwProvider').value;
+    try {
+      await api(`/api/payment-gateways/${provider}/activate`, 'POST');
+      showMsg('gateway-msg', provider + ' is now the active gateway for your customers.', 'ok');
+      loadGateways();
+    } catch (err) {
+      showMsg('gateway-msg', err.message, 'err');
+    }
+  }
+
+  async function deleteGateway(provider, wasActive) {
+    const warning = wasActive
+      ? `${provider} is your ACTIVE gateway - deleting it will stop customers from paying online until you set up another one. Delete anyway?`
+      : `Delete saved ${provider} credentials? You'll need to re-enter them to use it again.`;
+    if (!confirm(warning)) return;
+    try {
+      await api(`/api/payment-gateways/${provider}`, 'DELETE');
+      showMsg('gateway-msg', provider + ' credentials deleted.', 'ok');
+      loadGateways();
+    } catch (err) {
+      // err.message from a blocked delete (pending orders) already reads
+      // clearly on its own - e.g. "2 order(s) are still pending payment
+      // through hubtel..." - so just surface it as-is, no rewording needed.
+      showMsg('gateway-msg', err.message, 'err');
+    }
+  }
+
+  async function loadGateways() {
+    try {
+      const gateways = await api('/api/payment-gateways', 'GET');
+      loadedGateways = gateways;
+      const table = document.getElementById('gatewayTable');
+      // Flutterwave is no longer offered for new setups, but a tenant who
+      // already configured it should still see it as an option here so they
+      // can keep managing it (view status, reactivate, etc).
+      if (gateways.some(g => g.provider === 'flutterwave')) {
+        document.getElementById('gwProviderFlutterwaveOpt').style.display = '';
+      }
+      // Reflect whatever's saved for the currently-selected provider into
+      // the shared Contact email box (covers first load after a page
+      // refresh, not just provider switches).
+      renderGatewayFields();
+      if (!gateways.length) {
+        table.innerHTML = '<tr><td style="color:#6b8a91">No gateway linked yet.</td></tr>';
+        return;
+      }
+      table.innerHTML = '<tr><th>Provider</th><th>Status</th><th>Contact email</th><th></th></tr>' +
+        gateways.map(g => `<tr><td>${g.provider}</td><td>${g.is_active ? '<span class="pill">Active</span>' : 'Configured'}</td>` +
+          `<td style="color:#6b8a91">${g.contact_email ? escapeHtmlAdmin(g.contact_email) : '-'}</td>` +
+          `<td style="white-space:nowrap"><button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" ` +
+          `onclick="deleteGateway('${g.provider}', ${g.is_active})">Delete</button></td></tr>`).join('');
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  renderSiteTypeFields();
+  renderGatewayFields();
+</script>
+</body>
+</html>

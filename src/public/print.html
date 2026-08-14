@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Print Vouchers</title>
+<link rel="stylesheet" href="/shell.css">
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--yn-ink);color:var(--yn-cream);margin:0}
+
+  /* ---------- on-screen toolbar: grouped controls, not a loose row ---------- */
+  .print-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+  .print-head h1{font-size:19px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;margin:0}
+  .print-head .sub{font-size:12.5px;color:var(--yn-muted);margin-top:2px}
+  #status{font-size:12.5px;color:var(--yn-muted)}
+
+  .toolbar{
+    background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:14px;
+    padding:14px 16px;margin-bottom:20px;display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;
+  }
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field label{font-size:10.5px;color:var(--yn-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+  select,input{padding:9px 11px;border-radius:8px;border:1px solid var(--yn-line);
+    background:var(--yn-ink-deep);color:var(--yn-cream);font-size:13px}
+  select:focus,input:focus{outline:2px solid var(--yn-teal);outline-offset:1px}
+
+  /* segmented control for layout density */
+  .segmented{display:flex;background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:9px;padding:3px;gap:2px}
+  .segmented button{
+    padding:7px 13px;border:none;border-radius:7px;background:transparent;color:var(--yn-muted);
+    font-size:12.5px;font-weight:700;cursor:pointer;transition:background .15s,color .15s;
+  }
+  .segmented button.active{background:var(--yn-teal);color:#04211d}
+  .segmented button:not(.active):hover{color:var(--yn-cream)}
+
+  .spacer{flex:1 1 auto}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--yn-gold);color:#0d1a1e;
+    font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap}
+  .btn:hover{background:var(--yn-gold2)}
+  .btn.ghost{background:rgba(255,255,255,.06);color:var(--yn-cream);border:1px solid var(--yn-line)}
+  .btn.ghost:hover{border-color:var(--yn-teal);color:var(--yn-teal)}
+
+  .empty{background:var(--yn-panel);border:1px dashed var(--yn-line);border-radius:14px;
+    padding:40px 20px;text-align:center;color:var(--yn-muted);font-size:13.5px}
+
+  /* ---------- on-screen card grid ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill, 320px);gap:14px}
+  .card{
+    position:relative;width:325px;background:linear-gradient(135deg,#14282e,#0d1a1e);
+    border:1px solid var(--yn-line);border-radius:14px;padding:16px 34px 16px 16px;display:flex;
+    justify-content:space-between;align-items:center;color:var(--yn-cream);gap:12px;
+  }
+  .card .left{flex:1;min-width:0}
+  .card .brand-row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+  .card .brand-row img.logo{width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0}
+  .card .brand{font-weight:800;color:var(--yn-gold);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .wifi-ico{flex-shrink:0}
+  .card .label{font-size:10.5px;color:var(--yn-muted);text-transform:uppercase;letter-spacing:.05em}
+  .card .code{font-family:'SF Mono',Consolas,monospace;font-size:21px;font-weight:800;color:var(--yn-teal);margin:5px 0}
+  .card .meta{display:flex;gap:10px;flex-wrap:wrap}
+  .card .price{font-size:12px;color:var(--yn-gold2);font-weight:700}
+  .card .duration{font-size:12px;color:#9fd8d0}
+  .card .agent-badge{
+    margin-top:8px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
+    padding:3px 8px;border-radius:20px;background:rgba(46,196,182,.12);color:var(--yn-teal);
+  }
+  .card .agent-badge.admin{background:rgba(232,163,61,.12);color:var(--yn-gold)}
+  .card img.qr{width:88px;height:88px;background:#fff;border-radius:8px;padding:4px;flex-shrink:0}
+
+  .card .del-btn{
+    position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:50%;
+    border:1px solid var(--yn-line);background:rgba(255,255,255,.04);color:var(--yn-muted);
+    font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .card .del-btn:hover{border-color:var(--yn-danger);color:var(--yn-danger);background:rgba(255,107,107,.08)}
+  .card .del-btn:disabled{opacity:.3;cursor:not-allowed}
+  .card .del-btn:disabled:hover{border-color:var(--yn-line);color:var(--yn-muted);background:rgba(255,255,255,.04)}
+
+  /* Compact (on-screen): slim strip, no big QR, more per view */
+  .grid.compact{grid-template-columns:repeat(auto-fill, 220px)}
+  .card.compact{width:220px;padding:9px 11px}
+  .card.compact .code{font-size:15px;margin:2px 0}
+  .card.compact img.qr{width:48px;height:48px;padding:2px}
+  .card.compact .brand{font-size:12px}
+  .card.compact .agent-badge{margin-top:5px}
+
+  /* A4-sheet mode (on-screen preview mirrors the print grid below) */
+  .grid.sheet{grid-template-columns:repeat(5, 148px);gap:8px;justify-content:start}
+  .card.sheet{width:148px;padding:8px;flex-direction:column;align-items:stretch;gap:4px}
+  .card.sheet .brand-row{margin-bottom:2px}
+  .card.sheet .brand{font-size:10.5px}
+  .card.sheet .code{font-size:13px;margin:2px 0}
+  .card.sheet img.qr{width:44px;height:44px;align-self:center}
+  .card.sheet .meta{font-size:9px;gap:6px}
+  .card.sheet .price,.card.sheet .duration{font-size:9px}
+  .card.sheet .agent-badge{font-size:8px;padding:2px 6px;margin-top:4px;align-self:flex-start}
+
+  /* ---------- print output ---------- */
+  @media print {
+    @page{margin:6mm}
+    body{background:#fff;color:#000}
+    .app-sidebar,.page-header,.print-head,.toolbar,.empty{display:none}
+    .app-main{padding:0;max-width:none}
+    .card{border-radius:6px}
+    .card .del-btn{display:none}
+
+    .grid{grid-template-columns:repeat(2, 86mm);gap:4mm;justify-content:center}
+    .card{width:86mm;background:#fff;border:1.5px dashed #999;color:#000}
+    .card .brand{color:#a5670f}
+    .card .code{color:#0d1a1e}
+    .card .price{color:#8a5a00}
+    .card .duration{color:#333}
+    .card .agent-badge{background:#eef8f6;color:#0d7a6c}
+    .card .agent-badge.admin{background:#fbf1e2;color:#a5670f}
+
+    .grid.compact{grid-template-columns:repeat(4, 48mm);gap:2mm}
+    .card.compact{width:48mm;padding:2mm 3mm;border:1px dashed #bbb}
+    .card.compact img.qr{width:15mm;height:15mm}
+    .card.compact .code{font-size:12px}
+    .card.compact .brand{font-size:9px}
+
+    /* 5 columns x 10 rows = exactly 50 vouchers per A4 sheet.
+       Corner tick marks (drawn via ::before/::after) stand in for a
+       cut-line so a solid border doesn't eat into the tight column width -
+       a real printed border at this size reads as a thick black box, not
+       a clean scratch-card edge. */
+    .grid.sheet{grid-template-columns:repeat(5, 36.4mm);gap:1.8mm;justify-content:center}
+    .card.sheet{
+      width:36.4mm;height:26.5mm;padding:1.6mm 2mm;border:1px solid #ccc;border-radius:2mm;
+      display:flex;flex-direction:column;justify-content:space-between;gap:0;position:relative;
+    }
+    .card.sheet::before,.card.sheet::after{content:'';position:absolute;width:2.2mm;height:2.2mm;border:1px solid #999}
+    .card.sheet::before{top:-1px;left:-1px;border-width:1px 0 0 1px}
+    .card.sheet::after{bottom:-1px;right:-1px;border-width:0 1px 1px 0}
+    .card.sheet .brand-row{gap:3px;margin-bottom:0}
+    .card.sheet .brand-row img.logo{width:9px;height:9px}
+    .card.sheet .brand{font-size:6.6px;color:#a5670f}
+    .card.sheet .wifi-ico svg{width:8px;height:8px}
+    .card.sheet .code{font-size:9.5px;margin:1mm 0;color:#0d1a1e;letter-spacing:.02em}
+    .card.sheet img.qr{width:11mm;height:11mm;align-self:center;padding:0}
+    .card.sheet .meta{font-size:6px;justify-content:space-between;color:#444}
+    .card.sheet .agent-badge{display:none} /* no room at this density - agent stays visible in card/compact modes */
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
+<div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
+
+<div class="page-header">
+  <img src="/img/logo-icon.png" alt="" class="page-header-logo">
+  <h1 data-i18n="printVouchersTitle">Vouchers</h1>
+</div>
+
+<div class="print-head">
+  <div>
+    <div class="sub" data-i18n="printVouchersSub">Preview a batch, filter by agent, then print.</div>
+  </div>
+  <div id="status">Loading&hellip;</div>
+</div>
+
+<div class="toolbar">
+  <div class="field">
+    <label data-i18n="status">Status</label>
+    <select id="statusFilter" onchange="load()">
+      <option value="unused">Unused only</option>
+      <option value="">All</option>
+    </select>
+  </div>
+  <div class="field">
+    <label data-i18n="agent">Agent</label>
+    <select id="agentFilter" onchange="load()">
+      <option value="">All vouchers</option>
+      <option value="none">Admin-generated (unassigned)</option>
+    </select>
+  </div>
+  <div class="field">
+    <label data-i18n="batch">Batch</label>
+    <input id="batchFilter" placeholder="Any" oninput="debouncedLoad()">
+  </div>
+  <div class="field">
+    <label data-i18n="layout">Layout</label>
+    <div class="segmented" id="layoutSwitch">
+      <button data-mode="card" class="active" onclick="setMode('card')">Card</button>
+      <button data-mode="compact" onclick="setMode('compact')">Compact</button>
+      <button data-mode="sheet" onclick="setMode('sheet')">A4 &middot; 50/page</button>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn ghost" onclick="load()" data-i18n="refresh">Refresh</button>
+  <button class="btn" onclick="window.print()" data-i18n="print">Print</button>
+</div>
+
+<div id="empty" class="empty" style="display:none">No vouchers match these filters yet. Generate a batch first, or widen the filters above.</div>
+<div class="grid" id="grid"></div>
+  </main>
+</div>
+
+<script>window.YOURNET_ACTIVE_NAV = 'vouchers';</script>
+<script src="/shell.js"></script>
+<script src="/fontsize.js"></script>
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<script>
+  const token = localStorage.getItem('yournet_token');
+  const currency = localStorage.getItem('yournet_currency') || 'GHS';
+  let mode = 'card';
+  let branding = { businessName: 'WiFi Vouchers', logoUrl: null };
+
+  if (!token) {
+    document.getElementById('status').textContent = 'Please log in via /login first, then come back to this page.';
+  }
+
+  // Small drawn wifi glyph (three arcs + a dot) instead of an emoji, so it
+  // renders identically on screen and on every printer/driver - emoji
+  // glyphs are notoriously inconsistent (or missing entirely) once a
+  // browser hands off to a print engine.
+  const WIFI_SVG = `<svg class="wifi-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 8.5C8 3 16 3 22 8.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M5.5 12.5C9.5 9 14.5 9 18.5 12.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M9 16.5C10.9 15 13.1 15 15 16.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="12" cy="20" r="1.4" fill="currentColor"/>
+  </svg>`;
+
+  // Same "reduce to the biggest whole unit" formatter used in admin.html's
+  // package list, so a voucher good for 2880 minutes prints as "2 days".
+  function formatDuration(minutes) {
+    const units = [['years', 525600], ['months', 43200], ['days', 1440], ['hours', 60], ['minutes', 1]];
+    for (const [name, mult] of units) {
+      if (minutes % mult === 0 && minutes / mult >= 1 && (name === 'minutes' || minutes / mult < (name === 'hours' ? 48 : name === 'days' ? 62 : 100))) {
+        const n = minutes / mult;
+        return `${n} ${name === 'minutes' && n === 1 ? 'minute' : name}`;
+      }
+    }
+    return `${minutes} minutes`;
+  }
+
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('#layoutSwitch button').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+    const grid = document.getElementById('grid');
+    grid.className = 'grid' + (m === 'card' ? '' : ' ' + m);
+    document.querySelectorAll('.card').forEach(c => {
+      c.className = 'card' + (m === 'card' ? '' : ' ' + m);
+    });
+  }
+
+  let debounceTimer;
+  function debouncedLoad() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(load, 350);
+  }
+
+  async function loadBranding() {
+    try {
+      const res = await fetch('/api/vouchers/print-branding', { headers: { Authorization: 'Bearer ' + token } });
+      if (res.ok) branding = await res.json();
+    } catch (err) { /* falls back to defaults - never block the page over branding */ }
+  }
+
+  async function loadAgentFilter() {
+    try {
+      const res = await fetch('/api/agents', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) return;
+      const agents = await res.json();
+      const sel = document.getElementById('agentFilter');
+      const current = sel.value;
+      agents.forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.name;
+        sel.appendChild(opt);
+      });
+      sel.value = current;
+    } catch (err) { /* agent filter just stays at the two default options */ }
+  }
+
+  async function load() {
+    const status = document.getElementById('statusFilter').value;
+    const agentId = document.getElementById('agentFilter').value;
+    const batch = document.getElementById('batchFilter').value.trim();
+
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (agentId) params.set('agentId', agentId);
+    if (batch) params.set('batch', batch);
+
+    const res = await fetch('/api/vouchers?' + params.toString(), { headers: { Authorization: 'Bearer ' + token } });
+    const vouchers = await res.json();
+    document.getElementById('status').textContent = `${vouchers.length} voucher${vouchers.length === 1 ? '' : 's'}`;
+    document.getElementById('empty').style.display = vouchers.length ? 'none' : 'block';
+
+    const grid = document.getElementById('grid');
+    grid.className = 'grid' + (mode === 'card' ? '' : ' ' + mode);
+    grid.innerHTML = '';
+
+    for (const v of vouchers) {
+      const card = document.createElement('div');
+      card.className = 'card' + (mode === 'card' ? '' : ' ' + mode);
+      const agentBadge = v.agent_name
+        ? `<div class="agent-badge">${v.agent_name}</div>`
+        : `<div class="agent-badge admin">Admin</div>`;
+
+      // Mirrors the backend rule in routes/vouchers.js DELETE /:id: a live
+      // session (status 'active' with expires_at still ahead) can't be
+      // deleted from here - this just disables the button up front with a
+      // reason, rather than letting someone click it and hit a 409.
+      const isLiveSession = v.status === 'active' && v.expires_at && new Date(v.expires_at) > new Date();
+      const isRedeeming = v.status === 'redeeming';
+      const deleteBlockedReason = isLiveSession
+        ? 'Has an active session - can\u2019t delete while in use'
+        : isRedeeming
+          ? 'Redemption in progress - try again shortly'
+          : '';
+
+      card.innerHTML = `
+        <button class="del-btn" title="${deleteBlockedReason || 'Delete voucher'}" ${deleteBlockedReason ? 'disabled' : ''} onclick="deleteVoucher('${v.id}', this)">&times;</button>
+        <div class="left">
+          <div class="brand-row">
+            ${branding.logoUrl ? `<img class="logo" src="${branding.logoUrl}" alt="">` : ''}
+            <div class="brand">${branding.businessName}</div>
+            ${WIFI_SVG}
+          </div>
+          <div class="label">Voucher Code</div>
+          <div class="code">${v.code}</div>
+          <div class="meta">
+            <div class="price">${currency} ${Number(v.package_price).toFixed(2)}</div>
+            <div class="duration">${formatDuration(v.package_duration_minutes)}</div>
+          </div>
+          ${agentBadge}
+        </div>
+        <img class="qr" alt="QR">
+      `;
+      grid.appendChild(card);
+
+      // QR endpoint requires auth, so fetch it as an image blob instead of
+      // a plain <img src> (which can't send an Authorization header).
+      fetch(`/api/vouchers/${v.id}/qrcode`, { headers: { Authorization: 'Bearer ' + token } })
+        .then(r => r.blob())
+        .then(blob => { card.querySelector('img.qr').src = URL.createObjectURL(blob); });
+    }
+  }
+
+  async function deleteVoucher(id, btn) {
+    if (!confirm('Delete this voucher? This can\u2019t be undone.')) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(`/api/vouchers/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Could not delete this voucher.');
+        btn.disabled = false;
+        return;
+      }
+      btn.closest('.card').remove();
+    } catch (err) {
+      alert('Network error - could not delete this voucher.');
+      btn.disabled = false;
+    }
+  }
+
+  if (token) {
+    loadBranding();
+    loadAgentFilter();
+    load();
+  }
+</script>
+</body>
+</html>

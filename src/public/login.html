@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YourNet Control - Log in</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<style>
+  .brand-logo{display:block;width:150px;height:auto;margin:0 auto 14px;border-radius:14px}
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:40px 20px;max-width:400px;margin-inline:auto}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:#6b8a91;font-size:13px;margin-bottom:20px}
+  label{display:block;font-size:11px;color:#6b8a91;text-transform:uppercase;margin:10px 0 4px}
+  input{width:100%;padding:11px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#132228;color:#fff;font-size:14px}
+  .pwd-wrap{position:relative}
+  .pwd-wrap input{padding-right:40px}
+  .pwd-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;
+    border:none;cursor:pointer;font-size:16px;padding:4px 6px;margin:0;color:#6b8a91;line-height:1}
+  button.primary{width:100%;padding:12px;border:none;border-radius:8px;background:#e8a33d;color:#0d1a1e;
+    font-weight:700;cursor:pointer;font-size:14px;margin-top:16px}
+  .card{border-radius:14px;padding:22px}
+  /* Glass mode: bg-rotate.js adds this to <body> once a rotating photo
+     background is actually showing, same pattern as owner-login.html/
+     license.html - so this page matches the rest of the app's visual
+     identity instead of staying flat #132228 always. */
+  body.yn-glass .card{background:rgba(19,34,40,.35);backdrop-filter:blur(16px) saturate(150%);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);border:1px solid rgba(255,255,255,.16)}
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    body.yn-glass .card{background:#132228}
+  }
+
+  /* Small clickable tabs under the login form - switches which panel is
+     shown, doesn't navigate away (except "Create account", which sends
+     the visitor to /license to pay since that's a separate flow). */
+  .tabs{display:flex;gap:2px;margin-top:18px;border-top:1px solid rgba(255,255,255,.1);
+    padding-top:4px}
+  .tab{flex:1;background:none;border:none;color:#6b8a91;font-size:11.5px;font-weight:700;
+    padding:10px 4px;cursor:pointer;border-bottom:2px solid transparent;text-align:center}
+  .tab:hover{color:#e8f0f1}
+  .tab.active{color:#2ec4b6;border-bottom-color:#2ec4b6}
+
+  .panel{display:none}
+  .panel.active{display:block}
+
+  .msg{margin-top:12px;font-size:13px;padding:10px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
+  .msg.ok{background:rgba(46,196,182,.12);color:#2ec4b6}
+</style>
+</head>
+<body>
+<script src="/bg-rotate.js"></script>
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
+
+<div class="card">
+  <img class="brand-logo" src="/img/logo.png" alt="YourNet Control">
+  <h1 id="cardTitle" style="text-align:center">YourNet Control</h1>
+  <div class="sub" id="cardSub" style="text-align:center">Log in to manage your business.</div>
+
+  <!-- LOGIN (default) -->
+  <div class="panel active" id="panel-login">
+    <label>Email</label>
+    <input id="loginEmail" type="email" autocomplete="username">
+    <label>Password</label>
+    <div class="pwd-wrap">
+      <input id="loginPassword" type="password" autocomplete="current-password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('loginPassword')" aria-label="Show password">👁</button>
+    </div>
+    <button class="primary" onclick="login()">Log in</button>
+    <div class="msg" id="login-msg"></div>
+  </div>
+
+  <!-- CREATE ACCOUNT: this is a purchase, not a form - send them to /license
+       to pay, then their key arrives by email and they come back here and
+       use the "I already have a key" tab. -->
+  <div class="panel" id="panel-create">
+    <p style="font-size:13px;color:#9fb6bc;line-height:1.6">
+      Creating an account starts with getting an activation key. Pay once to activate,
+      then a small monthly fee after that.
+    </p>
+    <p style="font-size:13px;color:#9fb6bc;line-height:1.6">
+      Your key is emailed to you automatically the moment payment is confirmed - come back
+      here and use <strong>I already have a key</strong> to finish setting up your account.
+    </p>
+    <button class="primary" onclick="window.location.href='/license'">Get an activation key</button>
+  </div>
+
+  <!-- I ALREADY HAVE A KEY: the actual signup form -->
+  <div class="panel" id="panel-key">
+    <label>License key</label>
+    <input id="signupKey" placeholder="YNET-XXXX-XXXX-XXXX">
+    <label>Business name</label>
+    <input id="signupBusinessName" placeholder="BITTNET INTERNET SERVICES">
+    <label>Email</label>
+    <input id="signupEmail" type="email">
+    <label>Password</label>
+    <div class="pwd-wrap">
+      <input id="signupPassword" type="password" autocomplete="new-password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('signupPassword')" aria-label="Show password">👁</button>
+    </div>
+    <button class="primary" onclick="signup()">Create account</button>
+    <div class="msg" id="key-msg"></div>
+  </div>
+
+  <!-- FORGOT PASSWORD -->
+  <div class="panel" id="panel-forgot">
+    <label>Account email</label>
+    <input id="forgotEmail" type="email">
+    <button class="primary" onclick="forgotPassword()">Send reset link</button>
+    <div class="msg" id="forgot-msg"></div>
+  </div>
+
+  <div class="tabs">
+    <button type="button" class="tab active" id="tab-login" onclick="switchPanel('login')">Log in</button>
+    <button type="button" class="tab" id="tab-create" onclick="switchPanel('create')">Create account</button>
+    <button type="button" class="tab" id="tab-key" onclick="switchPanel('key')">I already have a key</button>
+    <button type="button" class="tab" id="tab-forgot" onclick="switchPanel('forgot')">Forgot password</button>
+  </div>
+</div>
+
+<script>
+  const TITLES = {
+    login: ['YourNet Control', 'Log in to manage your business.'],
+    create: ['Get YourNet Control', 'Activate your account to get started.'],
+    key: ['Create your account', 'Use the key that was emailed to you.'],
+    forgot: ['Reset your password', "We'll email you a reset link."],
+  };
+
+  function switchPanel(key) {
+    Object.keys(TITLES).forEach(function (k) {
+      document.getElementById('panel-' + k).classList.toggle('active', k === key);
+      document.getElementById('tab-' + k).classList.toggle('active', k === key);
+    });
+    document.getElementById('cardTitle').textContent = TITLES[key][0];
+    document.getElementById('cardSub').textContent = TITLES[key][1];
+  }
+
+  function togglePwd(id) {
+    const input = document.getElementById(id);
+    const btn = input.nextElementSibling;
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = '🙈';
+      btn.setAttribute('aria-label', 'Hide password');
+    } else {
+      input.type = 'password';
+      btn.textContent = '👁';
+      btn.setAttribute('aria-label', 'Show password');
+    }
+  }
+
+  function showMsg(id, text, type) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = 'msg show ' + type;
+  }
+
+  function onAuthed(data) {
+    localStorage.setItem('yournet_token', data.token);
+    localStorage.setItem('yournet_currency', (data.tenant && data.tenant.currency) || 'GHS');
+    window.location.href = '/dashboard';
+  }
+
+  async function login() {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('loginEmail').value,
+          password: document.getElementById('loginPassword').value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Login failed');
+      onAuthed(data);
+    } catch (err) {
+      showMsg('login-msg', err.message, 'err');
+    }
+  }
+
+  async function signup() {
+    try {
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          licenseKey: document.getElementById('signupKey').value,
+          businessName: document.getElementById('signupBusinessName').value,
+          email: document.getElementById('signupEmail').value,
+          password: document.getElementById('signupPassword').value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not create account');
+      onAuthed(data);
+    } catch (err) {
+      showMsg('key-msg', err.message, 'err');
+    }
+  }
+
+  async function forgotPassword() {
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: document.getElementById('forgotEmail').value }),
+      });
+      const data = await res.json();
+      showMsg('forgot-msg', data.message || 'If that email has an account, a reset link has been sent.', 'ok');
+    } catch (err) {
+      showMsg('forgot-msg', 'Something went wrong. Please try again.', 'err');
+    }
+  }
+
+  document.getElementById('loginPassword').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') login();
+  });
+
+  // Already logged in (e.g. came back to /login by mistake, or the token
+  // from a previous session is still valid) - skip straight to the dashboard
+  // instead of making them log in again.
+  if (localStorage.getItem('yournet_token')) {
+    window.location.href = '/dashboard';
+  }
+</script>
+<script src="/fontsize.js"></script>
+</body>
+</html>

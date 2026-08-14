@@ -1,0 +1,351 @@
+/* YourNet Control - shared app shell.
+   Extends the existing dark ink/teal/gold palette already used across
+   admin.html, dashboard.html, billing.html, and print.html - not a new
+   design system, just the connective tissue (sidebar nav + layout) those
+   pages never had. Include AFTER a page's own <style> block so page-specific
+   rules can still override where needed. */
+
+:root{
+  --yn-ink:#0d1a1e;
+  --yn-ink-deep:#081316;
+  --yn-panel:#132228;
+  --yn-panel-2:#1a2e35;
+  --yn-line:rgba(255,255,255,.08);
+  --yn-teal:#2ec4b6;
+  --yn-gold:#e8a33d;
+  --yn-gold2:#ffc55a;
+  --yn-danger:#ff6b6b;
+  --yn-muted:#6b8a91;
+  --yn-cream:#e8f0f1;
+}
+
+.app-shell{min-height:100vh;position:relative;z-index:1;display:flex}
+
+/* ---------- connectivity mesh background (from Bitnet captive-portal design) ---------- */
+.mesh-bg{position:fixed;inset:0;z-index:0;opacity:.28;pointer-events:none}
+.mesh-bg svg{width:100%;height:100%}
+.mesh-node{fill:var(--yn-teal);opacity:.6}
+.mesh-line{stroke:var(--yn-teal);stroke-width:.6;opacity:.25}
+
+/* ---------- sidebar (desktop: fixed-width left column, grouped nav) ----------
+   #app-sidebar is the historical element name (kept so admin.html/
+   dashboard.html/billing.html/print.html need zero markup changes). On
+   desktop it's a full-height rail: brand up top, then nav grouped into
+   labeled sections (see app-nav-group below).
+
+   It's position:fixed (not sticky) so its width can change - collapsed
+   64px <-> hover-expanded 220px - as a pure overlay with zero effect on
+   .app-main's layout. .app-sidebar-spacer (a plain flex child, injected
+   by shell.js right after #app-sidebar) is what actually reserves the
+   gap in the flex row; its width tracks the sidebar's *resting* width
+   for the current mode, never its momentary hover width. */
+.app-sidebar{
+  width:220px;background:var(--yn-ink-deep);border-right:1px solid var(--yn-line);
+  position:fixed;top:0;left:0;height:100vh;overflow:hidden;z-index:30;
+  display:flex;flex-direction:column;transition:width .2s ease,box-shadow .2s ease;
+}
+.app-sidebar-spacer{flex-shrink:0;width:220px;transition:width .2s ease}
+.app-topbar{
+  display:flex;flex-direction:column;align-items:flex-start;
+  padding:20px 18px 16px;gap:14px;border-bottom:1px solid var(--yn-line);
+  position:relative;
+}
+.sidebar-collapse-btn{
+  position:absolute;top:18px;right:-13px;width:26px;height:26px;border-radius:50%;
+  background:var(--yn-panel-2);border:1px solid var(--yn-line);color:var(--yn-muted);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:31;
+  transition:color .15s,border-color .15s,transform .2s ease;
+}
+.sidebar-collapse-btn:hover{color:var(--yn-teal);border-color:var(--yn-teal)}
+.sidebar-collapse-btn .ico{font-size:11px;transition:transform .2s ease}
+.app-topbar-side{min-width:0}
+.app-topbar-side:not(.right){display:none}
+.app-topbar-side.right{display:flex;width:100%;gap:8px}
+.app-brand{
+  display:flex;align-items:center;gap:10px;
+  font-weight:800;font-size:16px;color:var(--yn-cream);white-space:nowrap;
+}
+.app-brand .dot{
+  width:9px;height:9px;border-radius:50%;background:var(--yn-teal);
+  box-shadow:0 0 8px var(--yn-teal);animation:yn-pulse 2s infinite;
+}
+.app-brand .brand-logo-icon{
+  width:26px;height:26px;border-radius:50%;flex-shrink:0;
+}
+@keyframes yn-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.app-user{font-size:12.5px;color:var(--yn-muted);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logout-btn{
+  display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.05);
+  color:var(--yn-cream);border:1px solid var(--yn-line);border-radius:9px;
+  padding:8px 16px;font-size:12.5px;font-weight:700;text-decoration:none;
+  transition:border-color .15s,color .15s,background .15s;white-space:nowrap;
+}
+.logout-btn:hover{border-color:var(--yn-danger);color:var(--yn-danger);background:rgba(255,107,107,.08)}
+.install-app-btn{
+  display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.05);
+  color:var(--yn-cream);border:1px solid var(--yn-line);border-radius:9px;
+  padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;
+  transition:border-color .15s,color .15s,background .15s;
+}
+.install-app-btn:hover{border-color:var(--yn-teal);color:var(--yn-teal);background:rgba(46,196,182,.08)}
+
+/* ---------- profile button + dropdown ----------
+   Lives in the page's own top-right corner (#yournetLangSwitcherContainer,
+   the same spot the language switcher sits in), rendered by shell.js's
+   renderTopRightProfile() - not part of the sidebar, so this one spot
+   covers both desktop and mobile with no separate mobile-only copy. */
+.yn-profile-wrap{position:relative;flex-shrink:0}
+.yn-profile-btn{
+  width:34px;height:34px;border-radius:50%;flex-shrink:0;
+  background:var(--yn-panel-2);border:1px solid var(--yn-line);color:var(--yn-cream);
+  display:flex;align-items:center;justify-content:center;font-size:15px;cursor:pointer;
+  transition:border-color .15s,color .15s;
+}
+.yn-profile-btn:hover{border-color:var(--yn-teal);color:var(--yn-teal)}
+.yn-profile-btn-img{width:100%;height:100%;border-radius:50%;object-fit:cover}
+.yn-profile-menu{
+  display:none;position:absolute;top:calc(100% + 8px);right:0;min-width:220px;
+  background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:10px;
+  box-shadow:0 12px 28px rgba(0,0,0,.35);padding:12px;z-index:40;
+}
+.yn-profile-wrap.open .yn-profile-menu{display:block}
+.yn-profile-info{margin-bottom:6px}
+.yn-profile-row{padding:8px 0;border-bottom:1px solid var(--yn-line)}
+.yn-profile-row:first-child{padding-top:0}
+.yn-profile-row-label{font-size:11px;color:var(--yn-muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px}
+.yn-profile-row-value{font-size:14px;color:var(--yn-cream);word-break:break-word}
+.yn-profile-menu-item{
+  display:block;width:100%;text-align:left;background:none;border:none;
+  color:var(--yn-cream);font-size:13px;font-weight:600;padding:9px 10px;border-radius:7px;cursor:pointer;
+  margin-top:4px;
+}
+.yn-profile-menu-item:hover{background:rgba(255,255,255,.06)}
+.yn-profile-menu-item.yn-danger:hover{color:var(--yn-danger);background:rgba(255,107,107,.08)}
+
+.app-nav{
+  display:flex;flex-direction:column;padding:14px 10px 16px;flex:1;min-height:0;overflow-y:auto;
+}
+.app-nav-group{display:flex;flex-direction:column;gap:2px}
+.app-nav-group + .app-nav-group{margin-top:16px}
+.app-nav-section-label{
+  font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--yn-muted);padding:6px 12px 4px;
+}
+.app-nav a{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;
+  color:var(--yn-muted);text-decoration:none;font-size:13.5px;font-weight:700;
+  transition:background .15s,color .15s;
+}
+.app-nav a:hover{background:rgba(255,255,255,.04);color:var(--yn-cream)}
+.app-nav a.active{background:rgba(46,196,182,.1);color:var(--yn-teal)}
+.app-nav a .ico{width:16px;text-align:center;flex-shrink:0;font-size:14px}
+
+/* Help sits pinned to the bottom of the sidebar, set off by a divider -
+   it's a support/contact exit, not part of the page-to-page nav flow, so
+   it reads as a distinct, lower-emphasis cluster rather than one more
+   item in the list. */
+.app-nav-group--help{
+  margin-top:auto;padding-top:14px;border-top:1px solid var(--yn-line);
+}
+.app-nav-group--help a{font-size:12.5px;font-weight:600}
+
+/* ---------- sidebar modes (desktop only - toggled via #yn-collapse-toggle,
+   persisted in localStorage by shell.js): "pinned" is the classic always-
+   expanded rail (default for anyone who's never touched the toggle).
+
+   "auto" rests as a slim 48px strip showing ONLY the fixed hamburger
+   button (.yn-sidebar-hamburger) - brand, nav, profile, everything else
+   is hidden, not just shrunk to icons. Clicking the hamburger adds
+   .open, which slides the full 220px sidebar out as an overlay; moving
+   the mouse off the sidebar (or clicking outside it) removes .open again
+   (see wireSidebarAutoHide in shell.js - this needs JS, not pure :hover,
+   since opening is click-triggered but closing is hover/click-away
+   triggered). The pin-open arrow button only exists inside the expanded
+   (.open) state and switches back to "pinned" permanently. ---------- */
+.app-sidebar-spacer.auto{width:56px}
+.app-sidebar.auto{width:56px}
+.app-sidebar.auto.open{width:220px;box-shadow:8px 0 24px rgba(0,0,0,.35)}
+.app-sidebar.auto:not(.open) .app-topbar,
+.app-sidebar.auto:not(.open) .sidebar-collapse-btn{display:none}
+.app-sidebar.auto .sidebar-collapse-btn .ico{transform:rotate(180deg)}
+
+/* Collapsed rail keeps the nav mounted (not display:none) so every page
+   always shows the icon strip, not just the toggle button - labels and
+   section headers hide, icons stay centered and clickable/tappable on
+   their own, same targets as the expanded list. */
+.app-sidebar.auto:not(.open) .app-nav{padding:8px 6px 16px}
+.app-sidebar.auto:not(.open) .app-nav-section-label{display:none}
+.app-sidebar.auto:not(.open) .app-nav a{justify-content:center;padding:11px 0}
+.app-sidebar.auto:not(.open) .app-nav a span:not(.ico){
+  position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;
+}
+.app-sidebar.auto:not(.open) .app-nav a .ico{width:auto;font-size:17px}
+.app-sidebar.auto:not(.open) .app-nav-group--help{padding-top:10px}
+
+.yn-sidebar-hamburger{
+  display:none;width:38px;height:38px;margin:14px 0 0 9px;flex-shrink:0;
+  background:var(--yn-panel-2);border:1px solid var(--yn-line);border-radius:50%;
+  align-items:center;justify-content:center;cursor:pointer;overflow:hidden;
+  transition:border-color .15s;padding:0;
+}
+.yn-sidebar-toggle-logo{width:100%;height:100%;object-fit:cover;display:block}
+.yn-sidebar-hamburger:hover{border-color:var(--yn-teal)}
+.app-sidebar.auto .yn-sidebar-hamburger{display:flex}
+.app-sidebar.auto.open .yn-sidebar-hamburger{margin-left:12px}
+
+/* ---------- main content area ---------- */
+.app-main{flex:1;min-width:0;max-width:1080px;margin:0;padding:32px 32px 80px;box-sizing:border-box}
+
+/* ---------- page header (logo + title, centered) ----------
+   One per page, sits at the top of .app-main. Wraps whatever the page's
+   own <h1> (and optional .sub subtitle) already say - shell.js moves those
+   into this wrapper rather than duplicating the title text, so per-page
+   i18n (data-i18n) and existing subtitle copy keep working unchanged. */
+.page-header{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin:0 0 26px}
+.page-header-logo{height:40px;width:auto;margin-bottom:4px}
+.page-header h1{
+  margin:0;font-size:20px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--yn-cream);font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;
+}
+.page-header .sub{color:var(--yn-muted);font-size:13px;max-width:520px}
+
+/* ---------- reusable widgets used across dashboard/admin ---------- */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px}
+.kpi-card{background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:12px;padding:16px}
+.kpi-card .num{font-size:22px;font-weight:800;color:var(--yn-gold2)}
+.kpi-card .label{font-size:11px;color:var(--yn-muted);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+
+.site-card{
+  background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:12px;
+  padding:14px;margin-bottom:10px;
+}
+.site-card .site-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.site-card .site-name{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
+.site-card .site-type{font-size:11px;color:var(--yn-muted);text-transform:uppercase;margin-top:2px}
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.status-dot.online{background:var(--yn-teal);box-shadow:0 0 6px var(--yn-teal);animation:yn-pulse 2s infinite}
+.status-dot.unconfigured{background:var(--yn-muted)}
+.status-dot.error{background:var(--yn-danger)}
+.site-card .live-btn{
+  background:var(--yn-panel-2);color:var(--yn-cream);border:1px solid var(--yn-line);
+  border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;
+}
+.site-card .live-btn:hover{border-color:var(--yn-teal);color:var(--yn-teal)}
+.live-panel{display:none;margin-top:12px;border-top:1px solid var(--yn-line);padding-top:10px}
+.live-panel.show{display:block}
+.live-panel table{width:100%;border-collapse:collapse;font-size:12.5px}
+.live-panel td,.live-panel th{padding:5px 4px;border-bottom:1px solid var(--yn-line);text-align:left}
+.live-panel .live-count{font-size:12px;color:var(--yn-muted);margin-bottom:6px}
+.live-panel .live-empty{font-size:12.5px;color:var(--yn-muted);padding:6px 0}
+.live-panel .live-err{font-size:12.5px;color:var(--yn-danger)}
+
+/* ---------- mobile bottom bar (native-app style) ----------
+   4 most-used sections as tabs, plus a "More" button that opens the
+   drawer below. Hidden entirely on desktop - .app-nav (the horizontal
+   strip) is what desktop uses instead. */
+.app-bottom-nav{
+  display:none;position:fixed;bottom:0;left:0;right:0;z-index:40;
+  background:var(--yn-ink-deep);border-top:1px solid var(--yn-line);
+  padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+  align-items:center;justify-content:space-around;
+}
+.app-bottom-nav a,.app-bottom-nav .more-btn{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 4px;font-size:10.5px;font-weight:700;border-radius:8px;
+  color:var(--yn-muted);text-decoration:none;background:none;border:none;
+  font-family:inherit;cursor:pointer;flex:1;min-width:0;
+}
+.app-bottom-nav a .ico,.app-bottom-nav .more-btn .ico{font-size:17px}
+.app-bottom-nav a.active,.app-bottom-nav .more-btn.active{color:var(--yn-teal)}
+
+/* ---------- slide-out drawer (vertical sidebar) ----------
+   Opened from the bottom bar's "More" button. Holds every nav item
+   (including the 4 already in the bottom bar, for a single consistent
+   place to find everything), plus brand header and logout. */
+.app-drawer-backdrop{
+  display:none;position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.5);
+  opacity:0;pointer-events:none;transition:opacity .2s ease;
+}
+.app-drawer-backdrop.open{opacity:1;pointer-events:auto}
+.app-drawer{
+  display:none;position:fixed;top:0;bottom:0;left:0;z-index:60;
+  width:min(78vw,300px);background:var(--yn-ink-deep);border-right:1px solid var(--yn-line);
+  transform:translateX(-100%);transition:transform .25s ease;
+  flex-direction:column;overflow-y:auto;box-shadow:8px 0 24px rgba(0,0,0,.35);
+}
+.app-drawer.open{transform:translateX(0)}
+.app-drawer-header{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:16px;border-bottom:1px solid var(--yn-line);
+}
+.app-drawer-header .app-brand{justify-self:start;font-size:14.5px}
+.app-drawer-close{
+  background:none;border:none;color:var(--yn-muted);font-size:22px;line-height:1;
+  cursor:pointer;padding:4px 8px;border-radius:6px;
+}
+.app-drawer-close:hover{color:var(--yn-cream);background:rgba(255,255,255,.06)}
+.app-drawer-nav{display:flex;flex-direction:column;padding:10px;gap:2px;flex:1}
+.app-drawer-nav a{
+  display:flex;align-items:center;gap:12px;padding:12px 12px;border-radius:9px;
+  color:var(--yn-cream);text-decoration:none;font-size:14px;font-weight:600;
+}
+.app-drawer-nav a .ico{width:18px;text-align:center;flex-shrink:0;font-size:16px;color:var(--yn-muted)}
+.app-drawer-nav a:hover{background:rgba(255,255,255,.05)}
+.app-drawer-nav a.active{background:rgba(46,196,182,.12);color:var(--yn-teal)}
+.app-drawer-nav a.active .ico{color:var(--yn-teal)}
+.app-drawer-footer{padding:14px 16px;border-top:1px solid var(--yn-line)}
+.app-drawer-footer{display:flex;flex-direction:column;gap:8px}
+.app-drawer-footer .logout-btn,.app-drawer-footer .install-app-btn{display:flex;justify-content:center}
+body.yn-drawer-locked{overflow:hidden}
+
+/* ---------- mobile: top bar collapses away, bottom bar + drawer take over ---------- */
+@media (max-width:760px){
+  .app-shell{flex-direction:column}
+  .app-sidebar-spacer{display:none}
+  .app-sidebar{width:100%;height:auto;position:static;border-right:none;overflow-y:visible;box-shadow:none}
+  .app-sidebar.auto,.app-sidebar.auto.open{width:100%}
+  .yn-sidebar-hamburger{display:none !important} /* mobile uses the bottom nav + drawer instead */
+  .app-topbar{display:none}
+  .app-nav{display:none}
+  .app-bottom-nav{display:flex}
+  .app-drawer-backdrop{display:block}
+  .app-drawer{display:flex}
+  .app-main{padding:16px 14px 90px}
+}
+
+/* ---------- glass mode ----------
+   shell.js adds body.yn-glass only once a rotating (or custom) photo
+   background is actually showing - without a photo behind them, "glass"
+   panels would just look like a slightly different flat dark color, so
+   this never applies against the plain mesh/solid background. Cards stay
+   readable at every blur level since setAppBackground() in shell.js keeps
+   a dark gradient under the photo regardless. */
+body.yn-glass .kpi-card,
+body.yn-glass .site-card,
+body.yn-glass .card{
+  background:rgba(19,34,40,.35);
+  backdrop-filter:blur(16px) saturate(150%);
+  -webkit-backdrop-filter:blur(16px) saturate(150%);
+  border:1px solid rgba(255,255,255,.16);
+}
+body.yn-glass .app-sidebar,
+body.yn-glass .app-bottom-nav,
+body.yn-glass .app-drawer{
+  background:rgba(8,19,22,.55);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+}
+/* Browsers without backdrop-filter support (older Safari/Firefox, some
+   captive-portal mini-browsers) fall back to a more opaque flat panel
+   instead of a half-transparent one with no blur, which would be
+   unreadable over a busy photo. */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  body.yn-glass .kpi-card,
+  body.yn-glass .site-card,
+  body.yn-glass .card,
+  body.yn-glass .app-sidebar,
+  body.yn-glass .app-bottom-nav,
+  body.yn-glass .app-drawer{
+    background:var(--yn-panel);
+  }
+}
