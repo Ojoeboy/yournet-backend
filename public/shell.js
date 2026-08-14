@@ -72,7 +72,7 @@
     const isActive = !item.external && item.key === active;
     const extraAttrs = item.external ? ' target="_blank" rel="noopener"' : '';
     return `
-      <a href="${item.href}" class="${isActive ? 'active' : ''}"${extraAttrs}>
+      <a href="${item.href}" class="${isActive ? 'active' : ''}" title="${item.label}"${extraAttrs}>
         <span class="ico">${item.icon}</span><span>${item.label}</span>
       </a>
     `;
@@ -93,7 +93,11 @@
   // than losing their compact preference.
   const COLLAPSE_KEY = 'yn_sidebar_collapsed';
   function isAutoMode() {
-    return localStorage.getItem(COLLAPSE_KEY) === '1';
+    const saved = localStorage.getItem(COLLAPSE_KEY);
+    // Nothing saved yet (new browser/first login) -> default to the slim
+    // icon rail, not the old always-expanded 220px rail. Anyone who has
+    // explicitly pinned it open before (saved === '0') keeps that choice.
+    return saved === null ? true : saved === '1';
   }
   function applyMode(sidebarEl, spacerEl, auto) {
     sidebarEl.classList.toggle('auto', auto);
@@ -164,7 +168,7 @@
 
     el.innerHTML = `
       <button type="button" class="yn-sidebar-hamburger" id="yn-sidebar-hamburger" aria-label="Open sidebar" aria-expanded="false">
-        <span class="yn-bar"></span><span class="yn-bar"></span><span class="yn-bar"></span><span class="yn-bar"></span>
+        <img src="/img/sidebar-toggle.png" alt="" class="yn-sidebar-toggle-logo">
       </button>
       <div class="app-topbar">
         <div class="app-topbar-side"></div>

@@ -41,7 +41,7 @@
    for the current mode, never its momentary hover width. */
 .app-sidebar{
   width:220px;background:var(--yn-ink-deep);border-right:1px solid var(--yn-line);
-  position:fixed;top:0;left:0;height:100vh;overflow-y:auto;z-index:30;
+  position:fixed;top:0;left:0;height:100vh;overflow:hidden;z-index:30;
   display:flex;flex-direction:column;transition:width .2s ease,box-shadow .2s ease;
 }
 .app-sidebar-spacer{flex-shrink:0;width:220px;transition:width .2s ease}
@@ -123,7 +123,7 @@
 .yn-profile-menu-item.yn-danger:hover{color:var(--yn-danger);background:rgba(255,107,107,.08)}
 
 .app-nav{
-  display:flex;flex-direction:column;padding:14px 10px 16px;flex:1;overflow-y:auto;
+  display:flex;flex-direction:column;padding:14px 10px 16px;flex:1;min-height:0;overflow-y:auto;
 }
 .app-nav-group{display:flex;flex-direction:column;gap:2px}
 .app-nav-group + .app-nav-group{margin-top:16px}
@@ -162,24 +162,36 @@
    since opening is click-triggered but closing is hover/click-away
    triggered). The pin-open arrow button only exists inside the expanded
    (.open) state and switches back to "pinned" permanently. ---------- */
-.app-sidebar-spacer.auto{width:48px}
-.app-sidebar.auto{width:48px}
+.app-sidebar-spacer.auto{width:56px}
+.app-sidebar.auto{width:56px}
 .app-sidebar.auto.open{width:220px;box-shadow:8px 0 24px rgba(0,0,0,.35)}
 .app-sidebar.auto:not(.open) .app-topbar,
-.app-sidebar.auto:not(.open) .app-nav,
 .app-sidebar.auto:not(.open) .sidebar-collapse-btn{display:none}
 .app-sidebar.auto .sidebar-collapse-btn .ico{transform:rotate(180deg)}
 
-.yn-sidebar-hamburger{
-  display:none;width:34px;height:34px;margin:14px 0 0 12px;flex-shrink:0;
-  background:var(--yn-panel-2);border:1px solid var(--yn-line);border-radius:8px;
-  align-items:center;justify-content:center;flex-direction:column;gap:4px;cursor:pointer;
-  transition:border-color .15s;
+/* Collapsed rail keeps the nav mounted (not display:none) so every page
+   always shows the icon strip, not just the toggle button - labels and
+   section headers hide, icons stay centered and clickable/tappable on
+   their own, same targets as the expanded list. */
+.app-sidebar.auto:not(.open) .app-nav{padding:8px 6px 16px}
+.app-sidebar.auto:not(.open) .app-nav-section-label{display:none}
+.app-sidebar.auto:not(.open) .app-nav a{justify-content:center;padding:11px 0}
+.app-sidebar.auto:not(.open) .app-nav a span:not(.ico){
+  position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;
 }
-.yn-sidebar-hamburger .yn-bar{width:16px;height:2px;border-radius:1px;background:var(--yn-cream);transition:background .15s}
+.app-sidebar.auto:not(.open) .app-nav a .ico{width:auto;font-size:17px}
+.app-sidebar.auto:not(.open) .app-nav-group--help{padding-top:10px}
+
+.yn-sidebar-hamburger{
+  display:none;width:38px;height:38px;margin:14px 0 0 9px;flex-shrink:0;
+  background:var(--yn-panel-2);border:1px solid var(--yn-line);border-radius:50%;
+  align-items:center;justify-content:center;cursor:pointer;overflow:hidden;
+  transition:border-color .15s;padding:0;
+}
+.yn-sidebar-toggle-logo{width:100%;height:100%;object-fit:cover;display:block}
 .yn-sidebar-hamburger:hover{border-color:var(--yn-teal)}
-.yn-sidebar-hamburger:hover .yn-bar{background:var(--yn-teal)}
 .app-sidebar.auto .yn-sidebar-hamburger{display:flex}
+.app-sidebar.auto.open .yn-sidebar-hamburger{margin-left:12px}
 
 /* ---------- main content area ---------- */
 .app-main{flex:1;min-width:0;max-width:1080px;margin:0;padding:32px 32px 80px;box-sizing:border-box}
