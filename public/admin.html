@@ -118,7 +118,7 @@
       <img id="acctLogoPreview" src="" alt="" style="display:none;width:64px;height:64px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,.15)">
       <div id="acctLogoPlaceholder" style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:24px;color:#6b8a91">👤</div>
       <div>
-        <input type="file" id="acctLogoFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="uploadAccountLogo()">
+        <input type="file" id="acctLogoFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="onAccountLogoFileSelected(event)">
         <button type="button" class="secondary" style="padding:8px 12px;font-size:12px" onclick="document.getElementById('acctLogoFile').click()">Upload logo</button>
         <button type="button" class="secondary hidden" id="acctLogoRemoveBtn" style="padding:8px 12px;font-size:12px" onclick="removeAccountLogo()">Remove</button>
       </div>
@@ -298,8 +298,19 @@
 
   <label>Business name shown on the portal</label>
   <input id="portalBusinessName" placeholder="e.g. BITTNET WiFi">
-  <label>Logo image URL (optional - a small square image works best)</label>
-  <input id="portalLogoUrl" placeholder="https://...">
+  <label>Portal logo (optional - a small square image works best)</label>
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
+    <img id="portalLogoPreview" src="" alt="" style="display:none;width:64px;height:64px;border-radius:12px;object-fit:cover;border:1px solid rgba(255,255,255,.15)">
+    <div id="portalLogoPlaceholder" style="width:64px;height:64px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:24px;color:#6b8a91">🖼️</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <input type="file" id="portalLogoFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="onPortalLogoFileSelected(event)">
+      <button type="button" class="secondary" style="padding:8px 12px;font-size:12px" onclick="document.getElementById('portalLogoFile').click()">Upload logo</button>
+      <button type="button" class="secondary" style="padding:8px 12px;font-size:12px" onclick="useAccountLogoForPortal()">Use account saved logo</button>
+      <button type="button" class="secondary hidden" id="portalLogoRemoveBtn" style="padding:8px 12px;font-size:12px" onclick="removePortalLogo()">Remove</button>
+    </div>
+  </div>
+  <label>...or paste a logo image URL instead</label>
+  <input id="portalLogoUrl" placeholder="https://..." onchange="applyPortalLogo(this.value)">
   <label>Brand color</label>
   <input id="portalPrimaryColor" type="color" value="#e8a33d" style="height:42px;padding:4px">
   <label>Background image URL (optional)</label>
@@ -525,6 +536,7 @@
 </div>
 
 <script>window.YOURNET_ACTIVE_NAV = 'setup';</script>
+<script src="/logo-editor.js"></script>
 <script src="/shell.js"></script>
 <script src="/fontsize.js"></script>
 <script src="/i18n/translations.js"></script>
@@ -688,13 +700,20 @@
     }
   }
 
-  async function uploadAccountLogo() {
-    const fileInput = document.getElementById('acctLogoFile');
+  function onAccountLogoFileSelected(evt) {
+    const fileInput = evt.target;
     const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    LogoEditor.open(file, {
+      onConfirm: (processedFile) => { uploadAccountLogo(processedFile); fileInput.value = ''; },
+      onCancel: () => { fileInput.value = ''; },
+    });
+  }
+
+  async function uploadAccountLogo(file) {
     if (!file) return;
     if (file.size > 1.5 * 1024 * 1024) {
       showMsg('account-logo-msg', 'Image is too large - please use one under 1.5MB.', 'err');
-      fileInput.value = '';
       return;
     }
     const formData = new FormData();
@@ -712,8 +731,6 @@
       if (window.yournetRefreshProfileLogo) window.yournetRefreshProfileLogo();
     } catch (err) {
       showMsg('account-logo-msg', err.message, 'err');
-    } finally {
-      fileInput.value = '';
     }
   }
 
@@ -725,6 +742,89 @@
       if (window.yournetRefreshProfileLogo) window.yournetRefreshProfileLogo();
     } catch (err) {
       showMsg('account-logo-msg', err.message, 'err');
+    }
+  }
+
+  function applyPortalLogo(logoUrl) {
+    const img = document.getElementById('portalLogoPreview');
+    const placeholder = document.getElementById('portalLogoPlaceholder');
+    const removeBtn = document.getElementById('portalLogoRemoveBtn');
+    if (logoUrl) {
+      img.src = logoUrl;
+      img.style.display = '';
+      placeholder.style.display = 'none';
+      removeBtn.classList.remove('hidden');
+    } else {
+      img.style.display = 'none';
+      img.src = '';
+      placeholder.style.display = '';
+      removeBtn.classList.add('hidden');
+    }
+  }
+
+  function onPortalLogoFileSelected(evt) {
+    const fileInput = evt.target;
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) { showMsg('portal-msg', 'Save a site first.', 'err'); fileInput.value = ''; return; }
+    LogoEditor.open(file, {
+      onConfirm: (processedFile) => { uploadPortalLogo(processedFile); fileInput.value = ''; },
+      onCancel: () => { fileInput.value = ''; },
+    });
+  }
+
+  async function uploadPortalLogo(file) {
+    const siteId = document.getElementById('portalSite').value;
+    if (!file) return;
+    if (!siteId) { showMsg('portal-msg', 'Save a site first.', 'err'); return; }
+    if (file.size > 1.5 * 1024 * 1024) {
+      showMsg('portal-msg', 'Image is too large - please use one under 1.5MB.', 'err');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('logo', file);
+    try {
+      const res = await fetch(`/api/sites/${siteId}/portal-logo`, {
+        method: 'POST',
+        headers: token ? { Authorization: 'Bearer ' + token } : {},
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      document.getElementById('portalLogoUrl').value = data.logoUrl;
+      applyPortalLogo(data.logoUrl);
+      showMsg('portal-msg', 'Portal logo updated.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function useAccountLogoForPortal() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
+    try {
+      const profile = await api('/api/dashboard/profile', 'GET');
+      if (!profile.logoUrl) return showMsg('portal-msg', 'No account logo saved yet - upload one in Account first.', 'err');
+      await api(`/api/sites/${siteId}/portal`, 'PATCH', { logoUrl: profile.logoUrl });
+      document.getElementById('portalLogoUrl').value = profile.logoUrl;
+      applyPortalLogo(profile.logoUrl);
+      showMsg('portal-msg', 'Portal logo set from your account logo.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
+  async function removePortalLogo() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return;
+    try {
+      await api(`/api/sites/${siteId}/portal/clear-field`, 'POST', { field: 'logoUrl' });
+      document.getElementById('portalLogoUrl').value = '';
+      applyPortalLogo(null);
+      showMsg('portal-msg', 'Portal logo removed.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
     }
   }
 
@@ -1135,6 +1235,7 @@
       const branding = await api(`/api/sites/${siteId}/portal`, 'GET');
       document.getElementById('portalBusinessName').value = branding.portal_business_name || '';
       document.getElementById('portalLogoUrl').value = branding.portal_logo_url || '';
+      applyPortalLogo(branding.portal_logo_url);
       document.getElementById('portalPrimaryColor').value = branding.portal_primary_color || '#e8a33d';
       document.getElementById('portalBackgroundImageUrl').value = branding.portal_background_image_url || '';
       document.getElementById('portalCautionText').value = branding.portal_caution_text || '';
@@ -1174,6 +1275,7 @@
       // remove a background image / caution note / WhatsApp / email / phone /
       // MoMo detail once set, instead of it being stuck forever.
       const clearable = {
+        logoUrl: 'portalLogoUrl',
         backgroundImageUrl: 'portalBackgroundImageUrl',
         cautionText: 'portalCautionText',
         whatsappNumber: 'portalWhatsappNumber',

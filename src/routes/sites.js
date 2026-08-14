@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const pool = require('../db/pool');
 const { requireAuth, requireNotAgent } = require('../middleware/auth');
 const mikrotik = require('../integrations/mikrotik');
@@ -412,10 +413,44 @@ router.patch('/:id/portal', asyncHandler(async (req, res) => {
   res.json(rows[0]);
 }));
 
+// Portal logo upload - same pattern as the account logo in dashboard.js:
+// memory storage only (Render's disk is ephemeral), file is base64-encoded
+// into a data: URL and saved straight into sites.portal_logo_url. No cloud
+// bucket needed - the DB already stores this fine as text.
+const portalLogoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1.5 * 1024 * 1024 }, // 1.5MB - a portal logo is small/square
+  fileFilter: (req, file, cb) => {
+    if (!/^image\/(png|jpe?g|webp|gif)$/.test(file.mimetype)) {
+      return cb(new Error('Logo must be a PNG, JPEG, WEBP, or GIF image'));
+    }
+    cb(null, true);
+  },
+});
+
+router.post('/:id/portal-logo', asyncHandler(async (req, res) => {
+  const { rows: existing } = await pool.query('SELECT id FROM sites WHERE id=$1 AND tenant_id=$2', [
+    req.params.id, req.tenantId,
+  ]);
+  if (!existing.length) return res.status(404).json({ error: 'Site not found' });
+
+  portalLogoUpload.single('logo')(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    if (!req.file) return res.status(400).json({ error: 'No file received' });
+    const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    const { rows } = await pool.query(
+      'UPDATE sites SET portal_logo_url=$1 WHERE id=$2 AND tenant_id=$3 RETURNING portal_logo_url',
+      [dataUrl, req.params.id, req.tenantId]
+    );
+    res.json({ ok: true, logoUrl: rows[0].portal_logo_url });
+  });
+}));
+
 // Clear a single optional portal field back to "not shown" (NULL) - the
 // PATCH above uses COALESCE so it can only set values, never blank one out.
-// Body: { field: 'backgroundImageUrl' | 'cautionText' | 'whatsappNumber' | 'helpEmail' | 'helpPhone' | 'momoNumber' | 'momoName' }
+// Body: { field: 'logoUrl' | 'backgroundImageUrl' | 'cautionText' | 'whatsappNumber' | 'helpEmail' | 'helpPhone' | 'momoNumber' | 'momoName' }
 const CLEARABLE_PORTAL_FIELDS = {
+  logoUrl: 'portal_logo_url',
   backgroundImageUrl: 'portal_background_image_url',
   cautionText: 'portal_caution_text',
   whatsappNumber: 'portal_whatsapp_number',

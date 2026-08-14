@@ -1,16 +1,15 @@
-Unify left sidebar: icon-rail default, logo toggle, fixed scroll-to-Help bug
+Add portal logo upload, "use account logo", and client-side resize/crop
 
-- Replace 4-bar hamburger with uploaded logo as the sidebar toggle button
-  (public/shell.js, public/img/sidebar-toggle.png)
-- Default sidebar mode to the slim 56px icon rail on first load instead of
-  the always-expanded 220px rail; existing users who pinned it open keep
-  that choice (public/shell.js: isAutoMode)
-- Show nav item icons on the collapsed rail instead of hiding the whole
-  nav; labels hide, tooltips added via title attr (public/shell.css,
-  public/shell.js: navLinkHtml)
-- Fix nested-scroll bug where the outer sidebar scrollbar swallowed the
-  inner nav's scroll, cutting off the Help section - sidebar now clips,
-  .app-nav owns its own scroll via min-height:0 (public/shell.css)
-
-Applies to all pages sharing shell.js/shell.css: dashboard, agents,
-admin, billing, pppoe, print, plan-overview.
+- POST /api/sites/:id/portal-logo: multer memory upload (1.5MB limit,
+  PNG/JPEG/WEBP/GIF), base64-encodes into sites.portal_logo_url —
+  same never-touches-disk pattern as the account logo, so it survives
+  Render free-tier redeploys
+- logoUrl added to CLEARABLE_PORTAL_FIELDS so the portal logo can
+  actually be cleared, not just set (old PATCH /portal used COALESCE)
+- admin.html: Portal tab logo field now has upload, "use account
+  saved logo", remove, and preview, alongside the existing paste-a-URL
+  input; upload/use-account-logo save immediately
+- New public/logo-editor.js: opens a crop modal on file select for
+  both account and portal logo uploads — auto-fit (contain, no
+  cropping) by default, or a manual draggable/resizable square crop;
+  re-encodes under 1.5MB client-side before upload
