@@ -1,57 +1,55 @@
-const nodemailer = require('nodemailer');
-
-// Real transactional email via Gmail SMTP - free, no domain required.
+// Real transactional email via Resend's HTTP API.
+//
+// WHY NOT SMTP (Gmail or otherwise): Render blocks outbound SMTP ports
+// on its containers as an anti-spam measure. Every attempt to connect to
+// smtp.gmail.com - port 465, port 587, forcing IPv4 - failed with the
+// same "Connection timeout", because the port itself never opens, not
+// because of DNS/routing. HTTP APIs (port 443, same as any normal web
+// request) aren't affected, which is why this uses one instead.
+//
+// SETUP: sign up free at https://resend.com (100 emails/day free tier,
+// no credit card), grab an API key from the dashboard, and set it as
+// RESEND_API_KEY in Render's Environment tab.
 //
 // HONEST LIMITS:
-// - Sends from your own Gmail address (e.g. yournet.control@gmail.com),
-//   not a branded "yournet.net" address - fine for now, less polished
-//   than a real domain.
-// - Gmail's free sending cap is ~500 emails/day, which is plenty for
-//   testing and early real usage but won't scale to a large customer base.
-// - Requires a Gmail "App Password" (NOT your normal Gmail password) -
-//   generate one at https://myaccount.google.com/apppasswords (needs
-//   2-Step Verification enabled on the Google account first).
-//
-// When there's revenue to justify ~$10-15/year for a real domain, swap
-// this back to Resend (or similar) + a verified domain for branded
-// "no-reply@yournet.net" sending - the sendEmail/sendPasswordResetEmail/
-// sendVerificationEmail function signatures below won't need to change.
-//
-// If GMAIL_USER / GMAIL_APP_PASSWORD aren't set, this falls back to
-// logging the link to the console instead of crashing - useful for local
-// development, but NOT something to rely on for real users.
-let transporter = null;
-function getTransporter() {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
-    });
-  }
-  return transporter;
-}
-
+// - Resend's free tier only lets you send FROM a domain you've verified
+//   with them (adding a couple DNS TXT/CNAME records) - it does NOT let
+//   you send from an arbitrary Gmail address the way SMTP did. Until a
+//   domain is verified, use Resend's shared sandbox sender
+//   'onboarding@resend.dev' via EMAIL_FROM (received emails will show
+//   that address, not a branded one).
+// - If RESEND_API_KEY isn't set, this falls back to logging the email
+//   content to the console instead of crashing - useful for local dev,
+//   not something to rely on for real users.
 async function sendEmail({ to, subject, html }) {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
-    console.log(`[EMAIL STUB - no GMAIL_USER/GMAIL_APP_PASSWORD set] To: ${to} | Subject: ${subject}`);
+  if (!process.env.RESEND_API_KEY) {
+    console.log(`[EMAIL STUB - no RESEND_API_KEY set] To: ${to} | Subject: ${subject}`);
     console.log(html);
     return;
   }
 
   try {
-    const info = await getTransporter().sendMail({
-      from: process.env.EMAIL_FROM || `YourNet Control <${process.env.GMAIL_USER}>`,
-      to,
-      subject,
-      html,
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: process.env.EMAIL_FROM || 'YourNet Control <onboarding@resend.dev>',
+        to,
+        subject,
+        html,
+      }),
     });
-    console.log(`[EMAIL SENT] To: ${to} | Subject: ${subject} | messageId: ${info.messageId} | response: ${info.response}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(`Resend ${res.status}: ${data.message || JSON.stringify(data)}`);
+    }
+    console.log(`[EMAIL SENT] To: ${to} | Subject: ${subject} | id: ${data.id}`);
   } catch (err) {
-    // Surface the real SMTP failure reason (bad auth, revoked app password,
-    // Gmail rate limit, etc.) instead of letting callers' .catch(()=>{})
+    // Surface the real failure reason (bad API key, unverified domain,
+    // rate limit, etc.) instead of letting callers' .catch(()=>{})
     // swallow it into total silence.
     console.error(`[EMAIL FAILED] To: ${to} | Subject: ${subject} | error: ${err.message}`);
     throw err;
