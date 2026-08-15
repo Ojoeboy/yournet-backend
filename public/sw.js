@@ -3,7 +3,7 @@
 // reopening the installed app shows something instantly on a weak
 // connection. Deliberately does NOT cache /api/* responses - those must
 // always hit the network live, same rule the per-site portal sw.js follows.
-const CACHE_NAME = 'yournet-admin-shell-v3';
+const CACHE_NAME = 'yournet-admin-shell-v4';
 const SHELL_FILES = [
   '/dashboard.html',
   '/shell.js',

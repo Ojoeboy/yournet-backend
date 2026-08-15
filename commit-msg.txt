@@ -1,42 +1,12 @@
-Add Account tab fields, owner dashboard, and revenue tracking; give owner pages a real sidebar
+Bump service worker cache version to v3->v4
 
-Account tab (Setup > Account):
-- New fields: business email, gender (male/female/other), admin WhatsApp,
-  business WhatsApp (use admin number / custom / none)
-- Personal email is now editable, with uniqueness check + verify-link
-  flow (pending_email stays separate from owner_email until confirmed)
-- Mobile number is now editable
+sw.js's CACHE_NAME never changed after the shell.js sidebar update,
+so browsers that already had the service worker installed kept
+serving the old cached shell.js/shell.css - meaning the new owner
+sidebar wouldn't show up until the cache was manually cleared.
 
-Portal customization:
-- "Use account WhatsApp" button on each site, mirrors the existing
-  logo copy-button pattern, feeds portal_whatsapp_number
+Bumping CACHE_NAME forces a reinstall on next visit, which purges
+the stale cache (see the activate handler) and pulls the current
+shell.js/shell.css from the network.
 
-Owner side - four new/updated pages behind owner login:
-- License Keys (existing, now sidebar-integrated)
-- Revenue: platform earnings by month/provider/signup-vs-renewal,
-  kept separate from tenant sales logs ("not your money")
-- Tenant Data: full tenant table, multi-select print (A4 landscape/
-  portrait), gender/country/active-vs-offline graphs
-- Media: owner-posted text/photo tutorials, shown automatically on
-  every tenant's admin page (no per-tenant scoping, no video)
-
-Sidebar:
-- shell.js now supports an owner-mode nav array (License Keys,
-  Revenue, Tenant Data, Media) via window.YOURNET_AUTH_MODE = 'owner'
-- All four owner pages reuse the shared app-shell/sidebar component
-  instead of the old inline nav-link bar
-- Owner-mode logout clears sessionStorage token and redirects to
-  /owner-login instead of the tenant /login path
-- Tenant-only profile dropdown and mesh/rotating background are
-  skipped in owner mode (no tenant token to fetch against)
-- owner-tenants.html: print target (#printArea) moved back to a
-  direct child of <body> so the print stylesheet's "hide everything
-  except #printArea" rule still works with the new sidebar wrapper
-
-DB: business_email, gender, admin_whatsapp, business_whatsapp_mode/
-business_whatsapp_custom, pending_email, and a global tutorials table
-added via ALTER TABLE / CREATE TABLE IF NOT EXISTS migrations.
-
-Not yet run against a live DB/browser in this environment - test the
-email-change/verify flow, print CSS, and mobile sidebar drawer on a
-real deploy before considering this fully verified.
+One-line change, public/sw.js only.
