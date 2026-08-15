@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Media - Owner Admin</title>
+<script>
+  if (!sessionStorage.getItem('yournet_owner_token')) {
+    window.location.replace('/owner-login');
+  }
+</script>
+<link rel="stylesheet" href="/shell.css">
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;margin:0}
+  h1{font-size:20px}
+  h2{font-size:15px;color:#2ec4b6;margin:24px 0 8px}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;margin-bottom:12px}
+  input,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#132228;color:#fff;margin-bottom:10px;box-sizing:border-box;font-family:inherit}
+  textarea{min-height:90px;resize:vertical}
+  button{padding:11px 14px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px}
+  .primary{background:#e8a33d;color:#0d1a1e;width:100%}
+  .secondary{background:rgba(255,255,255,.08);color:#e8f0f1}
+  .msg{margin-top:10px;font-size:13px;padding:10px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
+  .msg.ok{background:rgba(46,196,182,.12);color:#2ec4b6}
+  .note{font-size:12px;color:#6b8a91;line-height:1.6}
+  .owner-topbar{display:flex;justify-content:flex-end;margin-bottom:4px}
+  .logout-btn{font-size:12px;color:#6b8a91;text-decoration:none;padding:6px 10px;border:1px solid rgba(255,255,255,.15);border-radius:8px;white-space:nowrap}
+  .tut-item{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:12px}
+  .tut-item img{width:100%;max-width:260px;border-radius:8px;margin-bottom:10px;display:block}
+  .tut-title{font-weight:700;font-size:14px;margin-bottom:6px}
+  .tut-body{font-size:13px;color:#c7d6d9;white-space:pre-wrap;margin-bottom:8px}
+  .delBtn{background:rgba(255,107,107,.15);color:#ff6b6b;padding:6px 10px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
+<script src="/bg-rotate.js"></script>
+<div style="max-width:640px;margin-inline:auto">
+<div class="owner-topbar">
+  <a href="#" class="logout-btn" onclick="sessionStorage.removeItem('yournet_owner_token');window.location.href='/owner-login';return false;">Log out</a>
+</div>
+<h1>Media</h1>
+<p class="note">Text and photo tutorials you post here show automatically on every tenant's admin page, under their Media tab. No videos - text/photo only.</p>
+
+<h2>Post a new tutorial</h2>
+<div class="card">
+  <input id="tutTitle" placeholder="Title, e.g. How to add your first router">
+  <textarea id="tutBody" placeholder="Instructions or update text..."></textarea>
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+    <img id="tutPhotoPreview" src="" alt="" style="display:none;width:64px;height:64px;border-radius:8px;object-fit:cover;border:1px solid rgba(255,255,255,.15)">
+    <input type="file" id="tutPhotoFile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="onTutPhotoSelected(event)">
+    <button type="button" class="secondary" onclick="document.getElementById('tutPhotoFile').click()">Add photo (optional)</button>
+  </div>
+  <button class="primary" onclick="postTutorial()">Post</button>
+  <div class="msg" id="postMsg"></div>
+</div>
+
+<h2>Posted tutorials</h2>
+<div id="tutList"></div>
+
+<script src="/logo-editor.js"></script>
+<script>
+  const token = sessionStorage.getItem('yournet_owner_token');
+  if (!token) window.location.replace('/owner-login');
+
+  function authedFetch(url, opts = {}) {
+    return fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token } });
+  }
+
+  let tutPhotoDataUrl = null;
+
+  function onTutPhotoSelected(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    window.LogoEditor.open(file, {
+      onConfirm: (processedFile) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          tutPhotoDataUrl = reader.result;
+          const preview = document.getElementById('tutPhotoPreview');
+          preview.src = tutPhotoDataUrl;
+          preview.style.display = 'block';
+        };
+        reader.readAsDataURL(processedFile);
+      },
+      onCancel: () => { event.target.value = ''; },
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  async function postTutorial() {
+    const msg = document.getElementById('postMsg');
+    const title = document.getElementById('tutTitle').value.trim();
+    if (!title) { msg.textContent = 'Title is required.'; msg.className = 'msg show err'; return; }
+    try {
+      const res = await authedFetch('/license/admin/tutorials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          body: document.getElementById('tutBody').value.trim(),
+          photo: tutPhotoDataUrl,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not post tutorial');
+      msg.textContent = 'Posted.';
+      msg.className = 'msg show ok';
+      document.getElementById('tutTitle').value = '';
+      document.getElementById('tutBody').value = '';
+      tutPhotoDataUrl = null;
+      document.getElementById('tutPhotoPreview').style.display = 'none';
+      document.getElementById('tutPhotoFile').value = '';
+      loadTutorials();
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
+  }
+
+  async function loadTutorials() {
+    const res = await authedFetch('/license/admin/tutorials');
+    if (res.status === 401) { sessionStorage.removeItem('yournet_owner_token'); window.location.href = '/owner-login'; return; }
+    const items = await res.json();
+    const list = document.getElementById('tutList');
+    if (!items.length) { list.innerHTML = '<p class="note">No tutorials posted yet.</p>'; return; }
+    list.innerHTML = items.map((t) => `
+      <div class="tut-item">
+        ${t.photo ? `<img src="${escapeHtml(t.photo)}" alt="">` : ''}
+        <div class="tut-title">${escapeHtml(t.title)}</div>
+        ${t.body ? `<div class="tut-body">${escapeHtml(t.body)}</div>` : ''}
+        <button class="delBtn" onclick="deleteTutorial('${t.id}', this)">Delete</button>
+      </div>
+    `).join('');
+  }
+
+  async function deleteTutorial(id, btn) {
+    if (!confirm('Delete this tutorial? It will disappear from every tenant\'s Media tab.')) return;
+    btn.disabled = true;
+    try {
+      await authedFetch(`/license/admin/tutorials/${id}`, { method: 'DELETE' });
+      loadTutorials();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+    }
+  }
+
+  if (token) loadTutorials();
+</script>
+<script src="/fontsize.js"></script>
+</div>
+  </main>
+</div>
+<script>
+  window.YOURNET_ACTIVE_NAV = 'media';
+  window.YOURNET_AUTH_MODE = 'owner';
+</script>
+<script src="/shell.js"></script>
+</body>
+</html>

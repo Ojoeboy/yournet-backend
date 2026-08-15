@@ -50,6 +50,44 @@ ALTER TABLE tenants ADD COLUMN IF NOT EXISTS business_location TEXT;
 -- dashboard.js) since it round-trips through account-info on every page load.
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS account_logo TEXT;
 
+-- Account tab additions: business email, gender, and the two WhatsApp
+-- fields. business_whatsapp_mode drives the three-way choice on the
+-- Account tab (same shape as the logo fetch button): 'account' = use
+-- admin_whatsapp automatically, 'custom' = use business_whatsapp_custom,
+-- 'none' = business doesn't want WhatsApp messages. The *effective*
+-- business WhatsApp number (what portal pages actually copy) is computed
+-- from these three at read time - see routes/dashboard.js and
+-- routes/sites.js use-account-whatsapp.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS business_email TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS gender TEXT CHECK (gender IN ('male','female','other'));
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS admin_whatsapp TEXT;
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS business_whatsapp_mode TEXT NOT NULL DEFAULT 'account'
+  CHECK (business_whatsapp_mode IN ('account','custom','none'));
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS business_whatsapp_custom TEXT;
+
+-- Personal email (owner_email) is also the login username and must stay
+-- UNIQUE, so changing it goes through the same verify-token flow as
+-- signup verification rather than updating owner_email directly:
+-- pending_email holds the requested new address until the tenant clicks
+-- the link in their inbox. See POST /api/dashboard/account/email-change
+-- and the extended GET /verify-email in routes/auth.js.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS pending_email TEXT;
+
+-- Global tutorials/media library - owner-only to write, visible to every
+-- tenant automatically (deliberately has no tenant_id column - that
+-- absence is what makes a new post show up for everyone at once instead
+-- of needing to be assigned per-tenant). Photo stored as base64 data:
+-- URL, same pattern as account_logo above - text/photo only, no video.
+CREATE TABLE IF NOT EXISTS tutorials (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title TEXT NOT NULL,
+  body TEXT,
+  photo TEXT,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_tutorials_created ON tutorials(created_at DESC);
+
 -- Monthly platform license/subscription (replaces the old one-time
 -- "licensed forever" model). subscription_status drives whether the
 -- tenant's own auto-renewal is currently expected to succeed each month:

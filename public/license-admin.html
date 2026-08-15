@@ -12,9 +12,9 @@
     window.location.replace('/owner-login');
   }
 </script>
+<link rel="stylesheet" href="/shell.css">
 <style>
-  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
-    margin:0;padding:20px;max-width:640px;margin-inline:auto}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;margin:0}
   h1{font-size:20px}
   h2{font-size:15px;color:#2ec4b6;margin:24px 0 8px}
   .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;margin-bottom:12px}
@@ -35,7 +35,7 @@
   .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
   .msg.ok{background:rgba(46,196,182,.12);color:#2ec4b6}
   .note{font-size:12px;color:#6b8a91;line-height:1.6}
-  .topbar{display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .owner-topbar{display:flex;justify-content:flex-end;margin-bottom:4px}
   .logout-btn{font-size:12px;color:#6b8a91;text-decoration:none;padding:6px 10px;border:1px solid rgba(255,255,255,.15);border-radius:8px;white-space:nowrap}
   .logout-btn:hover{color:#e8f0f1;border-color:rgba(255,255,255,.3)}
   /* Glass mode: bg-rotate.js adds this to <body> once a rotating photo
@@ -48,11 +48,15 @@
 </style>
 </head>
 <body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
 <script src="/bg-rotate.js"></script>
-<div class="topbar">
-  <h1>License Keys</h1>
+<div style="max-width:640px;margin-inline:auto">
+<div class="owner-topbar">
   <a href="#" class="logout-btn" onclick="sessionStorage.removeItem('yournet_owner_token');window.location.href='/owner-login';return false;">Log out</a>
 </div>
+<h1>License Keys</h1>
 <p class="note">Keys purchased through Paystack, Flutterwave, or Hubtel on <code>/license</code> are issued automatically and appear below. Use the form to issue one manually for a sale made outside those gateways.</p>
 
 <h2>Issue a key manually</h2>
@@ -284,5 +288,13 @@
   if (token) { loadKeys(); loadClaims(); }
 </script>
 <script src="/fontsize.js"></script>
+</div>
+  </main>
+</div>
+<script>
+  window.YOURNET_ACTIVE_NAV = 'license';
+  window.YOURNET_AUTH_MODE = 'owner';
+</script>
+<script src="/shell.js"></script>
 </body>
 </html>

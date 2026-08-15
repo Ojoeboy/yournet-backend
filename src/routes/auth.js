@@ -199,13 +199,28 @@ router.get('/verify-email', asyncHandler(async (req, res) => {
   const { token } = req.query;
   if (!token) return res.status(400).send('Missing token.');
 
-  const { rows } = await pool.query(
-    `UPDATE tenants SET email_verified=true, verify_token_hash=NULL, verify_token_expires_at=NULL
-     WHERE verify_token_hash=$1 AND verify_token_expires_at > now() RETURNING id`,
-    [hashToken(token)]
-  );
-  if (!rows.length) return res.status(400).send('Invalid, expired, or already-used verification link.');
-  res.send('Email verified. You can close this page.');
+  // Handles two cases with one query: plain signup verification
+  // (pending_email is NULL, so owner_email is left untouched) and an
+  // email-change confirmation (pending_email holds the new address,
+  // which becomes owner_email here). See POST
+  // /api/dashboard/account/email-change for where pending_email gets set.
+  try {
+    const { rows } = await pool.query(
+      `UPDATE tenants
+       SET owner_email = COALESCE(pending_email, owner_email),
+           pending_email = NULL,
+           email_verified = true, verify_token_hash = NULL, verify_token_expires_at = NULL
+       WHERE verify_token_hash=$1 AND verify_token_expires_at > now() RETURNING id`,
+      [hashToken(token)]
+    );
+    if (!rows.length) return res.status(400).send('Invalid, expired, or already-used verification link.');
+    res.send('Email verified. You can close this page.');
+  } catch (err) {
+    // Unique violation on owner_email - someone else claimed that address
+    // after this change was requested but before it was confirmed.
+    if (err.code === '23505') return res.status(409).send('That email is already in use by another account. Please request the change again with a different address.');
+    throw err;
+  }
 }));
 
 // Deliberately responds the same way whether or not the email exists, so

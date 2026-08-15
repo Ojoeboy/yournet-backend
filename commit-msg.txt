@@ -1,10 +1,42 @@
-Fix Gmail SMTP connection timeout by forcing IPv4 and explicit host/port
+Add Account tab fields, owner dashboard, and revenue tracking; give owner pages a real sidebar
 
-- getTransporter() in src/integrations/emailService.js now connects to
-  smtp.gmail.com:465 explicitly with family:4, instead of the 'gmail'
-  shorthand
-- Render's containers resolve smtp.gmail.com to IPv6 by default, and
-  that connection hangs until timeout ("Connection timeout" in logs) -
-  the 'service: gmail' shorthand gave no way to force IPv4
-- Also sets connectionTimeout:15000 so a real failure surfaces in
-  ~15s instead of nodemailer's much longer default
+Account tab (Setup > Account):
+- New fields: business email, gender (male/female/other), admin WhatsApp,
+  business WhatsApp (use admin number / custom / none)
+- Personal email is now editable, with uniqueness check + verify-link
+  flow (pending_email stays separate from owner_email until confirmed)
+- Mobile number is now editable
+
+Portal customization:
+- "Use account WhatsApp" button on each site, mirrors the existing
+  logo copy-button pattern, feeds portal_whatsapp_number
+
+Owner side - four new/updated pages behind owner login:
+- License Keys (existing, now sidebar-integrated)
+- Revenue: platform earnings by month/provider/signup-vs-renewal,
+  kept separate from tenant sales logs ("not your money")
+- Tenant Data: full tenant table, multi-select print (A4 landscape/
+  portrait), gender/country/active-vs-offline graphs
+- Media: owner-posted text/photo tutorials, shown automatically on
+  every tenant's admin page (no per-tenant scoping, no video)
+
+Sidebar:
+- shell.js now supports an owner-mode nav array (License Keys,
+  Revenue, Tenant Data, Media) via window.YOURNET_AUTH_MODE = 'owner'
+- All four owner pages reuse the shared app-shell/sidebar component
+  instead of the old inline nav-link bar
+- Owner-mode logout clears sessionStorage token and redirects to
+  /owner-login instead of the tenant /login path
+- Tenant-only profile dropdown and mesh/rotating background are
+  skipped in owner mode (no tenant token to fetch against)
+- owner-tenants.html: print target (#printArea) moved back to a
+  direct child of <body> so the print stylesheet's "hide everything
+  except #printArea" rule still works with the new sidebar wrapper
+
+DB: business_email, gender, admin_whatsapp, business_whatsapp_mode/
+business_whatsapp_custom, pending_email, and a global tutorials table
+added via ALTER TABLE / CREATE TABLE IF NOT EXISTS migrations.
+
+Not yet run against a live DB/browser in this environment - test the
+email-change/verify flow, print CSS, and mobile sidebar drawer on a
+real deploy before considering this fully verified.

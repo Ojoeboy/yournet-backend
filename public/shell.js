@@ -46,6 +46,22 @@
     },
   ];
 
+  // Owner-side nav array - used instead of NAV_ITEMS when a page sets
+  // window.YOURNET_AUTH_MODE = 'owner' before this script runs (see the
+  // four /owner-* pages). Kept flat (no sections) since there are only
+  // four destinations; all four are "primary" so they also populate the
+  // mobile bottom bar, same as the tenant shell.
+  const OWNER_NAV_ITEMS = [
+    { key: 'license', href: '/license-admin', icon: '\u{1F511}', label: 'License Keys', primary: true, section: null },
+    { key: 'revenue', href: '/owner-revenue', icon: '\u26A1', label: 'Revenue', primary: true, section: null },
+    { key: 'tenants', href: '/owner-tenants', icon: '\u25A4', label: 'Tenant Data', primary: true, section: null },
+    { key: 'media', href: '/owner-media', icon: '\u{1F4F7}', label: 'Media', primary: true, section: null },
+  ];
+
+  function isOwnerMode() {
+    return window.YOURNET_AUTH_MODE === 'owner';
+  }
+
   // Groups NAV_ITEMS into { label, items } clusters for the desktop
   // sidebar, preserving first-appearance order of both items and
   // sections. Items with section:null render standalone, with no header.
@@ -150,9 +166,14 @@
     if (!el) return;
     el.classList.add('app-sidebar'); // #app-sidebar carries the id shell.js hooks into; the CSS lives on this class
     const active = window.YOURNET_ACTIVE_NAV || '';
-    const primaryItems = NAV_ITEMS.filter((i) => i.primary);
-    const secondaryActive = NAV_ITEMS.some((i) => !i.primary && i.key === active);
-    const logoutHtml = `<a href="#" class="logout-btn" title="Log out" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;"><span class="ico">\u23FB</span><span>Log out</span></a>`;
+    const navItems = isOwnerMode() ? OWNER_NAV_ITEMS : NAV_ITEMS;
+    const primaryItems = navItems.filter((i) => i.primary);
+    const secondaryActive = navItems.some((i) => !i.primary && i.key === active);
+    // Owner pages use a separate sessionStorage token/login route from
+    // tenants (see owner-login.html) - logout has to clear the right one.
+    const logoutHtml = isOwnerMode()
+      ? `<a href="#" class="logout-btn" title="Log out" onclick="sessionStorage.removeItem('yournet_owner_token');window.location.href='/owner-login';return false;"><span class="ico">\u23FB</span><span>Log out</span></a>`
+      : `<a href="#" class="logout-btn" title="Log out" onclick="localStorage.removeItem('yournet_token');window.location.href='/login';return false;"><span class="ico">\u23FB</span><span>Log out</span></a>`;
     const collapseBtnHtml = `
       <button type="button" class="sidebar-collapse-btn" id="yn-collapse-toggle" aria-label="Collapse sidebar">
         <span class="ico">\u276E</span>
@@ -177,7 +198,7 @@
         ${collapseBtnHtml}
       </div>
       <nav class="app-nav">
-        ${buildNavGroups(NAV_ITEMS).map((group) => `
+        ${buildNavGroups(navItems).map((group) => `
           <div class="app-nav-group${group.label === 'Help' ? ' app-nav-group--help' : ''}">
             ${group.label ? `<div class="app-nav-section-label">${group.label}</div>` : ''}
             ${group.items.map((item) => navLinkHtml(item, active)).join('')}
@@ -199,7 +220,7 @@
           <button type="button" class="app-drawer-close" id="yn-drawer-close" aria-label="Close menu">&times;</button>
         </div>
         <nav class="app-drawer-nav">
-          ${NAV_ITEMS.map((item) => navLinkHtml(item, active)).join('')}
+          ${navItems.map((item) => navLinkHtml(item, active)).join('')}
         </nav>
         <div class="app-drawer-footer">${installBtnHtml.replace('id="yn-install-btn"', 'id="yn-install-btn-drawer"')}${logoutHtml}</div>
       </div>
@@ -593,9 +614,17 @@
     wireInstallPrompt();
     render();
     renderPageHeader();
-    renderTopRightProfile();
-    renderMeshBg();
-    maybeStartRotatingBackground();
+    // The profile dropdown (business name/admin name/country) and the
+    // tenant mesh/rotating background both depend on a tenant login
+    // (yournet_token + /api/dashboard/*). Owner pages authenticate
+    // differently (yournet_owner_token) and already have their own
+    // public rotating-background script (bg-rotate.js), so skip both
+    // here rather than firing fetches that only ever 401.
+    if (!isOwnerMode()) {
+      renderTopRightProfile();
+      renderMeshBg();
+      maybeStartRotatingBackground();
+    }
     registerServiceWorker();
   }
 

@@ -464,6 +464,30 @@ router.post('/:id/portal-logo/from-account', asyncHandler(async (req, res) => {
   res.json({ ok: true, logoUrl: rows[0].portal_logo_url });
 }));
 
+// "Use account WhatsApp" - same one-query server-side copy pattern as the
+// logo button above. The "effective" business WhatsApp number depends on
+// the tenant's business_whatsapp_mode: 'account' uses admin_whatsapp,
+// 'custom' uses business_whatsapp_custom, 'none' means the business
+// doesn't want WhatsApp messages - resolved here with a CASE so the
+// browser only ever sends the site id.
+router.post('/:id/portal-whatsapp/from-account', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE sites SET portal_whatsapp_number = (
+       SELECT CASE t.business_whatsapp_mode
+         WHEN 'custom' THEN t.business_whatsapp_custom
+         WHEN 'account' THEN t.admin_whatsapp
+         ELSE NULL
+       END
+       FROM tenants t WHERE t.id = sites.tenant_id
+     )
+     WHERE id=$1 AND tenant_id=$2 RETURNING portal_whatsapp_number`,
+    [req.params.id, req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Site not found' });
+  if (!rows[0].portal_whatsapp_number) return res.status(400).json({ error: 'No business WhatsApp number saved yet - set one in Account first (or it may be set to "none").' });
+  res.json({ ok: true, whatsappNumber: rows[0].portal_whatsapp_number });
+}));
+
 // Clear a single optional portal field back to "not shown" (NULL) - the
 // PATCH above uses COALESCE so it can only set values, never blank one out.
 // Body: { field: 'logoUrl' | 'backgroundImageUrl' | 'cautionText' | 'whatsappNumber' | 'helpEmail' | 'helpPhone' | 'momoNumber' | 'momoName' }

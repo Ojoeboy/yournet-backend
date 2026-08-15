@@ -486,6 +486,181 @@ router.get('/admin/list', requireOwnerAuth, asyncHandler(async (req, res) => {
   res.json(rows);
 }));
 
+// OWNER ONLY: platform revenue - what YourNet itself has earned from
+// tenant signup/reactivation payments and monthly auto-renewals. Pulled
+// straight from subscription_payments (status='paid' = money actually
+// received, not attempts). This is YOUR money, distinct from the
+// tenant-sales endpoint below which tracks money that lands in tenants'
+// own accounts, not the platform's.
+router.get('/admin/revenue-summary', requireOwnerAuth, asyncHandler(async (req, res) => {
+  const [{ rows: totals }, { rows: byMonth }, { rows: byProvider }, { rows: byKind }] = await Promise.all([
+    pool.query(`SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS count
+                FROM subscription_payments WHERE status='paid'`),
+    pool.query(`SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS month,
+                       COALESCE(SUM(amount),0) AS total, COUNT(*) AS count
+                FROM subscription_payments WHERE status='paid'
+                GROUP BY 1 ORDER BY 1 ASC`),
+    pool.query(`SELECT COALESCE(provider,'unknown') AS provider,
+                       COALESCE(SUM(amount),0) AS total, COUNT(*) AS count
+                FROM subscription_payments WHERE status='paid'
+                GROUP BY 1 ORDER BY total DESC`),
+    pool.query(`SELECT kind, COALESCE(SUM(amount),0) AS total, COUNT(*) AS count
+                FROM subscription_payments WHERE status='paid'
+                GROUP BY 1 ORDER BY total DESC`),
+  ]);
+  res.json({
+    currency: 'GHS',
+    totalRevenue: Number(totals[0].total),
+    totalPayments: Number(totals[0].count),
+    byMonth: byMonth.map(r => ({ month: r.month, total: Number(r.total), count: Number(r.count) })),
+    byProvider: byProvider.map(r => ({ provider: r.provider, total: Number(r.total), count: Number(r.count) })),
+    byKind: byKind.map(r => ({ kind: r.kind, total: Number(r.total), count: Number(r.count) })),
+  });
+}));
+
+// OWNER ONLY: tenant sales logs - how much each tenant's own end-customers
+// have paid THEM for WiFi vouchers, through the tenant's own linked
+// gateway. This money never touches the platform account; it's visibility
+// only, pulled from voucher_orders (status='paid'), grouped per tenant.
+// Kept deliberately separate from revenue-summary above so the two are
+// never confused: one is YourNet's income, this is tenants' income that
+// YourNet merely has visibility into.
+router.get('/admin/tenant-sales', requireOwnerAuth, asyncHandler(async (req, res) => {
+  const [{ rows: perTenant }, { rows: byMonth }] = await Promise.all([
+    pool.query(`
+      SELECT t.id AS tenant_id, t.business_name, t.owner_email,
+             COALESCE(SUM(p.price), 0) AS total,
+             COUNT(vo.id) AS count
+      FROM tenants t
+      LEFT JOIN voucher_orders vo ON vo.tenant_id = t.id AND vo.status = 'paid'
+      LEFT JOIN packages p ON p.id = vo.package_id
+      GROUP BY t.id, t.business_name, t.owner_email
+      ORDER BY total DESC
+    `),
+    pool.query(`
+      SELECT to_char(date_trunc('month', vo.created_at), 'YYYY-MM') AS month,
+             COALESCE(SUM(p.price), 0) AS total, COUNT(*) AS count
+      FROM voucher_orders vo
+      LEFT JOIN packages p ON p.id = vo.package_id
+      WHERE vo.status='paid'
+      GROUP BY 1 ORDER BY 1 ASC
+    `),
+  ]);
+  res.json({
+    currency: 'GHS',
+    perTenant: perTenant.map(r => ({
+      tenantId: r.tenant_id, businessName: r.business_name, ownerEmail: r.owner_email,
+      total: Number(r.total), count: Number(r.count),
+    })),
+    byMonth: byMonth.map(r => ({ month: r.month, total: Number(r.total), count: Number(r.count) })),
+  });
+}));
+
+// OWNER ONLY: full tenant directory for the Tenant Data page - name,
+// both emails, country, gender, both WhatsApp numbers, logo, and which
+// payment gateway providers each tenant has configured (provider names
+// only - never keys/secrets, those stay encrypted in payment_gateways
+// and are never selected here).
+router.get('/admin/tenants', requireOwnerAuth, asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT t.id, t.business_name, t.admin_full_name, t.owner_email, t.business_email,
+           t.owner_phone, t.admin_whatsapp,
+           CASE t.business_whatsapp_mode
+             WHEN 'custom' THEN t.business_whatsapp_custom
+             WHEN 'account' THEN t.admin_whatsapp
+             ELSE NULL
+           END AS business_whatsapp,
+           t.country, t.gender, t.account_logo, t.subscription_status, t.plan_expires_at,
+           t.created_at,
+           COALESCE(
+             (SELECT array_agg(pg.provider ORDER BY pg.provider) FROM payment_gateways pg WHERE pg.tenant_id = t.id),
+             ARRAY[]::text[]
+           ) AS payment_gateways
+    FROM tenants t
+    ORDER BY t.created_at DESC
+  `);
+  res.json(rows.map(t => ({
+    id: t.id,
+    businessName: t.business_name,
+    adminFullName: t.admin_full_name,
+    personalEmail: t.owner_email,
+    businessEmail: t.business_email,
+    mobileNumber: t.owner_phone,
+    adminWhatsapp: t.admin_whatsapp,
+    businessWhatsapp: t.business_whatsapp,
+    country: t.country,
+    gender: t.gender,
+    logoUrl: t.account_logo,
+    subscriptionStatus: t.subscription_status,
+    planExpiresAt: t.plan_expires_at,
+    createdAt: t.created_at,
+    paymentGateways: t.payment_gateways,
+  })));
+}));
+
+// OWNER ONLY: aggregate stats behind the dashboard graphs - gender split,
+// country split, and active-vs-offline. "Active" mirrors the same
+// subscription_status the tenant's own login grace-period check already
+// uses (see routes/auth.js) - 'active' or 'manual' with a plan not yet
+// expired counts as a live business; everything else (past_due, canceled,
+// or an expired plan_expires_at) counts as offline/not reactivated.
+router.get('/admin/tenant-stats', requireOwnerAuth, asyncHandler(async (req, res) => {
+  const [{ rows: gender }, { rows: country }, { rows: activity }] = await Promise.all([
+    pool.query(`SELECT COALESCE(gender,'unspecified') AS gender, COUNT(*) AS count
+                FROM tenants GROUP BY 1 ORDER BY count DESC`),
+    pool.query(`SELECT COALESCE(country,'unspecified') AS country, COUNT(*) AS count
+                FROM tenants GROUP BY 1 ORDER BY count DESC`),
+    pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE subscription_status IN ('active','manual') AND (plan_expires_at IS NULL OR plan_expires_at > now())) AS active,
+        COUNT(*) FILTER (WHERE NOT (subscription_status IN ('active','manual') AND (plan_expires_at IS NULL OR plan_expires_at > now()))) AS offline
+      FROM tenants
+    `),
+  ]);
+  res.json({
+    byGender: gender.map(r => ({ gender: r.gender, count: Number(r.count) })),
+    byCountry: country.map(r => ({ country: r.country, count: Number(r.count) })),
+    active: Number(activity[0].active),
+    offline: Number(activity[0].offline),
+  });
+}));
+
+// ---- Tutorials / media library (owner writes, every tenant reads) ----
+// Read side for tenants lives at GET /api/dashboard/tutorials in
+// routes/dashboard.js - deliberately unauthenticated-by-tenant-id since
+// the whole point is every tenant sees the same list.
+
+router.get('/admin/tutorials', requireOwnerAuth, asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT id, title, body, photo, position, created_at FROM tutorials ORDER BY position ASC, created_at DESC'
+  );
+  res.json(rows);
+}));
+
+router.post('/admin/tutorials', requireOwnerAuth, asyncHandler(async (req, res) => {
+  const { title, body, photo, position } = req.body;
+  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required.' });
+  // Same 1.5MB-ish ballpark as the account/portal logo uploads - this is a
+  // small illustrative photo, not a banner, so keep it light. Client
+  // should run it through logo-editor.js-style resizing before sending.
+  if (photo && photo.length > 2 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Photo is too large - please use a smaller image.' });
+  }
+  if (photo && !/^data:image\/(png|jpe?g|webp|gif);base64,/.test(photo)) {
+    return res.status(400).json({ error: 'Photo must be an image (PNG/JPEG/WEBP/GIF).' });
+  }
+  const { rows } = await pool.query(
+    `INSERT INTO tutorials (title, body, photo, position) VALUES ($1,$2,$3,$4) RETURNING id`,
+    [String(title).trim(), body || null, photo || null, Number(position) || 0]
+  );
+  res.json({ ok: true, id: rows[0].id });
+}));
+
+router.delete('/admin/tutorials/:id', requireOwnerAuth, asyncHandler(async (req, res) => {
+  await pool.query('DELETE FROM tutorials WHERE id=$1', [req.params.id]);
+  res.json({ ok: true });
+}));
+
 function renderPage(title, bodyHtml) {
   return `
     <html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#0d1a1e;color:#e8f0f1">

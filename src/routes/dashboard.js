@@ -66,11 +66,15 @@ router.patch('/background-settings', asyncHandler(async (req, res) => {
 }));
 
 // Account tab (business name, admin's full name, digital address, country,
-// business location) + the same fields surfaced in the topbar profile panel.
-// owner_email comes along read-only - it's set at signup, not edited here.
+// business location, business email, gender, WhatsApp numbers, mobile) +
+// the same fields surfaced in the topbar profile panel. owner_email is
+// read-only here - it's the login username, changed only via the
+// email-change endpoint below since it needs uniqueness + reverification.
 router.get('/account-info', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT business_name, admin_full_name, owner_email, digital_address, country, business_location, account_logo
+    `SELECT business_name, admin_full_name, owner_email, pending_email, owner_phone,
+            digital_address, country, business_location, account_logo,
+            business_email, gender, admin_whatsapp, business_whatsapp_mode, business_whatsapp_custom
      FROM tenants WHERE id=$1`,
     [req.tenantId]
   );
@@ -80,18 +84,33 @@ router.get('/account-info', asyncHandler(async (req, res) => {
     businessName: t.business_name,
     adminFullName: t.admin_full_name,
     email: t.owner_email,
+    pendingEmail: t.pending_email,
+    mobileNumber: t.owner_phone,
     digitalAddress: t.digital_address,
     country: t.country,
     businessLocation: t.business_location,
     logoUrl: t.account_logo,
+    businessEmail: t.business_email,
+    gender: t.gender,
+    adminWhatsapp: t.admin_whatsapp,
+    businessWhatsappMode: t.business_whatsapp_mode,
+    businessWhatsappCustom: t.business_whatsapp_custom,
   });
 }));
 
 router.patch('/account-info', asyncHandler(async (req, res) => {
-  const { businessName, adminFullName, digitalAddress, country, businessLocation } = req.body;
+  const {
+    businessName, adminFullName, digitalAddress, country, businessLocation,
+    mobileNumber, businessEmail, gender, adminWhatsapp, businessWhatsappMode, businessWhatsappCustom,
+  } = req.body;
   if (!businessName || !String(businessName).trim()) {
     return res.status(400).json({ error: 'Business name cannot be empty' });
   }
+  if (gender && !['male', 'female', 'other'].includes(gender)) {
+    return res.status(400).json({ error: 'Invalid gender value' });
+  }
+  const validModes = ['account', 'custom', 'none'];
+  const mode = validModes.includes(businessWhatsappMode) ? businessWhatsappMode : 'account';
   // The Account form always sends its full current state (not a partial
   // patch), so blank optional fields intentionally clear the stored value -
   // this stays a simple full overwrite rather than per-field COALESCE.
@@ -102,18 +121,61 @@ router.patch('/account-info', asyncHandler(async (req, res) => {
        admin_full_name = $2,
        digital_address = $3,
        country = $4,
-       business_location = $5
-     WHERE id=$6`,
+       business_location = $5,
+       owner_phone = $6,
+       business_email = $7,
+       gender = $8,
+       admin_whatsapp = $9,
+       business_whatsapp_mode = $10,
+       business_whatsapp_custom = $11
+     WHERE id=$12`,
     [
       String(businessName).trim(),
       clean(adminFullName),
       clean(digitalAddress),
       clean(country),
       clean(businessLocation),
+      clean(mobileNumber),
+      clean(businessEmail),
+      clean(gender),
+      clean(adminWhatsapp),
+      mode,
+      clean(businessWhatsappCustom),
       req.tenantId,
     ]
   );
   res.json({ ok: true });
+}));
+
+// Personal email is also the login username (UNIQUE), so it doesn't
+// change immediately here - a verification link is sent to the NEW
+// address, and owner_email only actually updates once that link is
+// clicked (GET /verify-email in routes/auth.js). The old email keeps
+// working for login until then.
+router.post('/account-info/email-change', asyncHandler(async (req, res) => {
+  const { newEmail } = req.body;
+  if (!newEmail || !String(newEmail).trim()) {
+    return res.status(400).json({ error: 'A new email address is required.' });
+  }
+  const email = String(newEmail).trim().toLowerCase();
+  const { rows: existing } = await pool.query(
+    'SELECT id FROM tenants WHERE owner_email=$1 AND id != $2', [email, req.tenantId]
+  );
+  if (existing.length) {
+    return res.status(409).json({ error: 'That email is already in use by another account.' });
+  }
+  const crypto = require('crypto');
+  const emailService = require('../integrations/emailService');
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  await pool.query(
+    `UPDATE tenants SET pending_email=$1, verify_token_hash=$2, verify_token_expires_at=now() + interval '24 hours'
+     WHERE id=$3`,
+    [email, tokenHash, req.tenantId]
+  );
+  const link = `${process.env.APP_BASE_URL}/verify-email?token=${token}`;
+  const result = await emailService.sendVerificationEmail(email, link).catch((err) => ({ sent: false, reason: err.message }));
+  res.json({ ok: true, email: result });
 }));
 
 // Authenticated version of the same rotating photo list the public portal
@@ -462,6 +524,15 @@ router.get('/plan-overview', asyncHandler(async (req, res) => {
     subscriptionPayments: subscriptionLog,
     customerPayments: customerLog,
   });
+}));
+
+// Global tutorials/media library - read-only here, same list every tenant
+// sees (see the owner-only write side in routes/license.js admin/tutorials).
+router.get('/tutorials', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT id, title, body, photo, created_at FROM tutorials ORDER BY position ASC, created_at DESC'
+  );
+  res.json(rows.map(r => ({ id: r.id, title: r.title, body: r.body, photo: r.photo, createdAt: r.created_at })));
 }));
 
 module.exports = router;

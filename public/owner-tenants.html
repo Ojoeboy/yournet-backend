@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tenant Data - Owner Admin</title>
+<script>
+  if (!sessionStorage.getItem('yournet_owner_token')) {
+    window.location.replace('/owner-login');
+  }
+</script>
+<link rel="stylesheet" href="/shell.css">
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;margin:0}
+  h1{font-size:20px}
+  h2{font-size:15px;color:#2ec4b6;margin:24px 0 8px}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;margin-bottom:12px;overflow-x:auto}
+  .note{font-size:12px;color:#6b8a91;line-height:1.6}
+  .owner-topbar{display:flex;justify-content:flex-end;margin-bottom:4px}
+  .logout-btn{font-size:12px;color:#6b8a91;text-decoration:none;padding:6px 10px;border:1px solid rgba(255,255,255,.15);border-radius:8px;white-space:nowrap}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .stat{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px}
+  .stat .label{font-size:11px;color:#6b8a91;text-transform:uppercase;letter-spacing:.04em}
+  .stat .value{font-size:20px;font-weight:700;margin-top:4px}
+  .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12.5px}
+  .bar-label{width:90px;flex-shrink:0;color:#c7d6d9;text-transform:capitalize}
+  .bar-track{flex:1;background:rgba(255,255,255,.06);border-radius:6px;height:16px;position:relative;overflow:hidden}
+  .bar-fill{height:100%;background:#2ec4b6;border-radius:6px}
+  .bar-count{width:34px;text-align:right;flex-shrink:0;color:#6b8a91}
+  table{width:100%;border-collapse:collapse;font-size:12px;min-width:820px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap}
+  th{color:#6b8a91;font-weight:600;font-size:10.5px;text-transform:uppercase}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  select,button{padding:9px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#132228;color:#fff;font-size:12.5px;cursor:pointer}
+  button.primary{background:#e8a33d;color:#0d1a1e;font-weight:700;border:none}
+  #printArea{display:none}
+  @media print {
+    body > *:not(#printArea){display:none !important}
+    #printArea{display:block !important}
+    #printArea table{width:100%;border-collapse:collapse;font-size:11px}
+    #printArea th,#printArea td{border:1px solid #999;padding:6px}
+    #printArea h2{margin-top:0}
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
+<script src="/bg-rotate.js"></script>
+<div style="max-width:960px;margin-inline:auto">
+<div class="owner-topbar">
+  <a href="#" class="logout-btn" onclick="sessionStorage.removeItem('yournet_owner_token');window.location.href='/owner-login';return false;">Log out</a>
+</div>
+<h1>Tenant Data</h1>
+
+<h2>Overview</h2>
+<div class="stat-grid">
+  <div class="stat"><div class="label">Active businesses</div><div class="value" id="activeCount">-</div></div>
+  <div class="stat"><div class="label">Offline businesses</div><div class="value" id="offlineCount">-</div></div>
+</div>
+
+<div class="card">
+  <div class="note" style="margin-bottom:8px">Gender</div>
+  <div id="genderBars"></div>
+</div>
+<div class="card">
+  <div class="note" style="margin-bottom:8px">Country</div>
+  <div id="countryBars"></div>
+</div>
+<div class="card">
+  <div class="note" style="margin-bottom:8px">Monthly earnings (see <a href="/owner-revenue" style="color:#2ec4b6">Revenue</a> for the full breakdown)</div>
+  <div id="revenueBars"></div>
+</div>
+
+<h2>All tenants</h2>
+<div class="toolbar">
+  <button onclick="selectAll(true)">Select all</button>
+  <button onclick="selectAll(false)">Clear selection</button>
+  <select id="printOrientation">
+    <option value="landscape">A4 landscape</option>
+    <option value="portrait">A4 portrait</option>
+  </select>
+  <button class="primary" onclick="printSelected()">Print selected</button>
+</div>
+<div class="card">
+  <table id="tenantTable">
+    <thead>
+      <tr>
+        <th></th><th>Business</th><th>Admin</th><th>Personal email</th><th>Business email</th>
+        <th>Mobile</th><th>Admin WhatsApp</th><th>Business WhatsApp</th><th>Country</th><th>Gender</th>
+        <th>Status</th><th>Gateways</th>
+      </tr>
+    </thead>
+    <tbody id="tenantTbody"></tbody>
+  </table>
+</div>
+
+<script>
+  const token = sessionStorage.getItem('yournet_owner_token');
+  if (!token) window.location.replace('/owner-login');
+
+  function authedFetch(url) {
+    return fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  let tenants = [];
+
+  function renderBars(containerId, rows, labelKey, countKey) {
+    const el = document.getElementById(containerId);
+    if (!rows.length) { el.innerHTML = '<div class="note">No data yet.</div>'; return; }
+    const max = Math.max(1, ...rows.map((r) => r[countKey]));
+    el.innerHTML = rows.map((r) => `
+      <div class="bar-row">
+        <div class="bar-label">${escapeHtml(r[labelKey])}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${(r[countKey] / max * 100).toFixed(0)}%"></div></div>
+        <div class="bar-count">${r[countKey]}</div>
+      </div>
+    `).join('');
+  }
+
+  async function loadStats() {
+    try {
+      const res = await authedFetch('/license/admin/tenant-stats');
+      if (res.status === 401) { sessionStorage.removeItem('yournet_owner_token'); window.location.href = '/owner-login'; return; }
+      const data = await res.json();
+      document.getElementById('activeCount').textContent = data.active;
+      document.getElementById('offlineCount').textContent = data.offline;
+      renderBars('genderBars', data.byGender, 'gender', 'count');
+      renderBars('countryBars', data.byCountry, 'country', 'count');
+    } catch (err) {
+      document.getElementById('genderBars').innerHTML = `<div class="note">${err.message}</div>`;
+    }
+  }
+
+  async function loadRevenueBars() {
+    try {
+      const res = await authedFetch('/license/admin/revenue-summary');
+      const data = await res.json();
+      renderBars('revenueBars', data.byMonth, 'month', 'total');
+    } catch (err) {
+      document.getElementById('revenueBars').innerHTML = `<div class="note">${err.message}</div>`;
+    }
+  }
+
+  async function loadTenants() {
+    const res = await authedFetch('/license/admin/tenants');
+    if (res.status === 401) { sessionStorage.removeItem('yournet_owner_token'); window.location.href = '/owner-login'; return; }
+    tenants = await res.json();
+    const tbody = document.getElementById('tenantTbody');
+    if (!tenants.length) {
+      tbody.innerHTML = '<tr><td colspan="12" class="note">No tenants yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = tenants.map((t) => `
+      <tr>
+        <td><input type="checkbox" class="tenant-check" value="${t.id}"></td>
+        <td>${escapeHtml(t.businessName)}</td>
+        <td>${escapeHtml(t.adminFullName)}</td>
+        <td>${escapeHtml(t.personalEmail)}</td>
+        <td>${escapeHtml(t.businessEmail)}</td>
+        <td>${escapeHtml(t.mobileNumber)}</td>
+        <td>${escapeHtml(t.adminWhatsapp)}</td>
+        <td>${escapeHtml(t.businessWhatsapp)}</td>
+        <td>${escapeHtml(t.country)}</td>
+        <td>${escapeHtml(t.gender)}</td>
+        <td>${escapeHtml(t.subscriptionStatus)}</td>
+        <td>${(t.paymentGateways || []).join(', ') || '-'}</td>
+      </tr>
+    `).join('');
+  }
+
+  function selectAll(checked) {
+    document.querySelectorAll('.tenant-check').forEach((cb) => { cb.checked = checked; });
+  }
+
+  function printSelected() {
+    const selectedIds = Array.from(document.querySelectorAll('.tenant-check:checked')).map((cb) => cb.value);
+    if (!selectedIds.length) { alert('Select at least one tenant to print.'); return; }
+    const rows = tenants.filter((t) => selectedIds.includes(t.id));
+    const orientation = document.getElementById('printOrientation').value;
+
+    let styleEl = document.getElementById('printOrientationStyle');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'printOrientationStyle';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = `@page { size: A4 ${orientation}; margin: 12mm; }`;
+
+    document.getElementById('printArea').innerHTML = `
+      <h2>YourNet Control - Tenant Data (${rows.length} of ${tenants.length})</h2>
+      <table>
+        <thead><tr>
+          <th>Business</th><th>Admin</th><th>Personal email</th><th>Business email</th>
+          <th>Mobile</th><th>Admin WhatsApp</th><th>Business WhatsApp</th><th>Country</th><th>Gender</th>
+          <th>Status</th><th>Gateways</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map((t) => `
+            <tr>
+              <td>${escapeHtml(t.businessName)}</td>
+              <td>${escapeHtml(t.adminFullName)}</td>
+              <td>${escapeHtml(t.personalEmail)}</td>
+              <td>${escapeHtml(t.businessEmail)}</td>
+              <td>${escapeHtml(t.mobileNumber)}</td>
+              <td>${escapeHtml(t.adminWhatsapp)}</td>
+              <td>${escapeHtml(t.businessWhatsapp)}</td>
+              <td>${escapeHtml(t.country)}</td>
+              <td>${escapeHtml(t.gender)}</td>
+              <td>${escapeHtml(t.subscriptionStatus)}</td>
+              <td>${(t.paymentGateways || []).join(', ') || '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    window.print();
+  }
+
+  if (token) { loadStats(); loadRevenueBars(); loadTenants(); }
+</script>
+<script src="/fontsize.js"></script>
+</div>
+  </main>
+</div>
+<!-- Direct child of <body> on purpose: the print stylesheet above hides
+     every body>* except #printArea, so it must sit outside .app-shell
+     (a parent with display:none would hide this too, even nested). -->
+<div id="printArea"></div>
+<script>
+  window.YOURNET_ACTIVE_NAV = 'tenants';
+  window.YOURNET_AUTH_MODE = 'owner';
+</script>
+<script src="/shell.js"></script>
+</body>
+</html>

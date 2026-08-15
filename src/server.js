@@ -166,6 +166,18 @@ app.get('/license-admin', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'license-admin.html'));
 });
 
+app.get('/owner-revenue', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'owner-revenue.html'));
+});
+
+app.get('/owner-tenants', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'owner-tenants.html'));
+});
+
+app.get('/owner-media', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'owner-media.html'));
+});
+
 app.get('/settlement', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'settlement.html'));
 });

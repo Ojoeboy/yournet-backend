@@ -91,6 +91,7 @@
   <button type="button" class="setup-tab" id="tab-voucher" onclick="switchTab('voucher')">3. Vouchers</button>
   <button type="button" class="setup-tab" id="tab-gateway" onclick="switchTab('gateway')">4. Payment</button>
   <button type="button" class="setup-tab" id="tab-access" onclick="switchTab('access')">Manual access</button>
+  <button type="button" class="setup-tab" id="tab-media" onclick="switchTab('media')">Media</button>
 </div>
 
 <!-- ACCOUNT: business/admin details + prefs - login/signup moved to /login (see public/login.html) -->
@@ -112,6 +113,36 @@
 
     <label>Business location</label>
     <input id="acctBusinessLocation" placeholder="e.g. Sunyani, Bono Region">
+
+    <label>Personal email (login email)</label>
+    <input id="acctPersonalEmail" type="email" placeholder="you@example.com">
+    <div class="msg" id="account-email-msg"></div>
+    <button type="button" class="secondary" style="padding:8px 12px;font-size:12px;margin-bottom:14px" onclick="changePersonalEmail()">Change email</button>
+
+    <label>Business email</label>
+    <input id="acctBusinessEmail" type="email" placeholder="business@example.com">
+
+    <label>Mobile number</label>
+    <input id="acctMobileNumber" placeholder="e.g. 024 123 4567">
+
+    <label>Gender</label>
+    <select id="acctGender">
+      <option value="">Not set</option>
+      <option value="male">Male</option>
+      <option value="female">Female</option>
+      <option value="other">Other</option>
+    </select>
+
+    <label>Admin WhatsApp number</label>
+    <input id="acctAdminWhatsapp" placeholder="e.g. 024 123 4567">
+
+    <label>Business WhatsApp number</label>
+    <select id="acctBusinessWhatsappMode" onchange="onBusinessWhatsappModeChange()">
+      <option value="account">Use admin WhatsApp number above</option>
+      <option value="custom">Use a different number</option>
+      <option value="none">Don't receive WhatsApp messages</option>
+    </select>
+    <input id="acctBusinessWhatsappCustom" placeholder="e.g. 024 987 6543" class="hidden" style="margin-top:8px">
 
     <label>Profile / business logo</label>
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
@@ -146,6 +177,13 @@
     </label>
     <div class="msg" id="account-prefs-msg"></div>
   </div>
+</div>
+
+<!-- MEDIA: tutorials/updates posted by the platform owner - read-only here -->
+<div class="card hidden" id="media-card">
+  <h2>Media</h2>
+  <p class="note" style="color:#6b8a91;font-size:12.5px;margin-bottom:14px">Tutorials and updates posted by YourNet - shown here automatically.</p>
+  <div id="tutorials-list"></div>
 </div>
 
 <!-- STEP 2: Add Site -->
@@ -319,6 +357,7 @@
   <input id="portalCautionText" placeholder="e.g. Do not share your voucher code with anyone.">
   <label>WhatsApp help number (optional - shown as a "Need help?" chat link)</label>
   <input id="portalWhatsappNumber" placeholder="e.g. 233241234567 (with country code, no + or spaces)">
+  <button type="button" class="secondary" style="padding:6px 10px;font-size:12px;margin-bottom:14px" onclick="useAccountWhatsappForPortal()">Use account WhatsApp</button>
   <label>Help email (optional - shown as a "Need help?" email link)</label>
   <input id="portalHelpEmail" type="email" placeholder="e.g. support@yourbusiness.com">
   <label>Help phone number (optional - shown as a "Need help?" call link)</label>
@@ -555,7 +594,8 @@
   // ---------- quick-setup tabs ----------
   const SETUP_TAB_CARDS = {
     account: 'account-card', site: 'site-card', portal: 'portal-card',
-    package: 'package-card', voucher: 'voucher-card', gateway: 'gateway-card', access: 'access-card'
+    package: 'package-card', voucher: 'voucher-card', gateway: 'gateway-card', access: 'access-card',
+    media: 'media-card'
   };
 
   function switchTab(key) {
@@ -565,6 +605,34 @@
       document.getElementById(SETUP_TAB_CARDS[k]).classList.toggle('hidden', k !== key);
       document.getElementById('tab-' + k).classList.toggle('active', k === key);
     });
+    if (key === 'media') loadTutorials();
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  async function loadTutorials() {
+    const el = document.getElementById('tutorials-list');
+    el.innerHTML = '<p class="note" style="color:#6b8a91;font-size:12.5px">Loading...</p>';
+    try {
+      const items = await api('/api/dashboard/tutorials', 'GET');
+      if (!items.length) {
+        el.innerHTML = '<p class="note" style="color:#6b8a91;font-size:12.5px">No tutorials posted yet.</p>';
+        return;
+      }
+      el.innerHTML = items.map(function (t) {
+        return '<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;margin-bottom:12px">'
+          + (t.photo ? '<img src="' + escapeHtml(t.photo) + '" alt="" style="width:100%;max-width:320px;border-radius:8px;margin-bottom:10px;display:block">' : '')
+          + '<div style="font-weight:700;font-size:14px;margin-bottom:6px">' + escapeHtml(t.title) + '</div>'
+          + (t.body ? '<div style="font-size:13px;color:#c7d6d9;white-space:pre-wrap">' + escapeHtml(t.body) + '</div>' : '')
+          + '</div>';
+      }).join('');
+    } catch (err) {
+      el.innerHTML = '<p class="note" style="color:#ff6b6b;font-size:12.5px">Could not load tutorials.</p>';
+    }
   }
 
   function showMsg(id, text, type) {
@@ -671,6 +739,22 @@
       document.getElementById('acctDigitalAddress').value = info.digitalAddress || '';
       document.getElementById('acctCountry').value = info.country || '';
       document.getElementById('acctBusinessLocation').value = info.businessLocation || '';
+      document.getElementById('acctPersonalEmail').value = info.email || '';
+      document.getElementById('acctBusinessEmail').value = info.businessEmail || '';
+      document.getElementById('acctMobileNumber').value = info.mobileNumber || '';
+      document.getElementById('acctGender').value = info.gender || '';
+      document.getElementById('acctAdminWhatsapp').value = info.adminWhatsapp || '';
+      document.getElementById('acctBusinessWhatsappMode').value = info.businessWhatsappMode || 'account';
+      document.getElementById('acctBusinessWhatsappCustom').value = info.businessWhatsappCustom || '';
+      onBusinessWhatsappModeChange();
+      const emailMsg = document.getElementById('account-email-msg');
+      if (info.pendingEmail) {
+        emailMsg.textContent = `Confirmation pending for ${info.pendingEmail} - check that inbox for a verification link. Your login stays ${info.email} until confirmed.`;
+        emailMsg.className = 'msg show';
+      } else {
+        emailMsg.textContent = '';
+        emailMsg.className = 'msg';
+      }
       applyAccountLogo(info.logoUrl);
       // Once a business name is on file, this is an edit going forward -
       // swap the button label so it reads "Update" instead of "Save".
@@ -680,6 +764,27 @@
       document.getElementById('acctUpdateBtn').classList.toggle('hidden', !hasExisting);
     } catch (err) {
       // Non-critical - leave the form blank (Save state) if this fails.
+    }
+  }
+
+  function onBusinessWhatsappModeChange() {
+    const mode = document.getElementById('acctBusinessWhatsappMode').value;
+    document.getElementById('acctBusinessWhatsappCustom').classList.toggle('hidden', mode !== 'custom');
+  }
+
+  async function changePersonalEmail() {
+    const msg = document.getElementById('account-email-msg');
+    const newEmail = prompt('Enter the new email address. A confirmation link will be sent to it - your current login keeps working until you confirm.');
+    if (!newEmail) return;
+    try {
+      const res = await api('/api/dashboard/account-info/email-change', 'POST', { newEmail: newEmail.trim() });
+      msg.textContent = res.email && res.email.sent
+        ? `Confirmation link sent to ${newEmail}. Your login email stays the same until you click it.`
+        : `Could not send the confirmation email (${(res.email && res.email.reason) || 'unknown reason'}). Please try again later.`;
+      msg.className = 'msg show ' + (res.email && res.email.sent ? '' : 'err');
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
     }
   }
 
@@ -813,6 +918,18 @@
     }
   }
 
+  async function useAccountWhatsappForPortal() {
+    const siteId = document.getElementById('portalSite').value;
+    if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
+    try {
+      const data = await api(`/api/sites/${siteId}/portal-whatsapp/from-account`, 'POST');
+      document.getElementById('portalWhatsappNumber').value = data.whatsappNumber;
+      showMsg('portal-msg', 'Portal WhatsApp number set from your account.', 'ok');
+    } catch (err) {
+      showMsg('portal-msg', err.message, 'err');
+    }
+  }
+
   async function removePortalLogo() {
     const siteId = document.getElementById('portalSite').value;
     if (!siteId) return;
@@ -839,6 +956,12 @@
         digitalAddress: document.getElementById('acctDigitalAddress').value.trim(),
         country: document.getElementById('acctCountry').value.trim(),
         businessLocation: document.getElementById('acctBusinessLocation').value.trim(),
+        mobileNumber: document.getElementById('acctMobileNumber').value.trim(),
+        businessEmail: document.getElementById('acctBusinessEmail').value.trim(),
+        gender: document.getElementById('acctGender').value,
+        adminWhatsapp: document.getElementById('acctAdminWhatsapp').value.trim(),
+        businessWhatsappMode: document.getElementById('acctBusinessWhatsappMode').value,
+        businessWhatsappCustom: document.getElementById('acctBusinessWhatsappCustom').value.trim(),
       });
       showMsg('account-details-msg', 'Saved.', 'ok');
       document.getElementById('acctSaveBtn').classList.add('hidden');
