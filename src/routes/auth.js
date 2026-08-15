@@ -94,7 +94,10 @@ router.post('/signup', asyncHandler(async (req, res) => {
       `${process.env.APP_BASE_URL}/api/auth/verify-email?token=${verifyToken}`
     ).catch(() => {});
 
-    const token = jwt.sign({ tenantId: tenant.id, role: 'owner' }, process.env.JWT_SECRET, {
+    // token_version defaults to 0 on a freshly-inserted tenant (see
+    // db/schema.sql) - embed it (`tv`) so requireAuth's revocation check
+    // has something to compare against from the very first token.
+    const token = jwt.sign({ tenantId: tenant.id, role: 'owner', tv: 0 }, process.env.JWT_SECRET, {
       expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     });
     res.json({ token, tenant });
@@ -126,7 +129,10 @@ router.post('/login', tenantLoginLimiter, asyncHandler(async (req, res) => {
   const { locked, error, graceDaysRemaining } = checkLicenseLockout(tenant);
   if (locked) return res.status(402).json({ error, locked: true });
 
-  const token = jwt.sign({ tenantId: tenant.id, role: 'owner' }, process.env.JWT_SECRET, {
+  // Embed the CURRENT token_version (see requireAuth in middleware/auth.js)
+  // so this token is revoked the moment a subsequent password reset bumps
+  // it, without touching still-valid tokens issued before this login.
+  const token = jwt.sign({ tenantId: tenant.id, role: 'owner', tv: tenant.token_version }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
   res.json({
@@ -317,8 +323,12 @@ router.post('/reset-password', asyncHandler(async (req, res) => {
   if (!rows.length) return res.status(400).json({ error: 'That reset link is invalid or has expired.' });
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
+  // token_version += 1 revokes every token issued before this reset (see
+  // requireAuth in middleware/auth.js) - this is the actual point of a
+  // password reset when the trigger was a leaked token/password: without
+  // this, whoever had the old token would keep working right through it.
   await pool.query(
-    `UPDATE tenants SET password_hash=$1, reset_token_hash=NULL, reset_token_expires_at=NULL WHERE id=$2`,
+    `UPDATE tenants SET password_hash=$1, reset_token_hash=NULL, reset_token_expires_at=NULL, token_version=token_version+1 WHERE id=$2`,
     [passwordHash, rows[0].id]
   );
   res.json({ ok: true, message: 'Password updated - you can log in now.' });

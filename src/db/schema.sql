@@ -675,3 +675,18 @@ CREATE TABLE IF NOT EXISTS agent_activity_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agent_activity_tenant_created ON agent_activity_log(tenant_id, created_at DESC);
+
+-- JWT revocation. Tokens (tenant owner/manager AND agent) are long-lived
+-- (up to 7 days) and this app has no server-side session store, so there
+-- was previously no way to invalidate a token before it naturally expired -
+-- including the one case that matters most: a password reset triggered
+-- BECAUSE a token or password leaked didn't actually revoke the leaked
+-- token, defeating the point of the reset. Every JWT now carries the
+-- token_version that was current when it was issued (see middleware/auth.js
+-- requireAuth); bumping the column here invalidates every token issued
+-- before that moment, forcing a fresh login. tenant_users (agents) gets its
+-- own column since agent and owner/manager tokens are versioned
+-- independently - resetting the owner's password shouldn't force every
+-- agent to re-log-in, and vice versa.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0;
+ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0;

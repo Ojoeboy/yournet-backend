@@ -1,38 +1,28 @@
-fix: repair fixed-position elements trapped by zoom scaling
-feat: add owner-only refined branding across owner pages
+fix(security): close billing double-charge race and add JWT revocation on password reset
 
-Bug fixes
-- pppoe.html: move plan/subscriber/credential/payment modals to be
-  siblings of </main> instead of nested inside .app-main, so they're
-  no longer caught inside the zoomed containing block (same root
-  cause as the earlier bottom-nav-vanishing fix)
-- portal.html: inline font-size widget now scales .card instead of
-  document.documentElement, preventing the fixed A+/A- widget itself
-  from drifting under non-default zoom levels
-- shell.js: fixed a race between ensureFavicon() and ensurePwaMeta() -
-  ensureFavicon() was unconditionally injecting a tenant
-  apple-touch-icon before the owner-aware logic in ensurePwaMeta()
-  ran, so the four owner pages (license-admin, owner-revenue,
-  owner-tenants, owner-media) were silently showing the tenant
-  home-screen icon instead of the owner one; ensureFavicon() now only
-  sets the browser-tab favicons, leaving apple-touch-icon to the
-  owner/tenant-aware code exclusively
+- subscriptionBilling.js: runMonthlyBilling's FOR UPDATE SKIP LOCKED never
+  actually held its lock (query ran without an explicit transaction, so
+  Postgres autocommit released it the instant the SELECT returned). Split
+  into a lock-free candidate lookup + chargeTenantById(), which now wraps
+  SELECT FOR UPDATE SKIP LOCKED, the Paystack charge, and the status write
+  in a single transaction on one held connection. Two overlapping billing
+  passes can no longer both charge the same tenant.
 
-Owner branding (scoped to owner pages only - tenant assets/pages
-untouched)
-- New owner-only assets: public/img/logo-owner.png (full badge) and
-  public/img/logo-icon-owner.png (small emblem), cropped from the
-  refreshed artwork and kept fully separate from the shared tenant
-  logo.png/logo-icon.png
-- owner-login.html: restyled to match the tenant login's polished
-  card (gradient card, shadow, teal focus states, gold gradient
-  button), now shows the new badge and "YourNet Owner" branding with
-  an updated subtitle; all existing login/PWA-install functionality
-  and element IDs unchanged
-- shell.js: added a brand() helper that switches the logo + label
-  based on isOwnerMode() - applied to the desktop topbar brand mark,
-  the mobile drawer header brand mark, and the per-page header logo
-  (renderPageHeader) - so every owner page (license-admin,
-  owner-revenue, owner-tenants, owner-media) now shows "YourNet
-  Owner" and the new badge everywhere the tenant app shows its own
-  logo, with zero change to tenant-side rendering
+- db/schema.sql: add tenants.token_version and tenant_users.token_version
+  (default 0), idempotent ALTER TABLE ADD COLUMN IF NOT EXISTS.
+
+- middleware/auth.js: requireAuth now checks the JWT's embedded `tv` claim
+  against the live token_version in the DB and rejects stale tokens.
+  Wrapped in a non-async entry point (requireAuthAsync().catch(next))
+  since requireAuth is wired up directly via router.use(...) everywhere
+  without asyncHandler, and Express 4 won't catch a rejected promise from
+  async middleware on its own.
+
+- routes/auth.js, routes/agents.js: embed tv (current token_version) in
+  every tenant/agent JWT at issuance (signup, login, verify-secret
+  re-issue). Bump token_version on tenant reset-password and agent
+  reset-password, so a password reset actually invalidates any
+  previously-issued token instead of leaving it valid until natural
+  (up to 7-day) expiry.
+
+Migration required before deploy: `npm run migrate`

@@ -73,8 +73,12 @@ router.post('/login', agentLoginLimiter, asyncHandler(async (req, res) => {
   const { locked, error: lockError } = checkLicenseLockout(tenantRows[0] || {});
   if (locked) return res.status(402).json({ error: lockError, locked: true });
 
+  // Embed the agent's CURRENT token_version (see requireAuth in
+  // middleware/auth.js) so this token is revoked the moment a subsequent
+  // password reset bumps it, without touching still-valid tokens issued
+  // before this login.
   const token = jwt.sign(
-    { tenantId: agent.tenant_id, userId: agent.id, role: 'agent' },
+    { tenantId: agent.tenant_id, userId: agent.id, role: 'agent', tv: agent.token_version },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
@@ -193,8 +197,13 @@ router.post('/:id/reset-password', asyncHandler(async (req, res) => {
   if (!newPassword || newPassword.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
+  // token_version += 1 revokes every token this agent had out before this
+  // reset (see requireAuth in middleware/auth.js) - matters most for the
+  // owner/manager-triggered branch above ("agent forgot it" / "agent's
+  // device was compromised"), where the whole point is to kick out
+  // whoever's currently holding that agent's token.
   const { rows } = await pool.query(
-    `UPDATE tenant_users SET password_hash=$1 WHERE id=$2 AND tenant_id=$3 AND role='agent' RETURNING id`,
+    `UPDATE tenant_users SET password_hash=$1, token_version=token_version+1 WHERE id=$2 AND tenant_id=$3 AND role='agent' RETURNING id`,
     [passwordHash, req.params.id, req.tenantId]
   );
   if (!rows.length) return res.status(404).json({ error: 'Agent not found' });
@@ -315,7 +324,7 @@ router.post('/verify-secret', secretQuestionLimiter, asyncHandler(async (req, re
   if (missingError) return res.status(400).json({ error: missingError });
 
   const { rows } = await pool.query(
-    `SELECT id, name, secret_question, secret_answer_hash, secret_failed_attempts, secret_locked_until
+    `SELECT id, name, secret_question, secret_answer_hash, secret_failed_attempts, secret_locked_until, token_version
      FROM tenant_users WHERE id=$1 AND tenant_id=$2 AND role='agent'`,
     [req.userId, req.tenantId]
   );
@@ -351,8 +360,12 @@ router.post('/verify-secret', secretQuestionLimiter, asyncHandler(async (req, re
 
   await pool.query(`UPDATE tenant_users SET secret_failed_attempts=0, secret_locked_until=NULL WHERE id=$1`, [agent.id]);
 
+  // Carries the same tv the agent's current session token has (this row
+  // was just read fresh, so it's the live value) - re-issuing here must
+  // NOT silently drop the version check, or an agent could dodge a pending
+  // revocation just by answering their secret question again.
   const token = jwt.sign(
-    { tenantId: req.tenantId, userId: agent.id, role: 'agent', sq: true },
+    { tenantId: req.tenantId, userId: agent.id, role: 'agent', sq: true, tv: agent.token_version },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
