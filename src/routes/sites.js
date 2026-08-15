@@ -446,6 +446,24 @@ router.post('/:id/portal-logo', asyncHandler(async (req, res) => {
   });
 }));
 
+// "Use account saved logo" - copies tenants.account_logo straight into
+// sites.portal_logo_url in one query, entirely server-side. The browser
+// only sends the site id, never the base64 image itself, so this can
+// never hit a request body size limit no matter how large a logo gets -
+// unlike the old approach (GET the account logo, then PATCH it back to
+// /portal in a JSON body), which is exactly what produced the "Unexpected
+// token '<'" error for this button even after the JSON limit was raised.
+router.post('/:id/portal-logo/from-account', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE sites SET portal_logo_url = (SELECT account_logo FROM tenants WHERE id = sites.tenant_id)
+     WHERE id=$1 AND tenant_id=$2 RETURNING portal_logo_url`,
+    [req.params.id, req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Site not found' });
+  if (!rows[0].portal_logo_url) return res.status(400).json({ error: 'No account logo saved yet - upload one in Account first.' });
+  res.json({ ok: true, logoUrl: rows[0].portal_logo_url });
+}));
+
 // Clear a single optional portal field back to "not shown" (NULL) - the
 // PATCH above uses COALESCE so it can only set values, never blank one out.
 // Body: { field: 'logoUrl' | 'backgroundImageUrl' | 'cautionText' | 'whatsappNumber' | 'helpEmail' | 'helpPhone' | 'momoNumber' | 'momoName' }

@@ -804,11 +804,9 @@
     const siteId = document.getElementById('portalSite').value;
     if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
     try {
-      const profile = await api('/api/dashboard/profile', 'GET');
-      if (!profile.logoUrl) return showMsg('portal-msg', 'No account logo saved yet - upload one in Account first.', 'err');
-      await api(`/api/sites/${siteId}/portal`, 'PATCH', { logoUrl: profile.logoUrl });
-      document.getElementById('portalLogoUrl').value = profile.logoUrl;
-      applyPortalLogo(profile.logoUrl);
+      const data = await api(`/api/sites/${siteId}/portal-logo/from-account`, 'POST');
+      document.getElementById('portalLogoUrl').value = data.logoUrl;
+      applyPortalLogo(data.logoUrl);
       showMsg('portal-msg', 'Portal logo set from your account logo.', 'ok');
     } catch (err) {
       showMsg('portal-msg', err.message, 'err');
