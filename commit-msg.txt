@@ -1,27 +1,38 @@
-Fix stored XSS in license-admin, add custom duration to manual access, fix broken email verification flow, and fix top-right nav bar layout on Setup/Agents
+fix: repair fixed-position elements trapped by zoom scaling
+feat: add owner-only refined branding across owner pages
 
-- Escape buyer_email, buyer_phone, payment_method, notes, momo_reference,
-  and key_code before innerHTML in license-admin.html; move quickEmail/
-  copyKey off inline onclick strings onto data-* attributes to close a
-  stored XSS hole reachable via the public claim-manual endpoint
+Bug fixes
+- pppoe.html: move plan/subscriber/credential/payment modals to be
+  siblings of </main> instead of nested inside .app-main, so they're
+  no longer caught inside the zoomed containing block (same root
+  cause as the earlier bottom-nav-vanishing fix)
+- portal.html: inline font-size widget now scales .card instead of
+  document.documentElement, preventing the fixed A+/A- widget itself
+  from drifting under non-default zoom levels
+- shell.js: fixed a race between ensureFavicon() and ensurePwaMeta() -
+  ensureFavicon() was unconditionally injecting a tenant
+  apple-touch-icon before the owner-aware logic in ensurePwaMeta()
+  ran, so the four owner pages (license-admin, owner-revenue,
+  owner-tenants, owner-media) were silently showing the tenant
+  home-screen icon instead of the owner one; ensureFavicon() now only
+  sets the browser-tab favicons, leaving apple-touch-icon to the
+  owner/tenant-aware code exclusively
 
-- Add custom duration option (minutes/hours/days/months + number input)
-  to manual IP/MAC binding on the Access panel, alongside existing presets
-
-- Fix email-change verification link in dashboard.js pointing to an
-  unmounted /verify-email route (404) instead of /api/auth/verify-email
-
-- Split GET /api/auth/verify-email into a non-mutating token check that
-  renders a confirm page, and a new POST that performs the actual update
-  — prevents email security scanners from silently burning single-use
-  verification tokens before the user clicks
-
-- Add POST /api/dashboard/account-info/email-change/cancel plus a
-  "Cancel pending change" button, so a tenant can back out of a pending
-  email change without needing another valid address to overwrite it
-
-- Fix top-right profile/language bar on admin.html and agents.html: the
-  blanket `input,select{width:100%}` form-styling rule was stretching the
-  injected language <select> to fill the whole top bar, shoving the
-  profile button off to the left instead of both sitting together on the
-  right like every other page. Scoped with #yournetLangSwitcher{width:auto}
+Owner branding (scoped to owner pages only - tenant assets/pages
+untouched)
+- New owner-only assets: public/img/logo-owner.png (full badge) and
+  public/img/logo-icon-owner.png (small emblem), cropped from the
+  refreshed artwork and kept fully separate from the shared tenant
+  logo.png/logo-icon.png
+- owner-login.html: restyled to match the tenant login's polished
+  card (gradient card, shadow, teal focus states, gold gradient
+  button), now shows the new badge and "YourNet Owner" branding with
+  an updated subtitle; all existing login/PWA-install functionality
+  and element IDs unchanged
+- shell.js: added a brand() helper that switches the logo + label
+  based on isOwnerMode() - applied to the desktop topbar brand mark,
+  the mobile drawer header brand mark, and the per-page header logo
+  (renderPageHeader) - so every owner page (license-admin,
+  owner-revenue, owner-tenants, owner-media) now shows "YourNet
+  Owner" and the new badge everywhere the tenant app shows its own
+  logo, with zero change to tenant-side rendering

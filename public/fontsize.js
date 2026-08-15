@@ -12,10 +12,30 @@
 // here. `zoom` is now supported across Chrome/Edge, Safari 16.4+, and
 // Firefox 126+ (2024), which by this app's usage patterns (business
 // owners on phones and Windows laptops) covers effectively everyone.
+//
+// WHY THE SCALE TARGET IS `.app-main`, NOT `<html>`: applying `zoom` to
+// an element turns it into a containing block for its `position:fixed`
+// descendants (same quirk as `transform`), so `position:fixed` stops
+// meaning "relative to the screen" and starts meaning "relative to this
+// zoomed element" instead. Zooming `document.documentElement` used to
+// pull the fixed bottom nav/drawer (`.app-bottom-nav`/`.app-drawer`,
+// both `position:fixed` in shell.css) into that trap - on tall pages
+// (Setup especially) their `bottom:0` landed relative to the full zoomed
+// *document* height, not the visible screen, so they rendered far below
+// the fold and effectively vanished on mobile. `#app-sidebar` (where
+// shell.js renders both of those) is a *sibling* of `.app-main`, not a
+// descendant, so scaling `.app-main` instead leaves it completely outside
+// the zoomed subtree and immune to this. Pages with no `.app-main`
+// (login, portal, standalone wizards, etc.) have no fixed shell chrome to
+// protect, so `<body>` is fine for them.
 (function () {
   const STORAGE_KEY = 'yournet_font_scale';
   const STEPS = [0.85, 0.9, 1, 1.1, 1.25, 1.4]; // 6 levels, 100% is the default
   const DEFAULT_INDEX = 2;
+
+  function getScaleTarget() {
+    return document.querySelector('.app-main') || document.body;
+  }
 
   function getStoredIndex() {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -24,7 +44,7 @@
   }
 
   function applyScale(index) {
-    document.documentElement.style.zoom = String(STEPS[index]);
+    getScaleTarget().style.zoom = String(STEPS[index]);
     const label = document.getElementById('yn-fontsize-label');
     if (label) label.textContent = Math.round(STEPS[index] * 100) + '%';
     const minusBtn = document.getElementById('yn-fontsize-minus');

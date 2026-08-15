@@ -477,8 +477,17 @@
     return STEPS[parsed] !== undefined ? parsed : DEFAULT_INDEX;
   }
 
+  function getScaleTarget() {
+    // Same fix as public/fontsize.js: scale the content card, not
+    // documentElement/body - the font-size widget itself is
+    // position:fixed on <body>, so zooming body would turn it into the
+    // widget's containing block and make the widget drift/vanish the
+    // same way the shell's bottom nav did on Setup.
+    return document.querySelector('.card') || document.body;
+  }
+
   function applyScale(index) {
-    document.documentElement.style.zoom = String(STEPS[index]);
+    getScaleTarget().style.zoom = String(STEPS[index]);
     const label = document.getElementById('yn-fontsize-label');
     if (label) label.textContent = Math.round(STEPS[index] * 100) + '%';
     const minusBtn = document.getElementById('yn-fontsize-minus');

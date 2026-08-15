@@ -161,12 +161,23 @@
     });
   }
 
+  // Owner pages get their own brand mark (logo + name) throughout the
+  // shared shell - topbar, drawer header, and per-page header - kept as
+  // separate image files (logo-icon-owner.png) so tenant pages/assets are
+  // never touched by this.
+  function brand() {
+    return isOwnerMode()
+      ? { icon: '/img/logo-icon-owner.png', label: 'YourNet Owner' }
+      : { icon: '/img/logo-icon.png', label: 'YourNet Control' };
+  }
+
   function render() {
     const el = document.getElementById('app-sidebar');
     if (!el) return;
     el.classList.add('app-sidebar'); // #app-sidebar carries the id shell.js hooks into; the CSS lives on this class
     const active = window.YOURNET_ACTIVE_NAV || '';
     const navItems = isOwnerMode() ? OWNER_NAV_ITEMS : NAV_ITEMS;
+    const brandMark = brand();
     const primaryItems = navItems.filter((i) => i.primary);
     const secondaryActive = navItems.some((i) => !i.primary && i.key === active);
     // Owner pages use a separate sessionStorage token/login route from
@@ -193,7 +204,7 @@
       </button>
       <div class="app-topbar">
         <div class="app-topbar-side"></div>
-        <div class="app-brand"><img src="/img/logo-icon.png" alt="" class="brand-logo-icon"> <span class="brand-label">YourNet Control</span></div>
+        <div class="app-brand"><img src="${brandMark.icon}" alt="" class="brand-logo-icon"> <span class="brand-label">${brandMark.label}</span></div>
         <div class="app-topbar-side right">${installBtnHtml}</div>
         ${collapseBtnHtml}
       </div>
@@ -216,7 +227,7 @@
       <div class="app-drawer-backdrop" id="yn-drawer-backdrop"></div>
       <div class="app-drawer" id="yn-drawer">
         <div class="app-drawer-header">
-          <div class="app-brand"><img src="/img/logo-icon.png" alt="" class="brand-logo-icon"> YourNet Control</div>
+          <div class="app-brand"><img src="${brandMark.icon}" alt="" class="brand-logo-icon"> ${brandMark.label}</div>
           <button type="button" class="app-drawer-close" id="yn-drawer-close" aria-label="Close menu">&times;</button>
         </div>
         <nav class="app-drawer-nav">
@@ -433,7 +444,7 @@
     const header = document.createElement('div');
     header.className = 'page-header';
     const logo = document.createElement('img');
-    logo.src = '/img/logo-icon.png';
+    logo.src = brand().icon;
     logo.alt = '';
     logo.className = 'page-header-logo';
     header.appendChild(logo);
@@ -448,10 +459,13 @@
   // automatically, including ones added later.
   function ensureFavicon() {
     if (document.getElementById('yn-favicon-32')) return;
+    // apple-touch-icon is deliberately NOT set here - ensurePwaMeta() (below)
+    // sets it owner/tenant-aware, but only if one isn't already present.
+    // Adding a tenant-fixed one here first used to win that race and silently
+    // override the owner icon on all four owner pages.
     const links = [
       { id: 'yn-favicon-32', rel: 'icon', type: 'image/png', sizes: '32x32', href: '/icons/favicon-32.png' },
       { id: 'yn-favicon-16', rel: 'icon', type: 'image/png', sizes: '16x16', href: '/icons/favicon-16.png' },
-      { id: 'yn-apple-touch', rel: 'apple-touch-icon', href: '/icons/icon-192.png' },
     ];
     links.forEach((attrs) => {
       const link = document.createElement('link');
@@ -461,16 +475,19 @@
     });
   }
 
-  // PWA install ("Add to Home Screen") for the admin app shell. Static
-  // YourNet branding (manifest.json/sw.js at the root), separate from the
-  // per-site tenant-branded portal PWA (/p/:siteId/manifest.json + sw.js,
-  // rendered dynamically in portalRenderer.js) - this one is for the owner/
-  // agent logging into their own dashboard, not the WiFi customer.
+  // PWA install ("Add to Home Screen") for the admin app shell. Owner pages
+  // get their own manifest (manifest-owner.json - name "YourNet Owner",
+  // starts at /license-admin) so an installed owner app is a distinct,
+  // correctly-labeled icon/shortcut from the tenant app (manifest.json,
+  // starts at /dashboard.html) - separate from the per-site tenant-branded
+  // portal PWA (/p/:siteId/manifest.json + sw.js, rendered dynamically in
+  // portalRenderer.js), which is for the WiFi customer, not the owner/agent/
+  // tenant logging into their own dashboard.
   function ensurePwaMeta() {
     if (!document.querySelector('link[rel="manifest"]')) {
       const link = document.createElement('link');
       link.rel = 'manifest';
-      link.href = '/manifest.json';
+      link.href = isOwnerMode() ? '/manifest-owner.json' : '/manifest.json';
       document.head.appendChild(link);
     }
     if (!document.querySelector('meta[name="theme-color"]')) {
@@ -488,7 +505,7 @@
     if (!document.querySelector('link[rel="apple-touch-icon"]')) {
       const link = document.createElement('link');
       link.rel = 'apple-touch-icon';
-      link.href = '/icons/icon-192.png';
+      link.href = isOwnerMode() ? '/icons/icon-owner-192.png' : '/icons/icon-192.png';
       document.head.appendChild(link);
     }
   }
