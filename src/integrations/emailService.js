@@ -1,4 +1,10 @@
-// Real transactional email via Resend's HTTP API.
+const axios = require('axios');
+
+// Real transactional email via Brevo's HTTP API - the same account and
+// sender already verified and working for license-key emails in
+// integrations/brevo.js. Reuses BREVO_API_KEY and BREVO_SENDER_EMAIL /
+// EMAIL_FROM_ADDRESS, whichever is already set - nothing new to sign up
+// for or verify.
 //
 // WHY NOT SMTP (Gmail or otherwise): Render blocks outbound SMTP ports
 // on its containers as an anti-spam measure. Every attempt to connect to
@@ -7,51 +13,46 @@
 // because of DNS/routing. HTTP APIs (port 443, same as any normal web
 // request) aren't affected, which is why this uses one instead.
 //
-// SETUP: sign up free at https://resend.com (100 emails/day free tier,
-// no credit card), grab an API key from the dashboard, and set it as
-// RESEND_API_KEY in Render's Environment tab.
+// WHY NOT RESEND: Resend's free tier only lets you send FROM a domain
+// you've verified with them (DNS records) - without one, it refuses to
+// send to anyone but the account owner's own inbox ("You can only send
+// testing emails to your own email address"). This project doesn't have
+// a domain yet, so Brevo (verify a single sender address, no DNS needed)
+// is the practical option until there is one.
 //
-// HONEST LIMITS:
-// - Resend's free tier only lets you send FROM a domain you've verified
-//   with them (adding a couple DNS TXT/CNAME records) - it does NOT let
-//   you send from an arbitrary Gmail address the way SMTP did. Until a
-//   domain is verified, use Resend's shared sandbox sender
-//   'onboarding@resend.dev' via EMAIL_FROM (received emails will show
-//   that address, not a branded one).
-// - If RESEND_API_KEY isn't set, this falls back to logging the email
-//   content to the console instead of crashing - useful for local dev,
-//   not something to rely on for real users.
+// If BREVO_API_KEY or a sender email isn't set, this falls back to
+// logging the email content to the console instead of crashing - useful
+// for local dev, not something to rely on for real users.
+function senderEmail() {
+  return process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_FROM_ADDRESS;
+}
+
 async function sendEmail({ to, subject, html }) {
-  if (!process.env.RESEND_API_KEY) {
-    console.log(`[EMAIL STUB - no RESEND_API_KEY set] To: ${to} | Subject: ${subject}`);
+  const from = senderEmail();
+  if (!process.env.BREVO_API_KEY || !from) {
+    console.log(`[EMAIL STUB - BREVO_API_KEY/sender email not set] To: ${to} | Subject: ${subject}`);
     console.log(html);
     return;
   }
 
   try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: process.env.EMAIL_FROM || 'YourNet Control <onboarding@resend.dev>',
-        to,
+    await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        sender: { email: from, name: process.env.BREVO_SENDER_NAME || 'YourNet Control' },
+        to: [{ email: to }],
         subject,
-        html,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(`Resend ${res.status}: ${data.message || JSON.stringify(data)}`);
-    }
-    console.log(`[EMAIL SENT] To: ${to} | Subject: ${subject} | id: ${data.id}`);
+        htmlContent: html,
+      },
+      { headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json' } }
+    );
+    console.log(`[EMAIL SENT] To: ${to} | Subject: ${subject}`);
   } catch (err) {
-    // Surface the real failure reason (bad API key, unverified domain,
+    // Surface the real failure reason (bad API key, unverified sender,
     // rate limit, etc.) instead of letting callers' .catch(()=>{})
     // swallow it into total silence.
-    console.error(`[EMAIL FAILED] To: ${to} | Subject: ${subject} | error: ${err.message}`);
+    const detail = err.response?.data?.message || err.message;
+    console.error(`[EMAIL FAILED] To: ${to} | Subject: ${subject} | error: ${detail}`);
     throw err;
   }
 }
