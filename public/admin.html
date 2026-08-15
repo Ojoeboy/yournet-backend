@@ -32,6 +32,12 @@
   label{display:block;font-size:11px;color:#6b8a91;text-transform:uppercase;margin:10px 0 4px}
   input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);
     background:#0d1a1e;color:#fff;font-size:14px}
+  /* The language switcher is injected into the top-right corner bar by
+     i18n-loader.js, not part of any form - the blanket input,select rule
+     above stretching it to 100% was pushing the profile button (which
+     shares that flex row) off to the left instead of both sitting
+     together on the right. */
+  #yournetLangSwitcher{width:auto}
   button{margin-top:14px;padding:11px 16px;border:none;border-radius:8px;background:#e8a33d;
     color:#0d1a1e;font-weight:700;cursor:pointer;font-size:14px}
   button.secondary{background:#1a363e;color:#e8f0f1}
@@ -118,6 +124,7 @@
     <input id="acctPersonalEmail" type="email" placeholder="you@example.com">
     <div class="msg" id="account-email-msg"></div>
     <button type="button" class="secondary" style="padding:8px 12px;font-size:12px;margin-bottom:14px" onclick="changePersonalEmail()">Change email</button>
+    <button type="button" id="acctCancelEmailChangeBtn" class="secondary hidden" style="padding:8px 12px;font-size:12px;margin-bottom:14px;margin-left:6px;color:#ff6b6b" onclick="cancelPersonalEmailChange()">Cancel pending change</button>
 
     <label>Business email</label>
     <input id="acctBusinessEmail" type="email" placeholder="business@example.com">
@@ -552,14 +559,24 @@
   <input id="accessMac" placeholder="AA:BB:CC:DD:EE:FF" style="margin-top:8px">
 
   <label>Duration</label>
-  <select id="accessDuration">
+  <select id="accessDurationPreset" onchange="onAccessDurationPresetChange()">
     <option value="30">30 minutes</option>
     <option value="60" selected>1 hour</option>
     <option value="180">3 hours</option>
     <option value="360">6 hours</option>
     <option value="1440">24 hours</option>
     <option value="10080">7 days</option>
+    <option value="custom">Custom...</option>
   </select>
+  <div id="accessDurationCustom" style="display:none;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+    <input id="accessDurationValue" type="number" min="1" step="1" placeholder="e.g. 6" style="flex:1;min-width:90px">
+    <select id="accessDurationUnit" style="flex:1;min-width:110px">
+      <option value="minutes">Minutes</option>
+      <option value="hours" selected>Hours</option>
+      <option value="days">Days</option>
+      <option value="months">Months</option>
+    </select>
+  </div>
 
   <label>Note (optional - who/why, for your own reference)</label>
   <input id="accessNote" placeholder="e.g. Comped for a service outage">
@@ -748,12 +765,15 @@
       document.getElementById('acctBusinessWhatsappCustom').value = info.businessWhatsappCustom || '';
       onBusinessWhatsappModeChange();
       const emailMsg = document.getElementById('account-email-msg');
+      const cancelBtn = document.getElementById('acctCancelEmailChangeBtn');
       if (info.pendingEmail) {
         emailMsg.textContent = `Confirmation pending for ${info.pendingEmail} - check that inbox for a verification link. Your login stays ${info.email} until confirmed.`;
         emailMsg.className = 'msg show';
+        cancelBtn.classList.remove('hidden');
       } else {
         emailMsg.textContent = '';
         emailMsg.className = 'msg';
+        cancelBtn.classList.add('hidden');
       }
       applyAccountLogo(info.logoUrl);
       // Once a business name is on file, this is an edit going forward -
@@ -782,6 +802,18 @@
         ? `Confirmation link sent to ${newEmail}. Your login email stays the same until you click it.`
         : `Could not send the confirmation email (${(res.email && res.email.reason) || 'unknown reason'}). Please try again later.`;
       msg.className = 'msg show ' + (res.email && res.email.sent ? '' : 'err');
+      loadAccountDetails();
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
+  }
+
+  async function cancelPersonalEmailChange() {
+    const msg = document.getElementById('account-email-msg');
+    try {
+      await api('/api/dashboard/account-info/email-change/cancel', 'POST', {});
+      loadAccountDetails();
     } catch (err) {
       msg.textContent = err.message;
       msg.className = 'msg show err';
@@ -1294,10 +1326,24 @@
     if (picker.value) document.getElementById('accessMac').value = picker.value;
   }
 
+  function onAccessDurationPresetChange() {
+    const preset = document.getElementById('accessDurationPreset').value;
+    document.getElementById('accessDurationCustom').style.display = preset === 'custom' ? 'flex' : 'none';
+  }
+
   async function authorizeManualClient() {
     const siteId = document.getElementById('accessSite').value;
     const clientMac = document.getElementById('accessMac').value.trim().toUpperCase();
-    const durationMinutes = Number(document.getElementById('accessDuration').value);
+    const preset = document.getElementById('accessDurationPreset').value;
+    let durationMinutes;
+    if (preset === 'custom') {
+      const value = Number(document.getElementById('accessDurationValue').value);
+      const unit = document.getElementById('accessDurationUnit').value;
+      if (!value || value <= 0) { showMsg('access-msg', 'Enter a custom duration greater than 0.', 'err'); return; }
+      durationMinutes = Math.round(value * DURATION_MULTIPLIERS[unit]);
+    } else {
+      durationMinutes = Number(preset);
+    }
     const note = document.getElementById('accessNote').value.trim();
     if (!siteId) { showMsg('access-msg', 'Pick a site first.', 'err'); return; }
     if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(clientMac)) {
@@ -1309,6 +1355,7 @@
       showMsg('access-msg', `${clientMac} authorized.`, 'ok');
       document.getElementById('accessMac').value = '';
       document.getElementById('accessNote').value = '';
+      document.getElementById('accessDurationValue').value = '';
       loadAccessPanel();
     } catch (err) {
       showMsg('access-msg', err.message, 'err');

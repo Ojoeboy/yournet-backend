@@ -1,12 +1,27 @@
-Bump service worker cache version to v3->v4
+Fix stored XSS in license-admin, add custom duration to manual access, fix broken email verification flow, and fix top-right nav bar layout on Setup/Agents
 
-sw.js's CACHE_NAME never changed after the shell.js sidebar update,
-so browsers that already had the service worker installed kept
-serving the old cached shell.js/shell.css - meaning the new owner
-sidebar wouldn't show up until the cache was manually cleared.
+- Escape buyer_email, buyer_phone, payment_method, notes, momo_reference,
+  and key_code before innerHTML in license-admin.html; move quickEmail/
+  copyKey off inline onclick strings onto data-* attributes to close a
+  stored XSS hole reachable via the public claim-manual endpoint
 
-Bumping CACHE_NAME forces a reinstall on next visit, which purges
-the stale cache (see the activate handler) and pulls the current
-shell.js/shell.css from the network.
+- Add custom duration option (minutes/hours/days/months + number input)
+  to manual IP/MAC binding on the Access panel, alongside existing presets
 
-One-line change, public/sw.js only.
+- Fix email-change verification link in dashboard.js pointing to an
+  unmounted /verify-email route (404) instead of /api/auth/verify-email
+
+- Split GET /api/auth/verify-email into a non-mutating token check that
+  renders a confirm page, and a new POST that performs the actual update
+  — prevents email security scanners from silently burning single-use
+  verification tokens before the user clicks
+
+- Add POST /api/dashboard/account-info/email-change/cancel plus a
+  "Cancel pending change" button, so a tenant can back out of a pending
+  email change without needing another valid address to overwrite it
+
+- Fix top-right profile/language bar on admin.html and agents.html: the
+  blanket `input,select{width:100%}` form-styling rule was stretching the
+  injected language <select> to fill the whole top bar, shoving the
+  profile button off to the left instead of both sitting together on the
+  right like every other page. Scoped with #yournetLangSwitcher{width:auto}

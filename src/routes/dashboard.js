@@ -173,9 +173,23 @@ router.post('/account-info/email-change', asyncHandler(async (req, res) => {
      WHERE id=$3`,
     [email, tokenHash, req.tenantId]
   );
-  const link = `${process.env.APP_BASE_URL}/verify-email?token=${token}`;
+  const link = `${process.env.APP_BASE_URL}/api/auth/verify-email?token=${token}`;
   const result = await emailService.sendVerificationEmail(email, link).catch((err) => ({ sent: false, reason: err.message }));
   res.json({ ok: true, email: result });
+}));
+
+// Lets a tenant back out of a pending change (wrong address typed, link
+// never arrived, etc.) without having to submit another real address just
+// to overwrite it. Only touches rows that actually have a pending change,
+// so this can't be used to clear a still-unverified signup token.
+router.post('/account-info/email-change/cancel', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE tenants SET pending_email=NULL, verify_token_hash=NULL, verify_token_expires_at=NULL
+     WHERE id=$1 AND pending_email IS NOT NULL RETURNING id`,
+    [req.tenantId]
+  );
+  if (!rows.length) return res.status(400).json({ error: 'No pending email change to cancel.' });
+  res.json({ ok: true });
 }));
 
 // Authenticated version of the same rotating photo list the public portal

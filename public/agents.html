@@ -27,6 +27,9 @@
   label{display:block;font-size:11px;color:var(--yn-muted);text-transform:uppercase;margin:10px 0 4px}
   input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);
     background:var(--yn-ink);color:#fff;font-size:14px}
+  /* Same fix as admin.html - the injected language switcher isn't part of
+     a form, so it shouldn't inherit the 100% width meant for form fields. */
+  #yournetLangSwitcher{width:auto}
   button{margin-top:14px;padding:11px 16px;border:none;border-radius:8px;background:var(--yn-gold);
     color:var(--yn-ink);font-weight:700;cursor:pointer;font-size:14px}
   button.secondary{background:#1a363e;color:var(--yn-cream)}

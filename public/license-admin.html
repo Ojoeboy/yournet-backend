@@ -101,6 +101,12 @@
     return fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token } });
   }
 
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
   async function loadKeys() {
     const res = await authedFetch('/license/admin/list');
     if (res.status === 401) {
@@ -118,16 +124,16 @@
       <div class="card">
         <div class="row"><span>Status</span><span class="pill ${k.status}">${k.status}</span></div>
         <div class="row"><span>Type</span><span class="pill">${k.key_type === 'reactivation' ? 'Reactivation' : 'Signup'}</span></div>
-        <div class="row"><span>Buyer</span><span>${k.buyer_email || '-'}</span></div>
-        <div class="row"><span>Phone</span><span>${k.buyer_phone || '-'}</span></div>
-        <div class="row"><span>Payment method</span><span>${k.payment_method || '-'}</span></div>
-        <div class="row"><span>Amount</span><span>${k.currency} ${k.amount ?? '-'}</span></div>
+        <div class="row"><span>Buyer</span><span>${escapeHtml(k.buyer_email) || '-'}</span></div>
+        <div class="row"><span>Phone</span><span>${escapeHtml(k.buyer_phone) || '-'}</span></div>
+        <div class="row"><span>Payment method</span><span>${escapeHtml(k.payment_method) || '-'}</span></div>
+        <div class="row"><span>Amount</span><span>${escapeHtml(k.currency)} ${k.amount ?? '-'}</span></div>
         <div class="row"><span>Issued</span><span>${new Date(k.created_at).toLocaleString()}</span></div>
-        ${k.notes ? `<div class="row"><span>Notes</span><span>${k.notes}</span></div>` : ''}
+        ${k.notes ? `<div class="row"><span>Notes</span><span>${escapeHtml(k.notes)}</span></div>` : ''}
         <div class="keyBox">
-          <span>${k.key_code}</span>
-          <button class="copyBtn" onclick="copyKey('${k.key_code}', this)">Copy</button>
-          ${k.buyer_email ? `<button class="copyBtn" onclick="quickEmail('${k.key_code}', '${k.buyer_email}', this)">Email to ${k.buyer_email}</button>` : ''}
+          <span>${escapeHtml(k.key_code)}</span>
+          <button class="copyBtn" data-key="${escapeHtml(k.key_code)}" onclick="copyKey(this.dataset.key, this)">Copy</button>
+          ${k.buyer_email ? `<button class="copyBtn" data-key="${escapeHtml(k.key_code)}" data-email="${escapeHtml(k.buyer_email)}" onclick="quickEmail(this.dataset.key, this.dataset.email, this)">Email to ${escapeHtml(k.buyer_email)}</button>` : ''}
         </div>
       </div>
     `).join('');
@@ -150,11 +156,11 @@
       <div class="card">
         <div class="row"><span>Status</span><span class="pill ${c.status === 'pending' ? 'unused' : c.status === 'approved' ? 'activated' : ''}">${c.status}</span></div>
         <div class="row"><span>Type</span><span class="pill">${c.purpose === 'reactivate' ? 'Reactivation' : 'Signup'}</span></div>
-        <div class="row"><span>Buyer</span><span>${c.buyer_email}</span></div>
-        <div class="row"><span>Phone</span><span>${c.buyer_phone || '-'}</span></div>
-        <div class="row"><span>MoMo reference</span><span>${c.momo_reference}</span></div>
+        <div class="row"><span>Buyer</span><span>${escapeHtml(c.buyer_email)}</span></div>
+        <div class="row"><span>Phone</span><span>${escapeHtml(c.buyer_phone) || '-'}</span></div>
+        <div class="row"><span>MoMo reference</span><span>${escapeHtml(c.momo_reference)}</span></div>
         <div class="row"><span>Submitted</span><span>${new Date(c.created_at).toLocaleString()}</span></div>
-        ${c.notes ? `<div class="row"><span>Notes</span><span>${c.notes}</span></div>` : ''}
+        ${c.notes ? `<div class="row"><span>Notes</span><span>${escapeHtml(c.notes)}</span></div>` : ''}
         ${c.status === 'pending' ? `
           <div class="keyBox">
             <button class="copyBtn" style="background:rgba(46,196,182,.2);color:#2ec4b6" onclick="approveClaim('${c.id}', this)">Approve &amp; issue key</button>

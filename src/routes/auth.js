@@ -195,9 +195,67 @@ router.post('/reactivate', tenantLoginLimiter, asyncHandler(async (req, res) => 
   }
 }));
 
+// GET only *checks* the token and renders a page with a confirm button -
+// it never mutates state. This matters because corporate email scanners
+// and some mail clients auto-visit links inside emails before a human
+// clicks them; if GET performed the update, that pre-fetch would burn
+// the single-use token and the real click would fail with a confusing
+// "already used" error. The actual update happens in POST below, which
+// only fires when a human clicks the on-page button.
 router.get('/verify-email', asyncHandler(async (req, res) => {
   const { token } = req.query;
+  res.set('Content-Type', 'text/html');
   if (!token) return res.status(400).send('Missing token.');
+
+  const { rows } = await pool.query(
+    `SELECT id FROM tenants WHERE verify_token_hash=$1 AND verify_token_expires_at > now()`,
+    [hashToken(token)]
+  );
+  if (!rows.length) {
+    return res.status(400).send('<p>Invalid, expired, or already-used verification link.</p>');
+  }
+  const safeToken = String(token).replace(/[^a-f0-9]/gi, '');
+  res.send(`
+    <!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+      display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:20px;box-sizing:border-box}
+      .box{max-width:380px;text-align:center}
+      button{padding:12px 20px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px;
+        background:#e8a33d;color:#0d1a1e;margin-top:14px}
+      button:disabled{opacity:.6;cursor:default}
+      p{line-height:1.5}</style></head>
+    <body><div class="box">
+      <p>Click below to confirm this email address change.</p>
+      <button id="confirmBtn" onclick="confirmIt()">Confirm email change</button>
+      <p id="result"></p>
+      <script>
+        async function confirmIt() {
+          const btn = document.getElementById('confirmBtn');
+          btn.disabled = true; btn.textContent = 'Confirming...';
+          try {
+            const res = await fetch('/api/auth/verify-email', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token: '${safeToken}' })
+            });
+            const data = await res.json();
+            document.getElementById('result').textContent = res.ok
+              ? 'Email verified. You can close this page.'
+              : (data.error || 'Something went wrong.');
+            if (!res.ok) { btn.disabled = false; btn.textContent = 'Confirm email change'; }
+            else { btn.style.display = 'none'; }
+          } catch (e) {
+            document.getElementById('result').textContent = 'Network error - please try again.';
+            btn.disabled = false; btn.textContent = 'Confirm email change';
+          }
+        }
+      </script>
+    </div></body></html>
+  `);
+}));
+
+router.post('/verify-email', asyncHandler(async (req, res) => {
+  const { token } = req.body || {};
+  if (!token) return res.status(400).json({ error: 'Missing token.' });
 
   // Handles two cases with one query: plain signup verification
   // (pending_email is NULL, so owner_email is left untouched) and an
@@ -213,12 +271,12 @@ router.get('/verify-email', asyncHandler(async (req, res) => {
        WHERE verify_token_hash=$1 AND verify_token_expires_at > now() RETURNING id`,
       [hashToken(token)]
     );
-    if (!rows.length) return res.status(400).send('Invalid, expired, or already-used verification link.');
-    res.send('Email verified. You can close this page.');
+    if (!rows.length) return res.status(400).json({ error: 'Invalid, expired, or already-used verification link.' });
+    res.json({ ok: true });
   } catch (err) {
     // Unique violation on owner_email - someone else claimed that address
     // after this change was requested but before it was confirmed.
-    if (err.code === '23505') return res.status(409).send('That email is already in use by another account. Please request the change again with a different address.');
+    if (err.code === '23505') return res.status(409).json({ error: 'That email is already in use by another account. Please request the change again with a different address.' });
     throw err;
   }
 }));
