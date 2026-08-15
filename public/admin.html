@@ -1257,9 +1257,18 @@
     const siteId = document.getElementById('portalSite').value;
     if (!siteId) return showMsg('portal-msg', 'Save a site first.', 'err');
     try {
+      const logoUrlValue = document.getElementById('portalLogoUrl').value || null;
       await api(`/api/sites/${siteId}/portal`, 'PATCH', {
         businessName: document.getElementById('portalBusinessName').value || null,
-        logoUrl: document.getElementById('portalLogoUrl').value || null,
+        // A data: URL here means it was just set by uploadPortalLogo() or
+        // "use account logo" a moment ago, which already PATCHed it to the
+        // database directly - resending that same (often 1-2MB) string in
+        // every subsequent "Save branding" click, alongside all the other
+        // fields, is what was pushing requests past Express's JSON size
+        // limit and producing the "<!DOCTYPE..." parse error instead of a
+        // real message. Only a genuinely typed/pasted URL needs to travel
+        // in this PATCH; a data: URL is already saved server-side.
+        logoUrl: logoUrlValue && logoUrlValue.startsWith('data:') ? undefined : logoUrlValue,
         primaryColor: document.getElementById('portalPrimaryColor').value || null,
         backgroundImageUrl: document.getElementById('portalBackgroundImageUrl').value || null,
         cautionText: document.getElementById('portalCautionText').value || null,

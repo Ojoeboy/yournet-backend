@@ -46,7 +46,17 @@ app.use(cors({
     callback(new Error('Not allowed by CORS'));
   },
 }));
-app.use(express.json());
+// Default Express JSON body limit is 100kb - fine for ordinary API
+// calls, but the account/portal logo fields (see logo-editor.js) send
+// the uploaded image back as a base64 data: URL inside a normal JSON
+// PATCH (e.g. savePortalBranding in admin.html), not a multipart upload.
+// A 1.5MB image becomes ~2MB once base64-encoded, so it blew straight
+// through the 100kb default - and past that limit, Express returns its
+// own HTML error page instead of JSON, which is what produced
+// "Unexpected token '<' ... is not valid JSON" in the browser instead of
+// a real error message. 5mb gives comfortable headroom above the ~2MB
+// worst case plus the rest of the form fields.
+app.use(express.json({ limit: '5mb' }));
 app.use('/p', express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.use('/i18n', express.static(path.join(__dirname, '..', 'public', 'i18n')));
 app.use('/icons', express.static(path.join(__dirname, '..', 'public', 'icons')));
