@@ -1,4 +1,5 @@
 const axios = require('axios');
+const crypto = require('crypto');
 
 // Same Paystack API as integrations/billing.js, but this version accepts
 // credentials explicitly per call - it can run with the PLATFORM's own
@@ -69,4 +70,23 @@ async function chargeAuthorization({ secretKey, email, amountGHS, authorizationC
   return { success, reference: res.data.data.reference, raw: res.data.data };
 }
 
-module.exports = { initializePayment, verifyPayment, chargeAuthorization };
+// Verifies the `x-paystack-signature` header on an inbound webhook: Paystack
+// HMACs the EXACT raw request body with your secret key (SHA512) and sends
+// the hex digest in that header. This must run against the raw bytes, not
+// JSON.stringify(req.body) - re-serializing a parsed object isn't guaranteed
+// to reproduce byte-identical output (key order, spacing, unicode escaping),
+// which would make legitimate webhooks fail this check unpredictably. See
+// server.js's express.json({ verify }) for where rawBody comes from.
+// timingSafeEqual needs equal-length buffers - a length mismatch (e.g. a
+// malformed/short header) means it's not a valid signature, full stop, so
+// that's checked before comparing rather than letting timingSafeEqual throw.
+function verifyWebhookSignature({ secretKey, rawBody, signature }) {
+  if (!secretKey || !rawBody || !signature) return false;
+  const expected = crypto.createHmac('sha512', secretKey).update(rawBody).digest('hex');
+  const expectedBuf = Buffer.from(expected, 'utf8');
+  const signatureBuf = Buffer.from(signature, 'utf8');
+  if (expectedBuf.length !== signatureBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, signatureBuf);
+}
+
+module.exports = { initializePayment, verifyPayment, chargeAuthorization, verifyWebhookSignature };

@@ -56,7 +56,19 @@ app.use(cors({
 // "Unexpected token '<' ... is not valid JSON" in the browser instead of
 // a real error message. 5mb gives comfortable headroom above the ~2MB
 // worst case plus the rest of the form fields.
-app.use(express.json({ limit: '5mb' }));
+//
+// verify stashes the exact raw bytes on req.rawBody before Express parses
+// them into req.body. Needed by routes/license.js's Paystack webhook,
+// which has to HMAC the ORIGINAL body to check x-paystack-signature -
+// JSON.stringify(req.body) is not guaranteed to reproduce the same bytes
+// Paystack signed (key order, spacing, unicode escaping can all differ),
+// so re-serializing the parsed object would make real webhooks
+// intermittently fail signature verification. Cheap for every other
+// route - just a Buffer reference, nothing extra parsed or copied.
+app.use(express.json({
+  limit: '5mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 app.use('/p', express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'] }));
 app.use('/i18n', express.static(path.join(__dirname, '..', 'public', 'i18n')));
 app.use('/icons', express.static(path.join(__dirname, '..', 'public', 'icons')));

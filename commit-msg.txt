@@ -1,16 +1,65 @@
-fix(pwa): stop service worker from pinning stale shell.js/shell.css forever
+feat(payments): add Paystack webhooks (owner + tenant) and close security/reliability gaps
 
-- sw.js: switch shell-file caching from pure cache-first to
-  stale-while-revalidate. Previously, the browser's SW-update check only
-  re-triggers install() when sw.js's own bytes change - editing
-  shell.js/shell.css alone (e.g. adding the bottom nav) was invisible to
-  any already-installed client indefinitely, since the cached copy was
-  served forever with no revalidation. Now the cached copy is still
-  served instantly, but a background fetch (kept alive via
-  event.waitUntil) always refreshes the cache too, so a stale shell
-  self-heals within one extra reload instead of staying wrong forever.
+Security fixes:
+- services/subscriptionBilling.js: fix billing double-charge race - FOR
+  UPDATE SKIP LOCKED was never actually held (no explicit transaction, so
+  Postgres autocommit released the lock the instant the SELECT returned).
+  Rewrote as chargeTenantById(): BEGIN/SELECT FOR UPDATE SKIP
+  LOCKED/charge/UPDATE/COMMIT on one held connection per tenant, so an
+  overlapping billing pass now genuinely gets skipped instead of racing
+  in behind an already-released lock.
 
-- Bump CACHE_NAME v4 -> v5 so clients already stuck on the old
-  cache-first entries get a clean cutover on next activate.
+- db/schema.sql, middleware/auth.js, routes/auth.js, routes/agents.js:
+  add JWT revocation via token_version (new column on tenants and
+  tenant_users). requireAuth now checks a token's embedded `tv` against
+  the live DB value and rejects stale tokens. Every tenant/agent JWT
+  embeds tv at issuance (signup, login, verify-secret re-issue);
+  reset-password (both tenant and agent) bumps token_version, so a
+  password reset actually invalidates any token issued before it instead
+  of leaving it valid until natural (up to 7-day) expiry. requireAuth
+  wrapped in a non-async entry point since it's wired up directly via
+  router.use(...) everywhere without asyncHandler, and Express 4 won't
+  catch a rejected promise from async middleware on its own.
 
-No server-side or route changes; public/sw.js only.
+PWA fix:
+- public/sw.js: switch shell-file caching (shell.js/shell.css/etc.) from
+  cache-first to stale-while-revalidate. The browser's SW-update check
+  only re-triggers install() when sw.js's own bytes change, so editing
+  shell.js/shell.css alone was invisible to already-installed clients
+  indefinitely - a stale shell now self-heals within one extra reload.
+  CACHE_NAME bumped v4->v5 for a clean cutover.
+
+Payment reliability - Paystack webhooks (redirect-only verification
+misses a real case: buyer pays successfully but closes the tab/loses
+signal before the browser redirect fires, and the app never finds out):
+- server.js: capture raw request body (req.rawBody) in express.json()'s
+  verify callback - required to HMAC the exact original bytes Paystack
+  signed; JSON.stringify(req.body) isn't guaranteed to reproduce them.
+- integrations/gateways/paystackGateway.js: add verifyWebhookSignature()
+  - HMAC-SHA512 of the raw body against x-paystack-signature, timing-safe
+  compare.
+- routes/license.js: new POST /purchase/webhook/paystack (owner's
+  license/reactivation purchases) - single global URL, one platform
+  Paystack account.
+- services/paymentGatewayService.js: add getPaystackSecretKey(tenantId).
+- routes/portal.js: new POST /portal/gateway-webhook/paystack (tenant
+  customer voucher purchases) - one shared URL for every tenant; looks up
+  the order by Paystack's reference to identify which tenant's secret key
+  to verify the signature against, since Paystack allows only one fixed
+  webhook URL per account and each tenant has their own separate account.
+  Both webhooks re-verify the payment directly via Paystack's API rather
+  than trusting the payload, and share the existing atomic
+  pending->fulfilling claim in fulfillOrder so a webhook and a redirect
+  firing for the same order never double-issue.
+- public/admin.html: Step 5 (payment gateway) now shows the tenant's
+  Paystack webhook URL pre-filled and read-only (built from
+  window.location.origin), a copy button, and plain instructions for
+  where to paste it in their own Paystack dashboard. Added a short note
+  under Hubtel's fields clarifying it needs no equivalent setup.
+
+Not included: Flutterwave webhook support - needs a separately stored
+"Secret Hash" (new column + admin UI), unlike Paystack which reuses the
+existing secret key. Flutterwave stays redirect-only verification for now.
+
+Migration required before deploy: npm run migrate (adds token_version
+columns).

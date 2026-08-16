@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
 const voucherService = require('../services/voucherService');
 const gatewayService = require('../services/paymentGatewayService');
+const paystackGateway = require('../integrations/gateways/paystackGateway');
 const hubtelGateway = require('../integrations/gateways/hubtelGateway');
 const freeStockPhotos = require('../integrations/freeStockPhotos');
 const logger = require('../utils/logger');
@@ -236,6 +237,73 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
   } catch (err) {
     res.status(502).send('Could not verify payment: ' + err.message);
   }
+}));
+
+// PUBLIC: Paystack's server-to-server webhook for TENANT customer voucher
+// purchases - a second, independent path to fulfillment alongside the
+// redirect-based /gateway-callback/paystack above, same reason it exists
+// on the owner's license flow (routes/license.js): a customer can pay
+// successfully and then close the tab/lose signal before the redirect
+// back to us ever fires, and without this the voucher would just never
+// get issued even though they were charged.
+//
+// One important difference from the owner's webhook: THAT one has a
+// single Paystack account, so one env-var secret key verifies every
+// event. Here, every tenant has their OWN separate Paystack account with
+// their OWN secret key - but Paystack only supports ONE fixed webhook URL
+// per account (unlike callback_url, which can be set per-transaction), so
+// there's no way to bake a tenant identifier into a per-order URL the way
+// Hubtel's `wt` token does. Solving this any other way (e.g. a URL with
+// the tenant/site id baked in) would mean handing every tenant a
+// different URL to go paste into their own dashboard - easy to mess up.
+// Instead every tenant pastes this SAME url into their own Paystack
+// account's webhook settings, and the order lookup below (by the
+// reference Paystack sends back, which we generated) is what identifies
+// WHICH tenant's secret key to check the signature against. This is safe
+// specifically because nothing is trusted until the signature check
+// passes: an attacker who doesn't already know a real (UUID-based, hard
+// to guess) order reference gets rejected at the lookup; one who does
+// still needs that SPECIFIC tenant's real Paystack secret key to produce
+// a valid signature, which only that tenant's own Paystack account has.
+router.post('/gateway-webhook/paystack', asyncHandler(async (req, res) => {
+  const event = req.body || {};
+  if (event.event !== 'charge.success') return res.json({ received: true });
+
+  const reference = event.data?.reference;
+  if (!reference) return res.json({ received: true });
+
+  const { rows } = await pool.query(
+    `SELECT * FROM voucher_orders WHERE provider='paystack' AND provider_reference=$1`,
+    [reference]
+  );
+  if (!rows.length) return res.json({ received: true }); // not one of ours - ignore
+  const order = rows[0];
+
+  const secretKey = await gatewayService.getPaystackSecretKey(order.tenant_id);
+  const validSignature = paystackGateway.verifyWebhookSignature({
+    secretKey,
+    rawBody: req.rawBody,
+    signature: req.headers['x-paystack-signature'],
+  });
+  if (!validSignature) return res.status(401).json({ error: 'Invalid signature' });
+
+  if (order.status === 'paid') return res.json({ received: true, note: 'already fulfilled' });
+
+  // Re-verify directly with Paystack's API rather than trusting the
+  // webhook payload's own amount/status fields for what gets issued -
+  // same rule the redirect callback follows above.
+  const result = await paystackGateway.verifyPayment({ secretKey, reference });
+  if (!result.success) {
+    await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1 AND status='pending'`, [order.id]);
+    return res.json({ received: true });
+  }
+
+  // fulfillOrder's own atomic claim is what makes this safe to run
+  // concurrently with the redirect callback firing for the same order -
+  // whichever gets there first wins, the other gets `null` back and does
+  // nothing further.
+  await fulfillOrder(order);
+  res.json({ received: true });
 }));
 
 // PUBLIC: Hubtel confirms payment via webhook (a server-to-server POST),

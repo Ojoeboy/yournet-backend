@@ -276,6 +276,75 @@ router.get('/purchase/callback/:provider', asyncHandler(async (req, res) => {
   }
 }));
 
+// PUBLIC: Paystack's server-to-server webhook - a second, independent path
+// to fulfillment alongside the redirect-based /purchase/callback/paystack
+// above. The redirect alone misses a real edge case: a buyer can complete
+// payment successfully and then close the tab, lose signal, or have their
+// browser killed before the redirect back to us ever fires - Paystack
+// still processed the charge, but we'd never find out and no key would be
+// issued. This webhook catches exactly that case, independently of
+// whether the redirect ever happens.
+//
+// SECURITY: unlike the Hubtel webhook (protected by a per-order token
+// minted at initialize time), Paystack calls one fixed URL for every event
+// on the account, so there's no per-order secret to check here. What
+// stops a forged "charge.success" POST from a stranger is the
+// x-paystack-signature header - an HMAC-SHA512 of the raw body using your
+// Paystack secret key, which only Paystack (and you) know. Reject
+// anything that doesn't carry a valid one before looking at the payload
+// at all. On top of that, the payload's own claim of success is still not
+// trusted for what actually gets issued - see the verifyPayment call
+// below, same as the redirect path already does.
+router.post('/purchase/webhook/paystack', asyncHandler(async (req, res) => {
+  const signature = req.headers['x-paystack-signature'];
+  const validSignature = paystackGateway.verifyWebhookSignature({
+    secretKey: process.env.PAYSTACK_SECRET_KEY,
+    rawBody: req.rawBody,
+    signature,
+  });
+  if (!validSignature) return res.status(401).json({ error: 'Invalid signature' });
+
+  const event = req.body || {};
+  // Paystack sends many event types on this same URL (transfer events,
+  // subscription events, etc.) - only charge.success is relevant to
+  // license purchases/reactivations, everything else is a silent no-op
+  // (still 200, so Paystack doesn't keep retrying an event we're
+  // deliberately ignoring).
+  if (event.event !== 'charge.success') return res.json({ received: true });
+
+  const reference = event.data?.reference;
+  if (!reference) return res.json({ received: true });
+
+  const { rows } = await pool.query(
+    `SELECT * FROM license_purchase_orders WHERE provider='paystack' AND provider_reference=$1`,
+    [reference]
+  );
+  // Not every charge.success on this Paystack account is a license order -
+  // the same account/key also fires this event for subscriptionBilling.js's
+  // monthly auto-renewal charges (reference prefix RENEW-, no matching row
+  // here by design). Nothing to do with those from this route.
+  if (!rows.length) return res.json({ received: true });
+  const order = rows[0];
+  if (order.status === 'paid') return res.json({ received: true, note: 'already fulfilled' });
+
+  // Re-verify directly with Paystack's API rather than trusting the
+  // webhook payload's own amount/status fields for what gets issued - same
+  // rule the redirect callback follows above, now applied here too.
+  const result = await paystackGateway.verifyPayment({ secretKey: process.env.PAYSTACK_SECRET_KEY, reference });
+  if (!result.success) {
+    await pool.query(`UPDATE license_purchase_orders SET status='failed' WHERE id=$1 AND status='pending'`, [order.id]);
+    return res.json({ received: true });
+  }
+
+  const authorizationCode = AUTO_RENEW_PROVIDERS.includes('paystack') ? result.authorizationCode : null;
+  // fulfillOrder's own atomic claim (status='pending' -> 'fulfilling') is
+  // what makes this safe to run concurrently with the redirect callback
+  // firing for the same order - whichever gets there first wins, the
+  // other gets `null` back and does nothing further.
+  await fulfillOrder(order, 'paystack', authorizationCode);
+  res.json({ received: true });
+}));
+
 // PUBLIC: Hubtel confirms via a server-to-server webhook, not a browser
 // redirect - see integrations/gateways/hubtelGateway.js for why. There's no
 // page to show the buyer here; /purchase/status/:reference (their return

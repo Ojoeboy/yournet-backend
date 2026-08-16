@@ -183,4 +183,27 @@ async function verifyCheckout(tenantId, provider, reference) {
   throw new Error(`verifyCheckout not applicable for provider: ${provider}`);
 }
 
-module.exports = { saveGatewayConfig, setActiveGateway, deleteGatewayConfig, listGateways, getActiveGateway, initializeCheckout, verifyCheckout };
+/**
+ * Decrypted Paystack secret key for one tenant. Used by portal.js's
+ * Paystack webhook to check the x-paystack-signature header for a given
+ * tenant BEFORE trusting anything else in that request - same secret
+ * verifyCheckout above already uses to independently re-verify the
+ * payment itself afterward. Returns null if this tenant has no Paystack
+ * credentials saved at all (as opposed to configured-but-inactive, which
+ * still returns the key - a tenant can receive a webhook for an order
+ * placed while Paystack was their active gateway even if they've since
+ * switched to a different one).
+ */
+async function getPaystackSecretKey(tenantId) {
+  const { rows } = await pool.query(
+    `SELECT paystack_secret_key_encrypted FROM payment_gateways WHERE tenant_id=$1 AND provider='paystack' LIMIT 1`,
+    [tenantId]
+  );
+  const encrypted = rows[0]?.paystack_secret_key_encrypted;
+  return encrypted ? decrypt(encrypted) : null;
+}
+
+module.exports = {
+  saveGatewayConfig, setActiveGateway, deleteGatewayConfig, listGateways,
+  getActiveGateway, initializeCheckout, verifyCheckout, getPaystackSecretKey,
+};
