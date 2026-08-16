@@ -5,21 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>License Keys - Owner Admin</title>
 <script>
-  // TEMPORARY DIAGNOSTIC - shows any JS error directly on the page as a
-  // red banner, so it's visible on a phone screenshot without needing
-  // remote debugging. Safe to remove once the mobile-nav issue is found.
-  window.addEventListener('error', function (e) {
-    var box = document.getElementById('yn-diag-box');
-    if (!box) {
-      box = document.createElement('div');
-      box.id = 'yn-diag-box';
-      box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#ff3b3b;color:#fff;font:12px monospace;padding:10px;white-space:pre-wrap;max-height:50vh;overflow:auto';
-      document.body.prepend(box);
-    }
-    box.textContent += 'ERROR: ' + e.message + '  (' + e.filename + ':' + e.lineno + ')\n';
-  });
-</script>
-<script>
   // Same fix as admin.html: runs before anything below is parsed or
   // painted, so an unauthenticated visitor never sees a flash of the
   // license key list before being sent to /owner-login.
