@@ -1,28 +1,16 @@
-fix(security): close billing double-charge race and add JWT revocation on password reset
+fix(pwa): stop service worker from pinning stale shell.js/shell.css forever
 
-- subscriptionBilling.js: runMonthlyBilling's FOR UPDATE SKIP LOCKED never
-  actually held its lock (query ran without an explicit transaction, so
-  Postgres autocommit released it the instant the SELECT returned). Split
-  into a lock-free candidate lookup + chargeTenantById(), which now wraps
-  SELECT FOR UPDATE SKIP LOCKED, the Paystack charge, and the status write
-  in a single transaction on one held connection. Two overlapping billing
-  passes can no longer both charge the same tenant.
+- sw.js: switch shell-file caching from pure cache-first to
+  stale-while-revalidate. Previously, the browser's SW-update check only
+  re-triggers install() when sw.js's own bytes change - editing
+  shell.js/shell.css alone (e.g. adding the bottom nav) was invisible to
+  any already-installed client indefinitely, since the cached copy was
+  served forever with no revalidation. Now the cached copy is still
+  served instantly, but a background fetch (kept alive via
+  event.waitUntil) always refreshes the cache too, so a stale shell
+  self-heals within one extra reload instead of staying wrong forever.
 
-- db/schema.sql: add tenants.token_version and tenant_users.token_version
-  (default 0), idempotent ALTER TABLE ADD COLUMN IF NOT EXISTS.
+- Bump CACHE_NAME v4 -> v5 so clients already stuck on the old
+  cache-first entries get a clean cutover on next activate.
 
-- middleware/auth.js: requireAuth now checks the JWT's embedded `tv` claim
-  against the live token_version in the DB and rejects stale tokens.
-  Wrapped in a non-async entry point (requireAuthAsync().catch(next))
-  since requireAuth is wired up directly via router.use(...) everywhere
-  without asyncHandler, and Express 4 won't catch a rejected promise from
-  async middleware on its own.
-
-- routes/auth.js, routes/agents.js: embed tv (current token_version) in
-  every tenant/agent JWT at issuance (signup, login, verify-secret
-  re-issue). Bump token_version on tenant reset-password and agent
-  reset-password, so a password reset actually invalidates any
-  previously-issued token instead of leaving it valid until natural
-  (up to 7-day) expiry.
-
-Migration required before deploy: `npm run migrate`
+No server-side or route changes; public/sw.js only.
