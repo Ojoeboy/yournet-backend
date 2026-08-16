@@ -255,6 +255,27 @@ router.get('/purchase/callback/:provider', asyncHandler(async (req, res) => {
       return res.send(renderPage('Payment failed', '<p>No key was issued. If you were charged, contact support.</p>'));
     }
 
+    // SECURITY: same reference/amount-confusion gap as portal.js's
+    // gateway-callback, and worse here - it's a signup/reactivation key,
+    // not a WiFi voucher. `reference` (used to look up `order` above) and
+    // `transactionId` (used to verify with Flutterwave) are independent,
+    // client-supplied query params with nothing tying them together on
+    // Flutterwave's end. Without this check, a paid $50 reactivation's
+    // transactionId could be replayed against a $150 signup order's
+    // reference to get a signup key for reactivation price. Paystack is
+    // unaffected: its verify call is keyed by the same reference used for
+    // the order lookup, so there's no separate id to mismatch.
+    if (provider === 'flutterwave') {
+      if (result.reference !== order.provider_reference) {
+        await pool.query(`UPDATE license_purchase_orders SET status='failed' WHERE id=$1`, [order.id]);
+        return res.send(renderPage('Payment could not be verified', '<p>This transaction does not match this order.</p>'));
+      }
+      if (Math.round(Number(result.amountGHS) * 100) < Math.round(Number(order.amount) * 100)) {
+        await pool.query(`UPDATE license_purchase_orders SET status='failed' WHERE id=$1`, [order.id]);
+        return res.send(renderPage('Payment could not be verified', '<p>The amount paid does not match this order.</p>'));
+      }
+    }
+
     const authorizationCode = AUTO_RENEW_PROVIDERS.includes(provider) ? result.authorizationCode : null;
     const outcome = await fulfillOrder(order, provider, authorizationCode);
 

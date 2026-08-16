@@ -207,7 +207,9 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
   const transactionId = req.query.transaction_id; // Flutterwave-specific
 
   const { rows } = await pool.query(
-    `SELECT * FROM voucher_orders WHERE provider=$1 AND provider_reference=$2`,
+    `SELECT vo.*, p.price AS package_price
+     FROM voucher_orders vo JOIN packages p ON p.id = vo.package_id
+     WHERE vo.provider=$1 AND vo.provider_reference=$2`,
     [provider, reference]
   );
   if (!rows.length) return res.status(404).send('Order not found.');
@@ -224,6 +226,31 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
     if (!result.success) {
       await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
       return res.send(orderConfirmationPage('Payment failed', 'No voucher was issued.'));
+    }
+
+    // SECURITY: `reference` (used to look up the order above) and
+    // `transactionId` (used to verify with Flutterwave) are two
+    // independent, client-supplied query params - Flutterwave's verify-by-
+    // transactionId API doesn't tie them together on its own. Without this
+    // check, someone could pay for a cheap package, grab that payment's
+    // transactionId, then hit this callback again with a DIFFERENT,
+    // pricier order's reference and their own cheap transactionId: the
+    // verify call would still report success (it's a real, paid
+    // transaction - just not for this order), and fulfillOrder would issue
+    // the expensive package anyway. Confirming the verified transaction's
+    // own tx_ref matches this order's reference, and that its amount
+    // covers this order's package price, closes that gap. Paystack doesn't
+    // need this: its verify call is keyed by the SAME reference used to
+    // look up the order, so there's no separate transactionId to mismatch.
+    if (provider === 'flutterwave') {
+      if (result.reference !== order.provider_reference) {
+        await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
+        return res.send(orderConfirmationPage('Payment could not be verified', 'This transaction does not match this order.'));
+      }
+      if (Math.round(Number(result.amountGHS) * 100) < Math.round(Number(order.package_price) * 100)) {
+        await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
+        return res.send(orderConfirmationPage('Payment could not be verified', 'The amount paid does not match this order.'));
+      }
     }
 
     // fulfillOrder claims the order atomically - a null back means another
