@@ -85,6 +85,27 @@ router.post('/signup', asyncHandler(async (req, res) => {
       [tenant.id, licenseKeyRow.id]
     );
 
+    // BUG FIX: no code path was ever recording a signup's payment into
+    // subscription_payments - the only table /admin/revenue-summary (Owner
+    // Revenue page) reads from. It's not possible to do this back at
+    // purchase time (routes/license.js fulfillOrder): a NEW signup doesn't
+    // have a tenant yet at that point - the tenant only gets created HERE,
+    // at redemption - and subscription_payments.tenant_id is NOT NULL, so
+    // there was never a valid tenant_id to insert with until now. This is
+    // the earliest point one exists. Covers every payment method uniformly
+    // (Paystack/Flutterwave/Hubtel via gateway checkout, AND an
+    // owner-approved manual MoMo claim) since issueKey() already stored
+    // amount/payment_method/payment_reference on the key itself regardless
+    // of how it was purchased. ON CONFLICT is a defensive no-op guard
+    // against the (should-be-impossible, given the atomic key lock above)
+    // case of this reference already being recorded.
+    await client.query(
+      `INSERT INTO subscription_payments (tenant_id, amount, currency, provider, provider_reference, status, kind)
+       VALUES ($1,$2,'GHS',$3,$4,'paid','initial')
+       ON CONFLICT (provider, provider_reference) WHERE provider_reference IS NOT NULL DO NOTHING`,
+      [tenant.id, licenseKeyRow.amount, licenseKeyRow.payment_method, licenseKeyRow.payment_reference]
+    );
+
     await client.query('COMMIT');
 
     // Not blocking signup on this - see emailService.js for why this is
@@ -191,6 +212,23 @@ router.post('/reactivate', tenantLoginLimiter, asyncHandler(async (req, res) => 
       [nextBillingAt, subscriptionStatus, key.billing_provider || null, key.billing_authorization || null, tenantId]
     );
     await client.query(`UPDATE license_keys SET status='activated', tenant_id=$1, activated_at=now() WHERE id=$2`, [tenantId, key.id]);
+
+    // BUG FIX: same gap as /signup above, for a reactivation redeemed via
+    // a manually-issued key (owner-approved MoMo claim, or an
+    // owner-issued-manually key) - this path never recorded the payment
+    // into subscription_payments either, even though tenantId is right
+    // here. A gateway-purchased reactivation (paid straight through
+    // checkout, not via a key someone redeems later) already records
+    // correctly - see fulfillOrder's 'reactivate' branch in
+    // routes/license.js, which has always had this insert since it knows
+    // the tenant immediately.
+    await client.query(
+      `INSERT INTO subscription_payments (tenant_id, amount, currency, provider, provider_reference, status, kind)
+       VALUES ($1,$2,'GHS',$3,$4,'paid','initial')
+       ON CONFLICT (provider, provider_reference) WHERE provider_reference IS NOT NULL DO NOTHING`,
+      [tenantId, key.amount, key.payment_method, key.payment_reference]
+    );
+
     await client.query('COMMIT');
     res.json({ ok: true, planExpiresAt: nextBillingAt });
   } catch (err) {
