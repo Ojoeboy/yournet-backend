@@ -216,7 +216,33 @@
           </div>
         `).join('')}
       </nav>
+    `;
 
+    // .app-bottom-nav, .app-drawer-backdrop, and .app-drawer are all
+    // position:fixed and used to live inside #app-sidebar's own innerHTML
+    // above - which broke them completely whenever the "glass" photo
+    // background is active. backdrop-filter (applied to .app-sidebar by
+    // body.yn-glass .app-sidebar in shell.css) creates a new CSS
+    // containing block for any position:fixed DESCENDANT, same as
+    // transform/filter/perspective do - so those three elements silently
+    // stopped positioning themselves against the real viewport and
+    // started positioning against .app-sidebar's own (much smaller, or
+    // hidden-on-mobile) box instead. They rendered - display:flex and all
+    // - just nowhere visible. Moving them to their own container as a
+    // DIRECT CHILD OF <body> (never nested inside .app-sidebar or
+    // anything else with filter/backdrop-filter/transform) restores
+    // normal fixed-to-viewport behavior. The body.yn-glass CSS rules for
+    // these three still match fine here since they're plain descendant
+    // selectors, not parent-scoped - the glass blur look on the bottom
+    // nav and drawer themselves is unaffected, only the CONTAINING
+    // element changed.
+    let mobileShell = document.getElementById('app-mobile-shell');
+    if (!mobileShell) {
+      mobileShell = document.createElement('div');
+      mobileShell.id = 'app-mobile-shell';
+      document.body.appendChild(mobileShell);
+    }
+    mobileShell.innerHTML = `
       <nav class="app-bottom-nav">
         ${primaryItems.map((item) => navLinkHtml(item, active)).join('')}
         <button type="button" class="more-btn ${secondaryActive ? 'active' : ''}" id="yn-drawer-open" aria-label="More">

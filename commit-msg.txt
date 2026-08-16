@@ -1,46 +1,46 @@
-fix(license): record missing signup/reactivation revenue + add temporary mobile-nav diagnostics
+fix(mobile-nav): stop backdrop-filter on .app-sidebar from breaking position:fixed on bottom nav/drawer
 
-Revenue recording fix:
-- routes/auth.js (/signup): subscription_payments - the only table
-  /admin/revenue-summary reads from - was never written to for a new
-  signup. Root cause: a signup's payment is confirmed and the key issued
-  (routes/license.js fulfillOrder) BEFORE any tenant exists, and
-  subscription_payments.tenant_id is NOT NULL - there was no valid
-  tenant_id to insert with until the tenant is actually created, which
-  only happens later, at key redemption. Added the missing INSERT at that
-  point instead - inside the same transaction as tenant creation, so the
-  payment record and the tenant are created atomically together. Covers
-  every payment method uniformly (Paystack/Flutterwave/Hubtel gateway
-  checkout, and owner-approved manual MoMo claims) since issueKey()
-  already stores amount/payment_method/payment_reference on the key
-  itself regardless of how it was purchased.
-- routes/auth.js (/reactivate): same gap for a reactivation redeemed via
-  a manually-issued key - tenantId is known here but the insert was
-  missing too. Fixed the same way. (Gateway-purchased reactivation, paid
-  straight through checkout, already recorded correctly via
-  fulfillOrder's 'reactivate' branch in routes/license.js - not touched.)
-- Both inserts use ON CONFLICT (provider, provider_reference) WHERE
-  provider_reference IS NOT NULL DO NOTHING, matching the existing
-  partial unique index exactly - a plain ON CONFLICT (provider,
-  provider_reference) would have thrown at runtime against a partial
-  index and broken signup entirely; caught before shipping.
-- kind='initial' on both, matching owner-revenue.html's existing
-  "Signup / reactivation" vs "Monthly renewal" grouping - not a new
-  label.
+Root cause: .app-bottom-nav, .app-drawer, and .app-drawer-backdrop are
+all position:fixed, and were rendered as DOM children of .app-sidebar
+(all set via one el.innerHTML in shell.js's render()). Whenever the
+"glass" rotating photo background is active, body.yn-glass .app-sidebar
+applies backdrop-filter: blur(20px) to .app-sidebar - and per the CSS
+spec, backdrop-filter on a parent (like transform/filter/perspective)
+creates a new containing block for any position:fixed DESCENDANT. Once
+that happened, these three elements stopped positioning against the
+real viewport and started positioning against .app-sidebar's own box
+instead - they were still rendering (computed display: flex, confirmed
+via on-page diagnostic), just glued to the wrong, effectively invisible
+reference frame. Reproduced consistently because the glass background is
+active by default, so this affected every phone tested, on every page
+that uses shell.js (all owner pages and the tenant admin page).
 
-Note: this fix is forward-looking only. A payment that already completed
-before this deploy needs a one-time manual SQL backfill (see chat) -
-pulls tenant_id, amount, provider, and reference automatically from the
-tenant's own already-issued license_keys row.
+Fix: shell.js - split render()'s single innerHTML into two parts.
+#app-sidebar now only gets the hamburger button, topbar, and the desktop
+.app-nav. .app-bottom-nav/.app-drawer-backdrop/.app-drawer are now
+rendered into a separate #app-mobile-shell container appended directly
+to <body> (created once, reused on re-render), which has no
+filter/transform/backdrop-filter anywhere in its ancestor chain, so
+position:fixed on its children now correctly targets the real viewport
+again.
 
-Diagnostics (temporary):
-- public/license-admin.html: two on-page diagnostic scripts investigating
-  a separate, still-unresolved issue - the mobile bottom nav not
-  appearing on owner pages on a real device, reproducible even on a
-  fresh browser and after deploying the earlier sw.js fix, which rules
-  out stale-cache as the cause. Static review of the HTML/CSS/JS/routing
-  found nothing wrong, so these render the actual runtime state directly
-  on the page (viewport width, whether shell.js ran, #app-sidebar's
-  content, .app-bottom-nav's real computed display, SW controller state)
-  as visible banners - no remote debugging/adb required. Safe to remove
-  once the cause is found; not tied to the revenue fix above.
+Verified before shipping:
+- No CSS rule requires these elements to be DOM-descendants of
+  .app-sidebar for styling - the body.yn-glass rules that blur them
+  target the classes directly (plain descendant selectors), so the glass
+  look on the bottom nav/drawer is unaffected by moving them.
+- Every other reference to these elements in shell.js
+  (drawer/backdrop/open/close button wiring) uses
+  document.getElementById, not el.querySelector scoped to the sidebar -
+  unaffected by the move.
+- #app-mobile-shell itself has no CSS rule applying
+  filter/transform/backdrop-filter to it, so it doesn't reintroduce the
+  same containing-block bug one level down.
+
+Same underlying bug likely also explains the "More" drawer menu being
+broken on mobile with the glass background on, not just the bottom nav -
+not separately reported/tested but fixed by the same change.
+
+Diagnostic banners added earlier in public/license-admin.html (for
+tracking this down) are untouched by this commit - remove those once the
+fix is confirmed working on a real device.
