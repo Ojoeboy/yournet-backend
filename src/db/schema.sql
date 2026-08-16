@@ -690,3 +690,29 @@ CREATE INDEX IF NOT EXISTS idx_agent_activity_tenant_created ON agent_activity_l
 -- agent to re-log-in, and vice versa.
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0;
 ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0;
+
+-- ---------------------------------------------------------------------
+-- Defensive backfill: same bug class as tenants.owner_email/sites.active
+-- above. A UNIQUE(...) written only inline inside a CREATE TABLE IF NOT
+-- EXISTS block silently never applies on a database where that table
+-- already existed before the constraint was added to this file - it's
+-- not an error, it just quietly doesn't happen. db/audit-constraints.js
+-- exists specifically to catch this across every table; the five below
+-- were the ones it's known to matter for right now, since their
+-- uniqueness backs real anti-fraud/anti-duplication logic elsewhere
+-- (order fulfillment races, voucher/PPPoE login collisions). Run
+-- audit-constraints.js after deploying this to confirm nothing else was
+-- missed, and to confirm none of these fail here because live duplicate
+-- rows already exist - if one does, that data needs deduplicating first
+-- (see the owner_email fix above this file for that pattern) before the
+-- index can be created.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_users_tenant_email
+  ON tenant_users(tenant_id, email) WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vouchers_tenant_code
+  ON vouchers(tenant_id, code);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_license_purchase_orders_provider_ref_unique
+  ON license_purchase_orders(provider, provider_reference);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_voucher_orders_provider_ref_unique
+  ON voucher_orders(provider, provider_reference);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pppoe_subscribers_site_username
+  ON pppoe_subscribers(site_id, username);
