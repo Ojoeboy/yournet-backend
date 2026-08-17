@@ -109,6 +109,25 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  // 'active'/'manual' are billing-renewal modes, not a general health
+  // status - 'active' means the tenant's subscription auto-renews next
+  // month with no action needed (currently only possible via a Paystack
+  // card payment, since Paystack marks the authorization reusable
+  // automatically). 'manual' means it does NOT auto-renew - the tenant
+  // (or owner) has to come back and pay again by hand - which is expected,
+  // not broken, for MoMo (Paystack or otherwise), Flutterwave, Hubtel, and
+  // owner-issued keys, none of which have a reusable-charge mechanism this
+  // platform can call automatically. Showing the provider alongside
+  // 'manual' makes that reason legible at a glance instead of reading as
+  // a bug.
+  function formatStatus(t) {
+    const status = t.subscriptionStatus;
+    const provider = t.billingProvider;
+    if (status === 'active') return provider ? `Auto-renews (${provider})` : 'Auto-renews';
+    if (status === 'manual') return provider ? `Manual renewal (${provider})` : 'Manual renewal';
+    return status || '-';
+  }
+
   let tenants = [];
 
   function renderBars(containerId, rows, labelKey, countKey) {
@@ -169,7 +188,7 @@
         <td>${escapeHtml(t.businessWhatsapp)}</td>
         <td>${escapeHtml(t.country)}</td>
         <td>${escapeHtml(t.gender)}</td>
-        <td>${escapeHtml(t.subscriptionStatus)}</td>
+        <td>${escapeHtml(formatStatus(t))}</td>
         <td>${(t.paymentGateways || []).join(', ') || '-'}</td>
       </tr>
     `).join('');
@@ -213,7 +232,7 @@
               <td>${escapeHtml(t.businessWhatsapp)}</td>
               <td>${escapeHtml(t.country)}</td>
               <td>${escapeHtml(t.gender)}</td>
-              <td>${escapeHtml(t.subscriptionStatus)}</td>
+              <td>${escapeHtml(formatStatus(t))}</td>
               <td>${(t.paymentGateways || []).join(', ') || '-'}</td>
             </tr>
           `).join('')}

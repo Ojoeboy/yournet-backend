@@ -660,7 +660,7 @@ router.get('/admin/tenants', requireOwnerAuth, asyncHandler(async (req, res) => 
              WHEN 'account' THEN t.admin_whatsapp
              ELSE NULL
            END AS business_whatsapp,
-           t.country, t.gender, t.account_logo, t.subscription_status, t.plan_expires_at,
+           t.country, t.gender, t.account_logo, t.subscription_status, t.billing_provider, t.plan_expires_at,
            t.created_at,
            COALESCE(
              (SELECT array_agg(pg.provider ORDER BY pg.provider) FROM payment_gateways pg WHERE pg.tenant_id = t.id),
@@ -682,6 +682,7 @@ router.get('/admin/tenants', requireOwnerAuth, asyncHandler(async (req, res) => 
     gender: t.gender,
     logoUrl: t.account_logo,
     subscriptionStatus: t.subscription_status,
+    billingProvider: t.billing_provider,
     planExpiresAt: t.plan_expires_at,
     createdAt: t.created_at,
     paymentGateways: t.payment_gateways,
