@@ -302,34 +302,5 @@
   window.YOURNET_AUTH_MODE = 'owner';
 </script>
 <script src="/shell.js"></script>
-<script>
-  // TEMPORARY DIAGNOSTIC - runs after shell.js, dumps its actual result
-  // onto the page as a visible banner (viewport width, whether
-  // #app-sidebar got populated, and .app-bottom-nav's real computed
-  // display) even if nothing threw an error. Safe to remove once found.
-  window.addEventListener('load', function () {
-    setTimeout(function () {
-      var box = document.getElementById('yn-diag-box');
-      if (!box) {
-        box = document.createElement('div');
-        box.id = 'yn-diag-box';
-        box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#1a7a3d;color:#fff;font:12px monospace;padding:10px;white-space:pre-wrap;max-height:50vh;overflow:auto';
-        document.body.prepend(box);
-      }
-      var sidebar = document.getElementById('app-sidebar');
-      var bottomNav = document.querySelector('.app-bottom-nav');
-      var lines = [
-        'viewport width: ' + window.innerWidth,
-        'shell.js loaded: ' + (typeof window.YOURNET_ACTIVE_NAV !== 'undefined'),
-        '#app-sidebar found: ' + !!sidebar,
-        '#app-sidebar has content: ' + (sidebar ? sidebar.innerHTML.length > 0 : 'N/A'),
-        '.app-bottom-nav found: ' + !!bottomNav,
-        '.app-bottom-nav computed display: ' + (bottomNav ? getComputedStyle(bottomNav).display : 'N/A'),
-        'SW controller active: ' + !!(navigator.serviceWorker && navigator.serviceWorker.controller),
-      ];
-      box.textContent += lines.join('\n') + '\n';
-    }, 500); // small delay so this reads state after render() has definitely run
-  });
-</script>
 </body>
 </html>
