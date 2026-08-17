@@ -9,6 +9,7 @@ const meraki = require('../integrations/meraki');
 const { encrypt, decrypt } = require('../utils/credentialCrypto');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
+const storage = require('../services/storage');
 
 const router = express.Router();
 router.use(requireAuth, requireNotAgent);
@@ -414,9 +415,9 @@ router.patch('/:id/portal', asyncHandler(async (req, res) => {
 }));
 
 // Portal logo upload - same pattern as the account logo in dashboard.js:
-// memory storage only (Render's disk is ephemeral), file is base64-encoded
-// into a data: URL and saved straight into sites.portal_logo_url. No cloud
-// bucket needed - the DB already stores this fine as text.
+// memory storage only (Render's disk is ephemeral), file is uploaded to R2
+// object storage and only the resulting URL is saved into
+// sites.portal_logo_url instead of a base64 blob.
 const portalLogoUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 1.5 * 1024 * 1024 }, // 1.5MB - a portal logo is small/square
@@ -429,19 +430,21 @@ const portalLogoUpload = multer({
 });
 
 router.post('/:id/portal-logo', asyncHandler(async (req, res) => {
-  const { rows: existing } = await pool.query('SELECT id FROM sites WHERE id=$1 AND tenant_id=$2', [
+  const { rows: existing } = await pool.query('SELECT id, portal_logo_url FROM sites WHERE id=$1 AND tenant_id=$2', [
     req.params.id, req.tenantId,
   ]);
   if (!existing.length) return res.status(404).json({ error: 'Site not found' });
+  const oldLogoUrl = existing[0].portal_logo_url;
 
   portalLogoUpload.single('logo')(req, res, async (err) => {
     if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
     if (!req.file) return res.status(400).json({ error: 'No file received' });
-    const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    const logoUrl = await storage.uploadLogo(req.file.buffer, req.file.mimetype, 'portal-logos');
     const { rows } = await pool.query(
       'UPDATE sites SET portal_logo_url=$1 WHERE id=$2 AND tenant_id=$3 RETURNING portal_logo_url',
-      [dataUrl, req.params.id, req.tenantId]
+      [logoUrl, req.params.id, req.tenantId]
     );
+    storage.deleteLogo(oldLogoUrl).catch(() => {});
     res.json({ ok: true, logoUrl: rows[0].portal_logo_url });
   });
 }));

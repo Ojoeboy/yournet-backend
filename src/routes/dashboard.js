@@ -9,13 +9,15 @@ const meraki = require('../integrations/meraki');
 const { decrypt } = require('../utils/credentialCrypto');
 const asyncHandler = require('../utils/asyncHandler');
 const freeStockPhotos = require('../integrations/freeStockPhotos');
+const storage = require('../services/storage');
 
 const router = express.Router();
 router.use(requireAuth, requireNotAgent);
 
 // Account/profile logo upload - memory storage (never touches disk, since
-// Render's filesystem is ephemeral) - the buffer is base64-encoded into a
-// data: URL and saved straight into tenants.account_logo.
+// Render's filesystem is ephemeral). The buffer is uploaded to R2 object
+// storage and only the resulting URL is saved into tenants.account_logo -
+// keeps Postgres rows small instead of storing base64 blobs directly.
 const logoUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 1.5 * 1024 * 1024 }, // 1.5MB - this is an icon, not a banner
@@ -31,14 +33,25 @@ router.post('/logo', asyncHandler(async (req, res) => {
   logoUpload.single('logo')(req, res, async (err) => {
     if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
     if (!req.file) return res.status(400).json({ error: 'No file received' });
-    const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-    await pool.query('UPDATE tenants SET account_logo=$1 WHERE id=$2', [dataUrl, req.tenantId]);
-    res.json({ ok: true, logoUrl: dataUrl });
+
+    const { rows: existing } = await pool.query('SELECT account_logo FROM tenants WHERE id=$1', [req.tenantId]);
+    const oldLogoUrl = existing[0]?.account_logo || null;
+
+    const logoUrl = await storage.uploadLogo(req.file.buffer, req.file.mimetype, 'account-logos');
+    await pool.query('UPDATE tenants SET account_logo=$1 WHERE id=$2', [logoUrl, req.tenantId]);
+
+    // Clean up the replaced object in R2 (no-op for old base64 rows or if R2 isn't configured).
+    storage.deleteLogo(oldLogoUrl).catch(() => {});
+
+    res.json({ ok: true, logoUrl });
   });
 }));
 
 router.delete('/logo', asyncHandler(async (req, res) => {
+  const { rows: existing } = await pool.query('SELECT account_logo FROM tenants WHERE id=$1', [req.tenantId]);
+  const oldLogoUrl = existing[0]?.account_logo || null;
   await pool.query('UPDATE tenants SET account_logo=NULL WHERE id=$1', [req.tenantId]);
+  storage.deleteLogo(oldLogoUrl).catch(() => {});
   res.json({ ok: true });
 }));
 

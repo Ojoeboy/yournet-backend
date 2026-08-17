@@ -1,46 +1,20 @@
-fix(mobile-nav): stop backdrop-filter on .app-sidebar from breaking position:fixed on bottom nav/drawer
+Move tenant/portal logos to Cloudflare R2 object storage
 
-Root cause: .app-bottom-nav, .app-drawer, and .app-drawer-backdrop are
-all position:fixed, and were rendered as DOM children of .app-sidebar
-(all set via one el.innerHTML in shell.js's render()). Whenever the
-"glass" rotating photo background is active, body.yn-glass .app-sidebar
-applies backdrop-filter: blur(20px) to .app-sidebar - and per the CSS
-spec, backdrop-filter on a parent (like transform/filter/perspective)
-creates a new containing block for any position:fixed DESCENDANT. Once
-that happened, these three elements stopped positioning against the
-real viewport and started positioning against .app-sidebar's own box
-instead - they were still rendering (computed display: flex, confirmed
-via on-page diagnostic), just glued to the wrong, effectively invisible
-reference frame. Reproduced consistently because the glass background is
-active by default, so this affected every phone tested, on every page
-that uses shell.js (all owner pages and the tenant admin page).
+- Add src/services/storage.js: S3-compatible R2 client for uploading/
+  deleting logo images, with automatic fallback to base64 data: URLs
+  if R2 env vars aren't configured
+- Update src/routes/dashboard.js: account logo upload now stores the
+  R2 URL in tenants.account_logo instead of a base64 blob; deletes the
+  replaced object from R2 on upload/delete
+- Update src/routes/sites.js: portal logo upload follows the same
+  pattern for sites.portal_logo_url
+- Add src/db/migrate-logos-to-r2.js: one-time, idempotent script to
+  backfill existing base64 rows in tenants/sites to R2 (npm run
+  migrate:logos)
+- Add @aws-sdk/client-s3 dependency and migrate:logos script to
+  package.json
+- Add R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
+  R2_BUCKET_NAME, R2_PUBLIC_URL to .env.example
 
-Fix: shell.js - split render()'s single innerHTML into two parts.
-#app-sidebar now only gets the hamburger button, topbar, and the desktop
-.app-nav. .app-bottom-nav/.app-drawer-backdrop/.app-drawer are now
-rendered into a separate #app-mobile-shell container appended directly
-to <body> (created once, reused on re-render), which has no
-filter/transform/backdrop-filter anywhere in its ancestor chain, so
-position:fixed on its children now correctly targets the real viewport
-again.
-
-Verified before shipping:
-- No CSS rule requires these elements to be DOM-descendants of
-  .app-sidebar for styling - the body.yn-glass rules that blur them
-  target the classes directly (plain descendant selectors), so the glass
-  look on the bottom nav/drawer is unaffected by moving them.
-- Every other reference to these elements in shell.js
-  (drawer/backdrop/open/close button wiring) uses
-  document.getElementById, not el.querySelector scoped to the sidebar -
-  unaffected by the move.
-- #app-mobile-shell itself has no CSS rule applying
-  filter/transform/backdrop-filter to it, so it doesn't reintroduce the
-  same containing-block bug one level down.
-
-Same underlying bug likely also explains the "More" drawer menu being
-broken on mobile with the glass background on, not just the bottom nav -
-not separately reported/tested but fixed by the same change.
-
-Diagnostic banners added earlier in public/license-admin.html (for
-tracking this down) are untouched by this commit - remove those once the
-fix is confirmed working on a real device.
+Reduces Postgres row size/storage pressure on Neon's free tier as
+tenant count grows. No changes to /health or the site polling job.
