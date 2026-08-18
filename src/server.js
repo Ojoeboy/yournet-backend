@@ -239,6 +239,7 @@ const logger = require('./utils/logger');
 async function pollAllSites() {
   try {
     const { rows: sites } = await pool.query('SELECT * FROM sites');
+    if (sites.length === 0) return; // nothing to check - don't wake Neon for an empty table
     for (const site of sites) {
       try {
         let online = false;

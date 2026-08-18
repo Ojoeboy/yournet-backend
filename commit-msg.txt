@@ -1,20 +1,19 @@
-Move tenant/portal logos to Cloudflare R2 object storage
+Add tenant wipe utility with production safety guard; skip idle site polling
 
-- Add src/services/storage.js: S3-compatible R2 client for uploading/
-  deleting logo images, with automatic fallback to base64 data: URLs
-  if R2 env vars aren't configured
-- Update src/routes/dashboard.js: account logo upload now stores the
-  R2 URL in tenants.account_logo instead of a base64 blob; deletes the
-  replaced object from R2 on upload/delete
-- Update src/routes/sites.js: portal logo upload follows the same
-  pattern for sites.portal_logo_url
-- Add src/db/migrate-logos-to-r2.js: one-time, idempotent script to
-  backfill existing base64 rows in tenants/sites to R2 (npm run
-  migrate:logos)
-- Add @aws-sdk/client-s3 dependency and migrate:logos script to
-  package.json
-- Add R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
-  R2_BUCKET_NAME, R2_PUBLIC_URL to .env.example
+- Add src/db/wipe-tenants.js: destructive one-time script to fully reset
+  tenants/sites (and everything cascading from them - users, packages,
+  vouchers, licenses, PPPoE data, etc.) via TRUNCATE ... CASCADE. Purges
+  each tenant/site's R2 logo object first via storage.deleteLogo().
+  Refuses to run without --yes; additionally requires typing back the
+  exact DATABASE_URL hostname when it isn't localhost, so it can't be
+  run against production/Neon by muscle memory alone.
+- Add wipe:tenants script to package.json (npm run wipe:tenants -- --yes).
+- Update src/server.js: pollAllSites() now returns early when the sites
+  table is empty, skipping the per-site ping/UPDATE loop instead of
+  running it against zero rows on every 5-minute cycle.
 
-Reduces Postgres row size/storage pressure on Neon's free tier as
-tenant count grows. No changes to /health or the site polling job.
+Reduces wasted Neon compute-hour usage during low/no-tenant periods
+(testing, early onboarding) and gives a safe, repeatable way to reset the
+database between test cycles without hand-writing SQL against production.
+No changes to /health, R2 upload/delete behavior, or the logo migration
+script.
