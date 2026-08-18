@@ -1,28 +1,38 @@
-Fix print leak, add QR & payment auto-connect for voucher portal
+Enforce wall-clock voucher expiry regardless of router uptime accounting
 
-- print.html: hide #yournetLangSwitcherContainer (profile icon +
-  language dropdown) and #app-mobile-shell (bottom nav/drawer) when
-  printing. Both were injected by shell.js/mobile-shell outside the
-  existing print-hide list, so they leaked onto printed voucher
-  sheets. Card grid layout (5x10 A4 sheet) untouched.
+Problem: MikroTik's limit-uptime (and equivalent per-platform grants)
+count cumulative CONNECTED time, not wall-clock time - a session pauses
+on disconnect and resumes on reconnect. So a customer with any
+connection gaps could stay authorized on the router well past the
+24-hour mark they were actually sold, while the backend's expires_at
+field (set once at redemption, wall-clock only) already showed the
+voucher as over. Nothing previously enforced expires_at against the
+router - it was a display/record value only, per the existing
+delete-guard comment in routes/vouchers.js ("expires_at, not status, is
+what actually tells you the session is over").
 
-- vouchers.js / agents.js qrcode routes: encode
-  {APP_BASE_URL}/p/{siteId}?code=XXXX-XXXX instead of the bare
-  voucher code, so scanning opens the portal directly. Falls back to
-  the plain code if APP_BASE_URL isn't set.
+- New services/voucherExpiry.js: runs every minute, finds vouchers
+  where status='active' AND expires_at <= now(), groups by site, and
+  actively kicks/revokes them on the router:
+    - mikrotik: removeHotspotUser (kicks active session + deletes
+      router user in one call)
+    - unifi: unauthorizeClient using the voucher's client_mac, when one
+      was captured at redemption
+    - omada/meraki: no revoke primitive exists yet for either platform
+      in integrations/*.js, so these are left untouched and logged
+      rather than marking 'expired' while the customer might still be
+      connected - avoids reintroducing the same status/reality mismatch
+      for site types this pass can't actually enforce
+  On successful revoke, flips status to 'expired', so the DB stops
+  drifting from actual router state (fixes the mismatch the delete-guard
+  comment flagged).
 
-- portal.html: read ?code= from the URL, prefill the code input
-  (through the same formatter used for manual typing), and
-  auto-submit via the existing redeem() flow. Scanning now behaves
-  as a genuine one-tap connect; redeem() still runs identically to
-  manual entry, so expired/used/wrong-site codes fail the same way.
+- server.js: wired the sweep in on a 1-minute interval, same
+  setInterval/setTimeout-on-boot pattern as the existing
+  subscriptionBilling/pppoeBilling jobs. Tighter interval than those
+  since lateness here directly means a customer stays online longer
+  than they paid for.
 
-- portal.js gateway-callback route: apply the same auto-connect
-  treatment to Paystack/Flutterwave purchase confirmations. On
-  success, link to and auto-redirect (3s meta-refresh) to
-  /p/{siteId}?code=..., so a card purchase no longer requires the
-  customer to copy the code off a plain confirmation page and
-  paste it in manually. Falls back to the old bare-code page when
-  APP_BASE_URL isn't configured. Hubtel is unaffected — it confirms
-  via server-to-server webhook + SMS and never routes through this
-  page.
+Net effect: "buy 24 hours" now means 24 wall-clock hours from
+redemption on mikrotik/unifi sites, independent of usage gaps. Known
+gap: omada/meraki sites aren't enforced by this pass yet.

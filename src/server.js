@@ -386,3 +386,25 @@ setInterval(() => {
 setTimeout(() => {
   pppoeBilling.runPppoeBillingPass().catch((err) => logger.error('PPPoE billing pass failed', { message: err.message }));
 }, 90 * 1000);
+
+// --- Voucher wall-clock expiry enforcement ---
+// The router's own limit-uptime only counts connected time and pauses on
+// disconnect, so it can't be trusted alone to cut a customer off at the
+// wall-clock time they were actually sold ("24 hours from redemption",
+// not "24 hours of connected time"). This sweep is what enforces that
+// promise: it finds vouchers whose expires_at has passed while still
+// marked 'active', kicks/removes the session on the router (see
+// services/voucherExpiry.js for per-site-type coverage), and flips status
+// to 'expired' so the DB stops drifting from what's actually happening on
+// the router - see the delete-guard comment in routes/vouchers.js for the
+// mismatch this was causing before. Runs frequently (every minute) since,
+// unlike the billing jobs above, being late here means a customer stays
+// online longer than they paid for.
+const voucherExpiry = require('./services/voucherExpiry');
+const VOUCHER_EXPIRY_INTERVAL_MS = 60 * 1000; // every minute
+setInterval(() => {
+  voucherExpiry.runVoucherExpirySweep().catch((err) => logger.error('Voucher expiry sweep failed', { message: err.message }));
+}, VOUCHER_EXPIRY_INTERVAL_MS);
+setTimeout(() => {
+  voucherExpiry.runVoucherExpirySweep().catch((err) => logger.error('Voucher expiry sweep failed', { message: err.message }));
+}, 15 * 1000);
