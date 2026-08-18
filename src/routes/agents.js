@@ -530,11 +530,17 @@ router.get('/me/vouchers/:id/qrcode', asyncHandler(async (req, res) => {
   const { locked } = checkLicenseLockout(tenantRows[0] || {});
   if (locked) return res.status(402).end();
 
-  const { rows } = await pool.query('SELECT code FROM vouchers WHERE id=$1 AND tenant_id=$2 AND agent_id=$3', [
+  const { rows } = await pool.query('SELECT code, site_id FROM vouchers WHERE id=$1 AND tenant_id=$2 AND agent_id=$3', [
     req.params.id, req.tenantId, req.userId,
   ]);
   if (!rows.length) return res.status(404).end();
-  const png = await QRCode.toBuffer(rows[0].code, { width: 240, margin: 1 });
+  // Same portal-URL-with-code payload as the owner-side qrcode route in
+  // routes/vouchers.js - see the comment there for why.
+  const base = process.env.APP_BASE_URL;
+  const payload = base
+    ? `${base}/p/${rows[0].site_id}?code=${encodeURIComponent(rows[0].code)}`
+    : rows[0].code;
+  const png = await QRCode.toBuffer(payload, { width: 240, margin: 1 });
   res.type('png').send(png);
 }));
 

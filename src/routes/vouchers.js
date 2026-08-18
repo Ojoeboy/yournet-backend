@@ -75,14 +75,23 @@ router.get('/', asyncHandler(async (req, res) => {
 }));
 
 router.get('/:id/qrcode', asyncHandler(async (req, res) => {
-  const { rows } = await pool.query('SELECT code FROM vouchers WHERE id=$1 AND tenant_id=$2', [
+  const { rows } = await pool.query('SELECT code, site_id FROM vouchers WHERE id=$1 AND tenant_id=$2', [
     req.params.id, req.tenantId,
   ]);
   if (!rows.length) return res.status(404).end();
 
-  // Encoding just the plain code (not a full URL) keeps this scannable by
-  // any generic QR reader and simple to key into the portal by hand too.
-  const png = await QRCode.toBuffer(rows[0].code, { width: 240, margin: 1 });
+  // Encodes the portal URL with the code embedded (?code=XXXX-XXXX), not
+  // just the bare code. A generic QR scanner opens straight to the
+  // customer's portal page with the code pre-filled and auto-submitted
+  // (see portal.html) - a real "scan to connect" instead of "scan to read
+  // the code, then still have to type it in". Falls back to encoding the
+  // plain code if APP_BASE_URL isn't configured, so this never produces a
+  // broken/unusable QR in an environment that's missing it.
+  const base = process.env.APP_BASE_URL;
+  const payload = base
+    ? `${base}/p/${rows[0].site_id}?code=${encodeURIComponent(rows[0].code)}`
+    : rows[0].code;
+  const png = await QRCode.toBuffer(payload, { width: 240, margin: 1 });
   res.type('png').send(png);
 }));
 

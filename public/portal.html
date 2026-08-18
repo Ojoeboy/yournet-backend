@@ -158,6 +158,12 @@
   // them for Meraki-type sites.
   const baseGrantUrl = params.get('base_grant_url') || '';
   const continueUrl = params.get('user_continue_url') || '';
+  // Present when this page was opened by scanning a voucher's QR code
+  // (see /:id/qrcode in routes/vouchers.js and routes/agents.js) - the QR
+  // now encodes this portal URL with the code embedded, instead of just
+  // the bare code, so a scan can go straight to "connected" instead of
+  // making the customer type the code in by hand.
+  const qrCode = params.get('code') || '';
 
   const codeInput = document.getElementById('code');
   const msgEl = document.getElementById('msg');
@@ -229,6 +235,19 @@
   }
 
   codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') redeem(); });
+
+  // Scanned in via QR: pre-fill (through the same formatter as manual
+  // typing, so it displays as XXXX-XXXX) and auto-submit. This makes
+  // "scan the QR" behave like an actual one-tap connect for the common
+  // case - but redeem() still runs the exact same request a manual
+  // entry would, so a code that's expired/already-used/wrong-site fails
+  // exactly the same way it would for manual entry; scanning doesn't
+  // grant anything scanning-specific, it just skips the typing.
+  if (qrCode) {
+    codeInput.value = qrCode;
+    codeInput.dispatchEvent(new Event('input'));
+    redeem();
+  }
 
   // Load optional extras (background image, caution notice, packages,
   // manual MoMo, WhatsApp help link) - all off by default until the site's

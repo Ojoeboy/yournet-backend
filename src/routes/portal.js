@@ -260,7 +260,25 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
     if (!voucher) {
       return res.send(orderConfirmationPage('Already confirmed', 'This order was already completed.'));
     }
-    res.send(orderConfirmationPage('Payment successful', `Your voucher code: <strong>${voucher.code}</strong>`));
+    // Same auto-connect treatment as the QR-scan path (see /:id/qrcode in
+    // routes/vouchers.js and portal.html's ?code= handling): send the
+    // browser straight to the portal page with the code pre-filled and
+    // auto-submitted, instead of leaving the customer to copy the code off
+    // this plain confirmation page and paste it in manually. Falls back to
+    // showing the bare code with no link if APP_BASE_URL isn't configured,
+    // so this never produces a broken link - same fallback used for the QR.
+    const base = process.env.APP_BASE_URL;
+    if (base) {
+      const connectUrl = `${base}/p/${order.site_id}?code=${encodeURIComponent(voucher.code)}`;
+      res.send(orderConfirmationPage(
+        'Payment successful',
+        `Your voucher code: <strong>${voucher.code}</strong><br><br>` +
+        `<a href="${connectUrl}" style="color:#4fd1c5">Tap here to connect now</a>`,
+        connectUrl
+      ));
+    } else {
+      res.send(orderConfirmationPage('Payment successful', `Your voucher code: <strong>${voucher.code}</strong>`));
+    }
   } catch (err) {
     res.status(502).send('Could not verify payment: ' + err.message);
   }
@@ -377,9 +395,19 @@ router.post('/gateway-webhook/hubtel', asyncHandler(async (req, res) => {
   res.json({ ok: true });
 }));
 
-function orderConfirmationPage(title, bodyHtml) {
+// redirectUrl, when given, mirrors the QR-scan path's "prefill + auto-
+// submit" behavior: the browser is sent on to the portal page itself after
+// a short pause (long enough for the customer to see their code first),
+// where portal.html's own ?code= handling takes over and calls the exact
+// same redeem() a manual entry or QR scan would - no gateway-specific
+// behavior, just skipping the copy/paste step. The visible link is kept as
+// a fallback for anyone who navigates away before the redirect fires.
+function orderConfirmationPage(title, bodyHtml, redirectUrl) {
+  const redirectTag = redirectUrl
+    ? `<meta http-equiv="refresh" content="3;url=${redirectUrl}">`
+    : '';
   return `
-    <html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#0d1a1e;color:#e8f0f1">
+    <html><head>${redirectTag}</head><body style="font-family:sans-serif;text-align:center;padding:60px;background:#0d1a1e;color:#e8f0f1">
       <h1>${title}</h1>
       <p>${bodyHtml}</p>
     </body></html>

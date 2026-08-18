@@ -1,19 +1,28 @@
-Add tenant wipe utility with production safety guard; skip idle site polling
+Fix print leak, add QR & payment auto-connect for voucher portal
 
-- Add src/db/wipe-tenants.js: destructive one-time script to fully reset
-  tenants/sites (and everything cascading from them - users, packages,
-  vouchers, licenses, PPPoE data, etc.) via TRUNCATE ... CASCADE. Purges
-  each tenant/site's R2 logo object first via storage.deleteLogo().
-  Refuses to run without --yes; additionally requires typing back the
-  exact DATABASE_URL hostname when it isn't localhost, so it can't be
-  run against production/Neon by muscle memory alone.
-- Add wipe:tenants script to package.json (npm run wipe:tenants -- --yes).
-- Update src/server.js: pollAllSites() now returns early when the sites
-  table is empty, skipping the per-site ping/UPDATE loop instead of
-  running it against zero rows on every 5-minute cycle.
+- print.html: hide #yournetLangSwitcherContainer (profile icon +
+  language dropdown) and #app-mobile-shell (bottom nav/drawer) when
+  printing. Both were injected by shell.js/mobile-shell outside the
+  existing print-hide list, so they leaked onto printed voucher
+  sheets. Card grid layout (5x10 A4 sheet) untouched.
 
-Reduces wasted Neon compute-hour usage during low/no-tenant periods
-(testing, early onboarding) and gives a safe, repeatable way to reset the
-database between test cycles without hand-writing SQL against production.
-No changes to /health, R2 upload/delete behavior, or the logo migration
-script.
+- vouchers.js / agents.js qrcode routes: encode
+  {APP_BASE_URL}/p/{siteId}?code=XXXX-XXXX instead of the bare
+  voucher code, so scanning opens the portal directly. Falls back to
+  the plain code if APP_BASE_URL isn't set.
+
+- portal.html: read ?code= from the URL, prefill the code input
+  (through the same formatter used for manual typing), and
+  auto-submit via the existing redeem() flow. Scanning now behaves
+  as a genuine one-tap connect; redeem() still runs identically to
+  manual entry, so expired/used/wrong-site codes fail the same way.
+
+- portal.js gateway-callback route: apply the same auto-connect
+  treatment to Paystack/Flutterwave purchase confirmations. On
+  success, link to and auto-redirect (3s meta-refresh) to
+  /p/{siteId}?code=..., so a card purchase no longer requires the
+  customer to copy the code off a plain confirmation page and
+  paste it in manually. Falls back to the old bare-code page when
+  APP_BASE_URL isn't configured. Hubtel is unaffected — it confirms
+  via server-to-server webhook + SMS and never routes through this
+  page.
