@@ -224,8 +224,14 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_use_rotating_backgrounds BOOLE
 -- Only meaningful for type='mikrotik' - Omada/UniFi/Meraki keep using
 -- their own cloud-controller flow regardless of this value.
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS mk_auth_mode TEXT NOT NULL DEFAULT 'api';
-ALTER TABLE sites ADD CONSTRAINT IF NOT EXISTS sites_mk_auth_mode_check CHECK (mk_auth_mode IN ('api', 'radius'));
-
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'sites_mk_auth_mode_check'
+  ) THEN
+    ALTER TABLE sites ADD CONSTRAINT sites_mk_auth_mode_check CHECK (mk_auth_mode IN ('api', 'radius'));
+  END IF;
+END $$;
 -- Per-site RADIUS shared secret (AES-256-GCM encrypted, same scheme as
 -- mk_password_encrypted etc. - see utils/credentialCrypto.js). Generated
 -- server-side when a tenant switches a site to radius mode; never
