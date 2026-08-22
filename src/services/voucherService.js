@@ -225,6 +225,105 @@ async function redeemVoucher(tenantId, code, redeemContext = {}) {
 }
 
 /**
+ * Redeem a voucher via the RADIUS path (see integrations/radius.js) instead
+ * of the RouterOS-API push path above. Called from an Access-Request, so
+ * there's no tenantId in scope yet - only the NAS-Identifier the router was
+ * configured with, which is how we find the site (and from it, the
+ * tenant). Unlike redeemVoucher(), this does NOT call out to the router:
+ * the Access-Accept the caller sends IS the grant, so there's nothing left
+ * to push - the router already has the RADIUS reply telling it to let the
+ * client through.
+ */
+async function redeemVoucherByRadius(nasIdentifier, code, { clientMac } = {}) {
+  const { rows: siteRows } = await pool.query(
+    `SELECT id, tenant_id FROM sites WHERE radius_nas_identifier = $1 AND mk_auth_mode = 'radius' AND active = true`,
+    [nasIdentifier]
+  );
+  if (!siteRows.length) return { ok: false, reason: 'unknown_nas' };
+  const { id: siteId, tenant_id: tenantId } = siteRows[0];
+
+  // Same atomic claim pattern as redeemVoucher() above - see the comment
+  // there for why this has to be a single UPDATE...WHERE, not a
+  // SELECT-then-check.
+  const claim = await pool.query(
+    `UPDATE vouchers SET status='redeeming' WHERE tenant_id=$1 AND site_id=$2 AND code=$3 AND status='unused' RETURNING id`,
+    [tenantId, siteId, code]
+  );
+  if (!claim.rows.length) {
+    // Not 'unused' - but unlike the HTTP redeemVoucher() path above, that's
+    // not automatically a rejection here. In 'api' mode the router holds a
+    // persistent hotspot user for the voucher's whole duration, so it never
+    // re-asks us about an already-redeemed code. In RADIUS mode, RouterOS
+    // re-sends a fresh Access-Request any time a client re-authenticates on
+    // the login page - a brief Wi-Fi drop, a phone that slept, a browser
+    // tab reopened - and that's expected, not abuse. Reject those and every
+    // returning customer gets locked out mid-session the first time their
+    // phone's Wi-Fi so much as blinks.
+    //
+    // So: allow re-authentication for OUR still-'active', not-yet-expired
+    // voucher, and hand back the REMAINING time (not a fresh full
+    // duration) so Session-Timeout reflects what they actually paid for,
+    // not a free top-up on every reconnect. Anything else - genuinely
+    // unknown code, already-expired, or someone else's code mid-claim -
+    // still rejects exactly as before.
+    const { rows: existing } = await pool.query(
+      `SELECT id, status, expires_at FROM vouchers WHERE tenant_id=$1 AND site_id=$2 AND code=$3`,
+      [tenantId, siteId, code]
+    );
+    if (!existing.length) return { ok: false, reason: 'not_found' };
+    const v = existing[0];
+
+    if (v.status === 'active' && v.expires_at && new Date(v.expires_at) > new Date()) {
+      const { rows: pkgRows } = await pool.query(
+        `SELECT p.rate_limit_down, p.rate_limit_up
+         FROM vouchers v JOIN packages p ON p.id = v.package_id WHERE v.id = $1`,
+        [v.id]
+      );
+      const pkg = pkgRows[0];
+      const remainingMinutes = Math.max(1, Math.ceil((new Date(v.expires_at).getTime() - Date.now()) / 60000));
+      if (clientMac) {
+        // Best-effort - refresh the device we last saw this voucher on,
+        // same as a fresh redemption would record. Not worth failing the
+        // whole re-auth over if this update loses a race.
+        await pool.query(`UPDATE vouchers SET client_mac=$1 WHERE id=$2`, [clientMac, v.id]);
+      }
+      return {
+        ok: true,
+        expiresAt: v.expires_at,
+        durationMinutes: remainingMinutes,
+        rateLimit: pkg.rate_limit_up && pkg.rate_limit_down ? `${pkg.rate_limit_up}/${pkg.rate_limit_down}` : null,
+        reauth: true,
+      };
+    }
+
+    return { ok: false, reason: 'already_used', status: v.status === 'redeeming' ? 'unused' : v.status };
+  }
+
+  const voucherId = claim.rows[0].id;
+  const { rows } = await pool.query(
+    `SELECT p.duration_minutes, p.rate_limit_down, p.rate_limit_up
+     FROM vouchers v JOIN packages p ON p.id = v.package_id WHERE v.id = $1`,
+    [voucherId]
+  );
+  const pkg = rows[0];
+  const expiresAt = new Date(Date.now() + pkg.duration_minutes * 60000);
+
+  const finalize = await pool.query(
+    `UPDATE vouchers SET status='active', redeemed_at=now(), expires_at=$1, client_mac=$2, provider_ref='radius'
+     WHERE id=$3 AND status='redeeming' RETURNING id`,
+    [expiresAt, clientMac || null, voucherId]
+  );
+  if (!finalize.rows.length) return { ok: false, reason: 'redemption_conflict' };
+
+  return {
+    ok: true,
+    expiresAt,
+    durationMinutes: pkg.duration_minutes,
+    rateLimit: pkg.rate_limit_up && pkg.rate_limit_down ? `${pkg.rate_limit_up}/${pkg.rate_limit_down}` : null,
+  };
+}
+
+/**
  * Shared fulfillment for any paid voucher_orders row, regardless of how it
  * got confirmed - a gateway webhook/callback (automatic), or an owner
  * manually approving a MoMo-to-personal-number claim (routes/vouchers.js).
@@ -297,4 +396,4 @@ async function fulfillOrder(order) {
   }
 }
 
-module.exports = { generateVouchers, redeemVoucher, randomCode, fulfillOrder };
+module.exports = { generateVouchers, redeemVoucher, redeemVoucherByRadius, randomCode, fulfillOrder };

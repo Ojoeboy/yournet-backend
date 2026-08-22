@@ -211,6 +211,70 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_momo_number TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_momo_name TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_use_rotating_backgrounds BOOLEAN NOT NULL DEFAULT true;
 
+-- RADIUS auth mode (CGNAT/Starlink workaround) --------------------------
+-- 'api'    = existing flow: our backend reaches OUT to the router's
+--            RouterOS API to push a hotspot user at redemption time.
+--            Requires the router to be reachable from Render, so it does
+--            not work for a tenant behind CGNAT.
+-- 'radius' = new flow: the router is configured as a RADIUS client
+--            pointed at OUR server, and it is the router that opens the
+--            outbound connection (Access-Request) to us when a customer
+--            logs in. Outbound-only, so it works from behind CGNAT/
+--            Starlink with no port-forwarding or tunnel needed.
+-- Only meaningful for type='mikrotik' - Omada/UniFi/Meraki keep using
+-- their own cloud-controller flow regardless of this value.
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS mk_auth_mode TEXT NOT NULL DEFAULT 'api';
+ALTER TABLE sites ADD CONSTRAINT IF NOT EXISTS sites_mk_auth_mode_check CHECK (mk_auth_mode IN ('api', 'radius'));
+
+-- Per-site RADIUS shared secret (AES-256-GCM encrypted, same scheme as
+-- mk_password_encrypted etc. - see utils/credentialCrypto.js). Generated
+-- server-side when a tenant switches a site to radius mode; never
+-- round-tripped back to the browser in plaintext after that.
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS radius_secret_encrypted TEXT;
+
+-- RADIUS has no concept of "tenant" or "site" - an Access-Request just
+-- carries a username/password (the voucher code) plus whatever attributes
+-- the NAS (router) was configured to send. Multiple tenants can share one
+-- egress IP under CGNAT, so we can't identify the site by source IP the
+-- way a traditional single-secret RADIUS deployment would. Instead every
+-- radius-mode site is assigned a short random identifier here, and the
+-- tenant configures their router's NAS-Identifier to this exact value
+-- (RouterOS: /radius set [...] nas-identifier). Our server reads
+-- NAS-Identifier from the raw packet BEFORE decoding (it's a plaintext
+-- attribute, unlike User-Password) to know which site's secret to try -
+-- see integrations/radius.js.
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS radius_nas_identifier TEXT UNIQUE;
+
+-- One row per RADIUS session (Accounting-Start through its matching Stop),
+-- for radius-mode sites only. This is what backs "live clients" and usage
+-- stats for those sites, since we can't reach the router directly to ask
+-- (see integrations/radius.js's header comment for why). voucher_id is
+-- nullable: an Accounting-Request for a code we don't recognize is still
+-- recorded rather than dropped, so it's visible instead of silently lost.
+CREATE TABLE IF NOT EXISTS radius_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  site_id UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  voucher_id UUID REFERENCES vouchers(id),
+  acct_session_id TEXT NOT NULL,
+  client_mac TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'stopped')),
+  bytes_in BIGINT,
+  bytes_out BIGINT,
+  session_time_seconds INTEGER,
+  terminate_cause INTEGER,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  stopped_at TIMESTAMPTZ,
+  -- Same NAS can (rarely) reuse an Acct-Session-Id after a long enough
+  -- gap, but never concurrently - scoping the uniqueness to (site_id,
+  -- acct_session_id) is what makes Start/Interim/Stop upserts idempotent
+  -- against retransmits without a separate dedupe pass.
+  UNIQUE(site_id, acct_session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_radius_sessions_site_status ON radius_sessions(site_id, status);
+CREATE INDEX IF NOT EXISTS idx_radius_sessions_voucher ON radius_sessions(voucher_id);
+
 -- Safe to re-run: lets a Mikrotik site connect over API-SSL (port 8729,
 -- encrypted) instead of the plaintext API (port 8728). Defaults to false so
 -- every existing site keeps connecting exactly as before this column

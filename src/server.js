@@ -222,6 +222,51 @@ app.use(errorHandler);
 const port = process.env.PORT || 4000;
 app.listen(port, () => console.log(`YourNet backend running on port ${port}`));
 
+// --- RADIUS auth server (CGNAT-safe voucher redemption) ---------------------
+// Opt-in via env var: this is a brand-new, separate UDP listener alongside
+// the existing HTTP app above, and radius-mode is per-site (sites.mk_auth_mode)
+// - so leaving RADIUS_ENABLED unset changes nothing for any tenant currently
+// using the RouterOS-API push flow. See integrations/radius.js for why this
+// exists and services/voucherService.js#redeemVoucherByRadius for the
+// redemption logic it calls into.
+if (process.env.RADIUS_ENABLED === 'true') {
+  const radius = require('./integrations/radius');
+  const voucherService = require('./services/voucherService');
+  const { decrypt } = require('./utils/credentialCrypto');
+
+  radius.startAuthServer({
+    port: parseInt(process.env.RADIUS_AUTH_PORT || '1812', 10),
+    getSiteSecret: async (nasIdentifier) => {
+      const { rows } = await pool.query(
+        `SELECT radius_secret_encrypted FROM sites WHERE radius_nas_identifier = $1 AND mk_auth_mode = 'radius' AND active = true`,
+        [nasIdentifier]
+      );
+      if (!rows.length || !rows[0].radius_secret_encrypted) return null;
+      return decrypt(rows[0].radius_secret_encrypted);
+    },
+    onAuthenticate: ({ nasIdentifier, username, callingStationId }) =>
+      voucherService.redeemVoucherByRadius(nasIdentifier, username, { clientMac: callingStationId || null }),
+  });
+
+  // Accounting-Request listener (Start/Interim-Update/Stop) - separate UDP
+  // port and socket from auth, matching RFC 2865 vs 2866 and RouterOS's own
+  // /radius config (independent auth-port/acct-port fields). Shares the
+  // same per-NAS secret lookup as the auth server above.
+  const radiusAccountingService = require('./services/radiusAccountingService');
+  radius.startAcctServer({
+    port: parseInt(process.env.RADIUS_ACCT_PORT || '1813', 10),
+    getSiteSecret: async (nasIdentifier) => {
+      const { rows } = await pool.query(
+        `SELECT radius_secret_encrypted FROM sites WHERE radius_nas_identifier = $1 AND mk_auth_mode = 'radius' AND active = true`,
+        [nasIdentifier]
+      );
+      if (!rows.length || !rows[0].radius_secret_encrypted) return null;
+      return decrypt(rows[0].radius_secret_encrypted);
+    },
+    onAccounting: (nasIdentifier, event) => radiusAccountingService.handleAccountingEvent(nasIdentifier, event),
+  });
+}
+
 // --- Automated site health polling ---
 // Previously, a site's online/offline status only updated when someone
 // manually clicked "Test connection" on /admin. This checks every site,
