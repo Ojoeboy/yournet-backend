@@ -376,6 +376,31 @@ router.get('/sites/:id/live', asyncHandler(async (req, res) => {
   const site = rows[0];
 
   try {
+    if (site.type === 'mikrotik' && site.mk_auth_mode === 'radius') {
+      // Can't reach this router's API directly (that's the CGNAT problem
+      // radius-mode exists to solve) - the router talks to US instead, via
+      // RADIUS accounting, so radius_sessions is the live-client source of
+      // truth for these sites. See integrations/radius.js /
+      // services/radiusAccountingService.js.
+      const { rows: sessions } = await pool.query(
+        `SELECT rs.acct_session_id, rs.client_mac, rs.bytes_in, rs.bytes_out, rs.session_time_seconds, rs.started_at, v.code
+         FROM radius_sessions rs
+         LEFT JOIN vouchers v ON v.id = rs.voucher_id
+         WHERE rs.site_id = $1 AND rs.status = 'active'
+         ORDER BY rs.started_at DESC`,
+        [site.id]
+      );
+      const clients = sessions.map((s) => ({
+        user: s.code || null,
+        address: null, // RADIUS accounting doesn't carry the client's IP in the attributes we currently parse
+        macAddress: s.client_mac || null,
+        uptime: s.session_time_seconds != null ? String(s.session_time_seconds) : null,
+        bytesIn: s.bytes_in != null ? String(s.bytes_in) : null,
+        bytesOut: s.bytes_out != null ? String(s.bytes_out) : null,
+      }));
+      return res.json({ clients, count: clients.length });
+    }
+
     if (site.type === 'mikrotik') {
       const clients = await mikrotik.listActiveClients({
         ...site,

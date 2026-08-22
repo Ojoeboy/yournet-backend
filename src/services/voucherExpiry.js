@@ -89,7 +89,22 @@ async function runVoucherExpirySweep() {
 
     for (const voucher of siteVouchers) {
       try {
-        if (siteRow.type === 'mikrotik') {
+        if (siteRow.type === 'mikrotik' && siteRow.mk_auth_mode === 'radius') {
+          // Can't reach this router's API to kick the session - that's the
+          // whole reason it's in radius-mode (CGNAT/no public IP). The
+          // wall-clock promise still has to be kept in the DB on schedule
+          // for billing/reporting, so mark it expired regardless; the
+          // customer's live session is left running until the router's own
+          // Session-Timeout counts down (see integrations/radius.js's
+          // header comment - this is the documented, known trade-off, not
+          // an oversight) or they naturally drop off. If they DO
+          // re-authenticate after this point, redeemVoucherByRadius's
+          // re-auth branch only honors a still-'active', not-yet-expired
+          // voucher, so an expired one correctly gets rejected there.
+          logger.warn('Voucher expiry sweep: radius-mode site, cannot reach router to kick session - DB-only expiry', {
+            site_id: siteId, voucher_id: voucher.id,
+          });
+        } else if (siteRow.type === 'mikrotik') {
           await mikrotik.removeHotspotUser(site, voucher.code);
         } else if (siteRow.type === 'unifi') {
           if (voucher.client_mac) {
