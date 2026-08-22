@@ -74,9 +74,36 @@ router.post('/:siteId/redeem', asyncHandler(async (req, res) => {
   const { code, clientMac, apMac, ssidName, radioId, baseGrantUrl, continueUrl } = req.body;
   if (!code) return res.status(400).json({ error: 'code is required' });
 
-  const { rows } = await pool.query('SELECT tenant_id FROM sites WHERE id=$1', [siteId]);
+  const { rows } = await pool.query('SELECT tenant_id, type, mk_auth_mode FROM sites WHERE id=$1', [siteId]);
   if (!rows.length) return res.status(404).json({ error: 'Unknown site' });
-  const tenantId = rows[0].tenant_id;
+  const { tenant_id: tenantId, type, mk_auth_mode: authMode } = rows[0];
+
+  // RADIUS-mode sites: our backend can't reach this router directly
+  // (that's the CGNAT problem RADIUS mode exists to solve - see
+  // integrations/radius.js), so the usual push flow below
+  // (voucherService.redeemVoucher -> mikrotik.createHotspotUser) would
+  // just fail with a network error every time. The actual login happens
+  // when the customer submits this same code on the ROUTER's own hotspot
+  // page, which sends us an Access-Request - see
+  // voucherService.redeemVoucherByRadius. All this endpoint can usefully
+  // do beforehand is confirm the code is real and unused, so the portal
+  // page can tell the customer "you're good, go ahead and connect" instead
+  // of silently doing nothing (or erroring) for a flow it was never wired
+  // for. Deliberately NOT claiming/marking the voucher here - that only
+  // happens on the real RADIUS Access-Request, so a customer who checks a
+  // code but doesn't proceed hasn't burned it.
+  if (type === 'mikrotik' && authMode === 'radius') {
+    const { rows: voucherRows } = await pool.query(
+      `SELECT status FROM vouchers WHERE tenant_id=$1 AND site_id=$2 AND code=$3`,
+      [tenantId, siteId, code.trim().toUpperCase()]
+    );
+    if (!voucherRows.length) return res.status(400).json({ error: true, reason: 'not_found' });
+    const status = voucherRows[0].status;
+    if (status !== 'unused' && status !== 'active') {
+      return res.status(400).json({ error: true, reason: 'already_used', status });
+    }
+    return res.json({ ok: true, radiusMode: true, redirectUrl: null, expiresAt: null });
+  }
 
   try {
     const result = await voucherService.redeemVoucher(tenantId, code.trim().toUpperCase(), {

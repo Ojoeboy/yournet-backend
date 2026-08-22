@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const crypto = require('crypto');
 const pool = require('../db/pool');
 const { requireAuth, requireNotAgent } = require('../middleware/auth');
 const mikrotik = require('../integrations/mikrotik');
@@ -49,7 +50,7 @@ router.get('/', asyncHandler(async (req, res) => {
   // site-management screen passes ?all=true to also see deactivated ones.
   const includeInactive = req.query.all === 'true';
   const { rows } = await pool.query(
-    `SELECT id, name, type, status, active, last_checked_at FROM sites
+    `SELECT id, name, type, status, active, last_checked_at, mk_auth_mode FROM sites
      WHERE tenant_id=$1 ${includeInactive ? '' : 'AND active=true'} ORDER BY name ASC`,
     [req.tenantId]
   );
@@ -692,6 +693,105 @@ router.post('/:id/revoke-client', asyncHandler(async (req, res) => {
     [auth.id]
   );
   res.json({ ok: true });
+}));
+
+// --- RADIUS mode (CGNAT-safe voucher redemption) ---------------------------
+// See integrations/radius.js's header comment for the full "why". This is
+// mikrotik-only - Omada/UniFi/Meraki are cloud-controller-driven and don't
+// have the RouterOS-API-unreachable-behind-CGNAT problem this solves.
+
+router.get('/:id/radius-config', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT type, mk_auth_mode, radius_nas_identifier, radius_secret_encrypted FROM sites WHERE id=$1 AND tenant_id=$2`,
+    [req.params.id, req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Site not found.' });
+  const site = rows[0];
+  if (site.type !== 'mikrotik') return res.status(400).json({ error: 'RADIUS mode is only available for Mikrotik sites.' });
+
+  res.json({
+    mode: site.mk_auth_mode,
+    nasIdentifier: site.radius_nas_identifier,
+    // Decrypted and re-shown on request, not hidden after the first view -
+    // this secret only protects against something reading our DB, not
+    // against the tenant who legitimately owns it and needs to put it into
+    // their own router. Losing it with no way to see it again would just
+    // force a disable/re-enable (and a router reconfig) for no benefit.
+    secret: site.mk_auth_mode === 'radius' ? decrypt(site.radius_secret_encrypted) : null,
+    authPort: parseInt(process.env.RADIUS_AUTH_PORT || '1812', 10),
+    acctPort: parseInt(process.env.RADIUS_ACCT_PORT || '1813', 10),
+    // Where the tenant's router should actually send packets - Render
+    // routes inbound UDP to whatever host this backend is deployed at.
+    // RADIUS_SERVER_HOST isn't inferrable from the HTTP request (that's
+    // Render's HTTP-only edge, not the UDP listener), so it has to be
+    // configured explicitly once per deployment.
+    serverHost: process.env.RADIUS_SERVER_HOST || null,
+  });
+}));
+
+router.post('/:id/radius-mode', asyncHandler(async (req, res) => {
+  const { enable } = req.body;
+  if (typeof enable !== 'boolean') return res.status(400).json({ error: 'enable (boolean) is required.' });
+
+  const { rows } = await pool.query(`SELECT type, mk_auth_mode FROM sites WHERE id=$1 AND tenant_id=$2`, [
+    req.params.id, req.tenantId,
+  ]);
+  if (!rows.length) return res.status(404).json({ error: 'Site not found.' });
+  const site = rows[0];
+  if (site.type !== 'mikrotik') return res.status(400).json({ error: 'RADIUS mode is only available for Mikrotik sites.' });
+
+  if (!enable) {
+    // Secret + NAS-Identifier are cleared, not just left in place with the
+    // mode flipped back - an inactive secret sitting encrypted at rest
+    // with no purpose is exactly the kind of thing worth not
+    // accumulating. Re-enabling later generates a fresh pair, so the
+    // router needs reconfiguring either way - simpler to make that
+    // explicit than to pretend the old one might still be valid.
+    await pool.query(
+      `UPDATE sites SET mk_auth_mode='api', radius_secret_encrypted=NULL, radius_nas_identifier=NULL WHERE id=$1`,
+      [req.params.id]
+    );
+    return res.json({ ok: true, mode: 'api' });
+  }
+
+  // Random, URL/RouterOS-safe identifier - short enough to type into
+  // RouterOS's nas-identifier field without transcription errors, long
+  // enough that guessing another tenant's isn't practical. Collisions are
+  // possible in principle (this is why the column has a UNIQUE constraint)
+  // but astronomically unlikely at this length; on the rare conflict this
+  // will throw and the tenant can just retry.
+  const nasIdentifier = 'yn-' + crypto.randomBytes(6).toString('hex');
+  const secret = crypto.randomBytes(24).toString('base64url');
+
+  const { rows: existingActive } = await pool.query(
+    `SELECT count(*)::int AS n FROM vouchers WHERE site_id=$1 AND status='active' AND (expires_at IS NULL OR expires_at > now())`,
+    [req.params.id]
+  );
+  const activeCount = existingActive[0].n;
+
+  await pool.query(
+    `UPDATE sites SET mk_auth_mode='radius', radius_secret_encrypted=$1, radius_nas_identifier=$2 WHERE id=$3`,
+    [encrypt(secret), nasIdentifier, req.params.id]
+  );
+
+  res.json({
+    ok: true,
+    mode: 'radius',
+    nasIdentifier,
+    secret, // plaintext, this one time - see the GET endpoint above for later re-viewing
+    authPort: parseInt(process.env.RADIUS_AUTH_PORT || '1812', 10),
+    acctPort: parseInt(process.env.RADIUS_ACCT_PORT || '1813', 10),
+    serverHost: process.env.RADIUS_SERVER_HOST || null,
+    // Not a hard block - existing active sessions from the old push flow
+    // already have their access granted independently by the router and
+    // are completely unaffected by this switch. The thing actually worth
+    // flagging is the cutover gap: any NEW voucher redemption attempt on
+    // the portal page stops working the instant this switch flips, until
+    // the router is reconfigured for RADIUS - see routes/portal.js.
+    warning: activeCount > 0
+      ? `This site has ${activeCount} voucher(s) with an active session right now - those are unaffected. New redemptions won't work until the router is reconfigured for RADIUS (see the setup instructions).`
+      : null,
+  });
 }));
 
 module.exports = router;

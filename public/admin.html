@@ -207,42 +207,59 @@
   </select>
 
   <div id="siteFields-mikrotik" class="site-fields">
-    <label data-i18n="routerIpLabel">Router IP address</label>
-    <input id="mkHost" placeholder="e.g. 192.168.88.1">
-    <div class="row">
-      <div><label data-i18n="apiPortLabel">API port</label><input id="mkPort" value="8728"></div>
-      <div>
-        <label data-i18n="hotspotProfileLabel">Hotspot profile</label>
-        <select id="mkProfile">
-          <option value="default" selected>default</option>
-        </select>
-        <button type="button" class="secondary" style="margin-top:6px;padding:8px 10px;font-size:12px" onclick="fetchHotspotProfiles()">Fetch from router</button>
-        <div class="msg" id="mkProfile-msg"></div>
-      </div>
-    </div>
-    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px">
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:#0f1e22;padding:10px;border-radius:6px;border:1px solid #234">
       <span class="switch">
-        <input type="checkbox" id="mkUseTls" onchange="onMkTlsToggle()">
+        <input type="checkbox" id="mkUseRadius" onchange="onMkRadiusToggle()">
         <span class="slider"></span>
       </span>
-      <span style="text-transform:none;font-size:13px;color:#e8f0f1" data-i18n="mkUseTlsLabel">
-        Connect over API-SSL (encrypted, port 8729) instead of the plain API
+      <span style="text-transform:none;font-size:13px;color:#e8f0f1">
+        This router is behind CGNAT, Starlink, or otherwise has no public IP - skip the details below and set up RADIUS mode instead
       </span>
     </label>
-    <p style="font-size:12px;color:#6b8a91" data-i18n="mkUseTlsHint">
-      Only turn this on if API-SSL is enabled on the router and the plain API
-      is disabled. The connection won't verify the router's certificate
-      (RouterOS's API-SSL certs are self-signed), so this protects the
-      traffic in transit but not against a swapped router.
+    <p id="mkRadiusHint" class="hidden" style="font-size:12px;color:#6b8a91;margin-top:6px">
+      We can't reach a router with no public IP directly, so instead your router will be configured to call
+      <em>us</em> when someone logs in. No IP/username/password needed here - after you save, you'll get a
+      secret and setup instructions to paste into the router.
     </p>
-    <label data-i18n="routerUsernameLabel">Router API username</label>
-    <input id="mkUser" placeholder="admin">
-    <label data-i18n="routerPasswordLabel">Router API password</label>
-    <div class="pwd-wrap">
-      <input id="mkPass" type="password">
-      <button type="button" class="pwd-toggle" onclick="togglePwd('mkPass')" aria-label="Show password">👁</button>
+
+    <div id="mkPushFields">
+      <label data-i18n="routerIpLabel">Router IP address</label>
+      <input id="mkHost" placeholder="e.g. 192.168.88.1">
+      <div class="row">
+        <div><label data-i18n="apiPortLabel">API port</label><input id="mkPort" value="8728"></div>
+        <div>
+          <label data-i18n="hotspotProfileLabel">Hotspot profile</label>
+          <select id="mkProfile">
+            <option value="default" selected>default</option>
+          </select>
+          <button type="button" class="secondary" style="margin-top:6px;padding:8px 10px;font-size:12px" onclick="fetchHotspotProfiles()">Fetch from router</button>
+          <div class="msg" id="mkProfile-msg"></div>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px">
+        <span class="switch">
+          <input type="checkbox" id="mkUseTls" onchange="onMkTlsToggle()">
+          <span class="slider"></span>
+        </span>
+        <span style="text-transform:none;font-size:13px;color:#e8f0f1" data-i18n="mkUseTlsLabel">
+          Connect over API-SSL (encrypted, port 8729) instead of the plain API
+        </span>
+      </label>
+      <p style="font-size:12px;color:#6b8a91" data-i18n="mkUseTlsHint">
+        Only turn this on if API-SSL is enabled on the router and the plain API
+        is disabled. The connection won't verify the router's certificate
+        (RouterOS's API-SSL certs are self-signed), so this protects the
+        traffic in transit but not against a swapped router.
+      </p>
+      <label data-i18n="routerUsernameLabel">Router API username</label>
+      <input id="mkUser" placeholder="admin">
+      <label data-i18n="routerPasswordLabel">Router API password</label>
+      <div class="pwd-wrap">
+        <input id="mkPass" type="password">
+        <button type="button" class="pwd-toggle" onclick="togglePwd('mkPass')" aria-label="Show password">👁</button>
+      </div>
+      <button class="secondary" onclick="openRscWizard()" data-i18n="rscWizardBtn">Mikrotik config wizard</button>
     </div>
-    <button class="secondary" onclick="openRscWizard()" data-i18n="rscWizardBtn">Mikrotik config wizard</button>
   </div>
 
   <div id="siteFields-omada" class="site-fields hidden">
@@ -323,12 +340,29 @@
   </div>
 
   <button onclick="addSite()" data-i18n="saveSiteBtn">Save site</button>
-  <button class="secondary" onclick="testSite()" data-i18n="testConnectionBtn">Test connection</button>
+  <button class="secondary" id="testConnectionBtn" onclick="testSite()" data-i18n="testConnectionBtn">Test connection</button>
   <div class="msg" id="site-msg"></div>
 
   <h3 style="margin-top:22px;font-size:14px;color:#9fb6bc">Manage sites</h3>
   <div class="table-scroll"><table id="siteManageTable"></table></div>
   <div class="msg" id="site-manage-msg"></div>
+
+  <!-- RADIUS setup panel - hidden until "CGNAT? Use RADIUS" / "RADIUS mode"
+       is clicked for a mikrotik site. Not a real modal (this file has no
+       modal component to match) - a simple show/hide panel is consistent
+       with everything else on this page. -->
+  <div id="radiusPanel" class="hidden" style="margin-top:16px;padding:14px;border:1px solid #234;border-radius:8px;background:#0f1e22">
+    <h3 style="margin:0 0 8px;font-size:14px;color:#9fb6bc">RADIUS mode <span style="font-weight:normal;color:#6b8a91">- for routers behind CGNAT or Starlink without a public IP</span></h3>
+    <p style="font-size:12px;color:#6b8a91;margin-bottom:10px">
+      Normally this backend reaches out to your router directly, which doesn't work if your router
+      has no public IP. RADIUS mode flips that: your router calls out to <em>us</em> instead, which
+      works from behind CGNAT with no port-forwarding needed. Switching this on generates a secret -
+      your router needs both to be configured together, or logins won't work.
+    </p>
+    <div id="radiusPanelBody">Loading...</div>
+    <div class="msg" id="radius-panel-msg"></div>
+    <button class="secondary" style="margin-top:10px" onclick="closeRadiusPanel()">Close</button>
+  </div>
 </div>
 
 <!-- STEP 2.5: Portal branding -->
@@ -1052,6 +1086,25 @@
     const type = document.getElementById('siteType').value;
     document.getElementById('siteFields-' + type).classList.remove('hidden');
     if (type === 'unifi') renderUnifiAuthFields();
+    // Test connection only makes sense once real router/controller details
+    // exist - mikrotik-in-RADIUS-mode has none to test yet (that's the
+    // whole point), so re-evaluate rather than always showing it.
+    document.getElementById('testConnectionBtn').classList.toggle(
+      'hidden', type === 'mikrotik' && document.getElementById('mkUseRadius').checked
+    );
+  }
+
+  // Behind-CGNAT checkbox on the mikrotik fields: hides the router IP/
+  // port/username/password inputs (nothing to fill in - RADIUS mode needs
+  // none of them) and the Test Connection button (nothing reachable to
+  // test yet), since none of this backend's usual "does this router
+  // answer" flow applies until the router is reconfigured for RADIUS,
+  // which only happens after the site is saved.
+  function onMkRadiusToggle() {
+    const useRadius = document.getElementById('mkUseRadius').checked;
+    document.getElementById('mkPushFields').classList.toggle('hidden', useRadius);
+    document.getElementById('mkRadiusHint').classList.toggle('hidden', !useRadius);
+    document.getElementById('testConnectionBtn').classList.toggle('hidden', useRadius);
   }
 
   function renderUnifiAuthFields() {
@@ -1066,6 +1119,14 @@
     const type = document.getElementById('siteType').value;
     const payload = { name: document.getElementById('siteName').value, type };
     if (type === 'mikrotik') {
+      if (document.getElementById('mkUseRadius').checked) {
+        // No mikrotik sub-object at all - every mk_* column is nullable
+        // (same as how this backend already handles the fields of
+        // whichever OTHER site type wasn't picked), and RADIUS setup
+        // happens in a separate call right after creation, once we have
+        // a site id to attach it to. See addSite().
+        return payload;
+      }
       const mkUseTls = document.getElementById('mkUseTls').checked;
       payload.mikrotik = {
         host: document.getElementById('mkHost').value,
@@ -1102,10 +1163,28 @@
   }
 
   async function addSite() {
+    const isMkRadius = document.getElementById('siteType').value === 'mikrotik' && document.getElementById('mkUseRadius').checked;
     try {
-      await api('/api/sites', 'POST', buildSitePayload());
-      showMsg('site-msg', 'Site saved. Click "Test connection" to verify.', 'ok');
+      const created = await api('/api/sites', 'POST', buildSitePayload());
       loadSitesAndPackages();
+
+      if (!isMkRadius) {
+        showMsg('site-msg', 'Site saved. Click "Test connection" to verify.', 'ok');
+        return;
+      }
+
+      // Skip the "now go find it in Manage Sites" detour - the whole
+      // reason this checkbox exists is that Test Connection was never
+      // going to work for this site, so get straight to the thing that
+      // actually needs doing (RADIUS setup) instead of leaving the tenant
+      // to discover the RADIUS mode button on their own afterward.
+      showMsg('site-msg', 'Site saved - setting up RADIUS...', 'ok');
+      const radiusResult = await api(`/api/sites/${created.id}/radius-mode`, 'POST', { enable: true });
+      radiusPanelSiteId = created.id;
+      document.getElementById('radiusPanel').classList.remove('hidden');
+      renderRadiusPanel(radiusResult);
+      if (radiusResult.warning) showMsg('radius-panel-msg', radiusResult.warning, 'err');
+      document.getElementById('radiusPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
       showMsg('site-msg', err.message, 'err');
     }
@@ -1276,6 +1355,7 @@
             <td>${escapeHtmlAdmin(s.status)}</td>
             <td>${s.active ? 'Active' : 'Inactive'}</td>
             <td style="white-space:nowrap">
+              ${s.type === 'mikrotik' ? `<button class="secondary" style="padding:6px 10px;font-size:12px" onclick="openRadiusPanel('${s.id}')">${s.mk_auth_mode === 'radius' ? 'RADIUS mode' : 'CGNAT? Use RADIUS'}</button>` : ''}
               <button class="secondary" style="padding:6px 10px;font-size:12px" onclick="toggleSiteActive('${s.id}', ${!s.active})">${s.active ? 'Deactivate' : 'Activate'}</button>
               <button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" onclick="deleteSite('${s.id}')">Delete</button>
             </td>
@@ -1303,6 +1383,92 @@
       // Backend returns a clear 409 explaining to deactivate instead when
       // the site is already in use - surface that message as-is.
       showMsg('site-manage-msg', err.message, 'err');
+    }
+  }
+
+  // ---------- RADIUS mode (checklist row 4 / CGNAT fix) ----------
+  let radiusPanelSiteId = null;
+
+  async function openRadiusPanel(siteId) {
+    radiusPanelSiteId = siteId;
+    document.getElementById('radiusPanel').classList.remove('hidden');
+    document.getElementById('radiusPanelBody').innerHTML = 'Loading...';
+    document.getElementById('radiusPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    try {
+      const cfg = await api(`/api/sites/${siteId}/radius-config`, 'GET');
+      renderRadiusPanel(cfg);
+    } catch (err) {
+      document.getElementById('radiusPanelBody').innerHTML = `<p style="color:#ff6b6b;font-size:13px">${escapeHtmlAdmin(err.message)}</p>`;
+    }
+  }
+
+  function closeRadiusPanel() {
+    document.getElementById('radiusPanel').classList.add('hidden');
+    radiusPanelSiteId = null;
+  }
+
+  function renderRadiusPanel(cfg) {
+    const body = document.getElementById('radiusPanelBody');
+    if (cfg.mode !== 'radius') {
+      body.innerHTML = `
+        <p style="font-size:13px;color:#e8f0f1">This site is using the normal mode (backend connects to your router directly).</p>
+        <button onclick="turnOnRadius()">Turn on RADIUS mode</button>
+      `;
+      return;
+    }
+
+    const hostLine = cfg.serverHost
+      ? `<code>${escapeHtmlAdmin(cfg.serverHost)}</code>`
+      : `<span style="color:#ff6b6b">not configured on this deployment yet - ask support for the RADIUS server address</span>`;
+
+    body.innerHTML = `
+      <p style="font-size:13px;color:#e8f0f1">RADIUS mode is on. Enter these into your router's RADIUS client config
+      (<button class="secondary" style="padding:2px 8px;font-size:11px" onclick="copyRadiusField('radiusNasId')">copy</button>
+      <button class="secondary" style="padding:2px 8px;font-size:11px" onclick="copyRadiusField('radiusSecret')">copy secret</button>
+      buttons below each field):</p>
+      <table style="width:100%;font-size:13px;margin-top:8px">
+        <tr><td style="color:#6b8a91;padding:4px 8px 4px 0">Server address</td><td>${hostLine}</td></tr>
+        <tr><td style="color:#6b8a91;padding:4px 8px 4px 0">Auth port</td><td><code>${cfg.authPort}</code></td></tr>
+        <tr><td style="color:#6b8a91;padding:4px 8px 4px 0">Accounting port</td><td><code>${cfg.acctPort}</code></td></tr>
+        <tr><td style="color:#6b8a91;padding:4px 8px 4px 0">NAS-Identifier</td><td><code id="radiusNasId">${escapeHtmlAdmin(cfg.nasIdentifier)}</code></td></tr>
+        <tr><td style="color:#6b8a91;padding:4px 8px 4px 0">Secret</td><td><code id="radiusSecret">${escapeHtmlAdmin(cfg.secret)}</code></td></tr>
+      </table>
+      <p style="font-size:12px;color:#6b8a91;margin-top:10px">On RouterOS: <code>/radius add service=hotspot address=&lt;server address&gt; secret=&lt;secret&gt; nas-identifier=&lt;NAS-Identifier&gt; authentication-port=&lt;auth port&gt; accounting-port=&lt;accounting port&gt;</code>,
+      then <code>/ip hotspot profile set [find] use-radius=yes</code> on the profile this site uses.</p>
+      <button class="secondary" style="margin-top:10px;color:#ff6b6b" onclick="turnOffRadius()">Turn off RADIUS mode</button>
+    `;
+  }
+
+  function copyRadiusField(elId) {
+    const text = document.getElementById(elId).textContent;
+    navigator.clipboard.writeText(text).then(
+      () => showMsg('radius-panel-msg', 'Copied.', 'ok'),
+      () => showMsg('radius-panel-msg', 'Could not copy - select and copy manually.', 'err')
+    );
+  }
+
+  async function turnOnRadius() {
+    if (!radiusPanelSiteId) return;
+    try {
+      const result = await api(`/api/sites/${radiusPanelSiteId}/radius-mode`, 'POST', { enable: true });
+      if (result.warning) showMsg('radius-panel-msg', result.warning, 'err');
+      renderRadiusPanel(result);
+      loadSiteManageList();
+    } catch (err) {
+      showMsg('radius-panel-msg', err.message, 'err');
+    }
+  }
+
+  async function turnOffRadius() {
+    if (!radiusPanelSiteId) return;
+    if (!confirm('Turn off RADIUS mode? The secret will be discarded - turning it back on later generates a new one, and the router will need reconfiguring again.')) return;
+    try {
+      await api(`/api/sites/${radiusPanelSiteId}/radius-mode`, 'POST', { enable: false });
+      const cfg = await api(`/api/sites/${radiusPanelSiteId}/radius-config`, 'GET');
+      renderRadiusPanel(cfg);
+      loadSiteManageList();
+    } catch (err) {
+      showMsg('radius-panel-msg', err.message, 'err');
     }
   }
 
