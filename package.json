@@ -10,7 +10,9 @@
     "migrate": "node src/db/migrate.js",
     "migrate:logos": "node src/db/migrate-logos-to-r2.js",
     "wipe:tenants": "node src/db/wipe-tenants.js",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "test:radius": "node test/radius.smoketest.js && node test/radius-acct.smoketest.js && node test/radius-integration.test.js",
+    "radius:diagnose": "node scripts/radius-diagnostic.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.637.0",
