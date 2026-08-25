@@ -508,6 +508,14 @@
   <button onclick="generateVouchers()" data-i18n="generateBtn">Generate</button>
   <div class="msg" id="voucher-msg"></div>
   <div class="table-scroll"><table id="voucherTable"></table></div>
+
+  <h3 style="margin-top:20px">Check voucher lock status</h3>
+  <p class="note" style="font-size:12px;color:#6b8a91">A redeemed voucher not locked to a device can be shared with another phone - use this to spot that.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+    <input id="lookupBatch" placeholder="Batch label (optional)">
+    <button type="button" onclick="loadVoucherStatus()">Load</button>
+  </div>
+  <div class="table-scroll"><table id="lockStatusTable"></table></div>
 </div>
 
 <!-- STEP 5: Payment gateway (optional - lets customers buy vouchers online) -->
@@ -1718,6 +1726,28 @@
       const table = document.getElementById('voucherTable');
       table.innerHTML = '<tr><th>Code</th><th>Status</th></tr>' +
         data.vouchers.map(v => `<tr><td class="code">${v.code}</td><td><span class="pill">${v.status}</span></td></tr>`).join('');
+    } catch (err) {
+      showMsg('voucher-msg', err.message, 'err');
+    }
+  }
+
+  async function loadVoucherStatus() {
+    const batch = document.getElementById('lookupBatch').value.trim();
+    const siteId = document.getElementById('voucherSite').value;
+    const qs = new URLSearchParams();
+    if (batch) qs.set('batch', batch);
+    if (siteId) qs.set('siteId', siteId);
+    try {
+      const vouchers = await api(`/api/vouchers?${qs}`, 'GET');
+      const table = document.getElementById('lockStatusTable');
+      table.innerHTML = '<tr><th>Code</th><th>Status</th><th>Lock</th></tr>' +
+        vouchers.map(v => {
+          const redeemed = v.status !== 'unused';
+          const badge = !redeemed ? '' :
+            v.client_mac ? '<span class="pill" style="background:#2ec4b622;color:#2ec4b6">🔒 Locked</span>' :
+                            '<span class="pill" style="background:#ff6b6b22;color:#ff6b6b">⚠ Unlocked</span>';
+          return `<tr><td class="code">${v.code}</td><td>${v.status}</td><td>${badge}</td></tr>`;
+        }).join('');
     } catch (err) {
       showMsg('voucher-msg', err.message, 'err');
     }

@@ -193,6 +193,7 @@
   <div class="spacer"></div>
   <button class="btn ghost" onclick="load()" data-i18n="refresh">Refresh</button>
   <button class="btn" onclick="window.print()" data-i18n="print">Print</button>
+  <button class="btn ghost" id="thermalBtn" onclick="printThermal()" title="Bluetooth ESC/POS thermal printer">Print thermal</button>
 </div>
 
 <div id="empty" class="empty" style="display:none">No vouchers match these filters yet. Generate a batch first, or widen the filters above.</div>
@@ -210,6 +211,20 @@
   const currency = localStorage.getItem('yournet_currency') || 'GHS';
   let mode = 'card';
   let branding = { businessName: 'WiFi Vouchers', logoUrl: null };
+  let loadedVouchers = [];
+  let thermalDevice = null;
+  let thermalChar = null;
+
+  // Web Bluetooth doesn't work in Safari/iOS at all, and needs HTTPS
+  // everywhere else - detect up front and disable rather than let someone
+  // tap it and get a confusing browser error.
+  if (!navigator.bluetooth) {
+    const btn = document.getElementById('thermalBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.title = 'Bluetooth printing needs Chrome/Edge on Android or desktop (not Safari/iOS)';
+    }
+  }
 
   if (!token) {
     document.getElementById('status').textContent = 'Please log in via /login first, then come back to this page.';
@@ -291,6 +306,7 @@
 
     const res = await fetch('/api/vouchers?' + params.toString(), { headers: { Authorization: 'Bearer ' + token } });
     const vouchers = await res.json();
+    loadedVouchers = vouchers;
     document.getElementById('status').textContent = `${vouchers.length} voucher${vouchers.length === 1 ? '' : 's'}`;
     document.getElementById('empty').style.display = vouchers.length ? 'none' : 'block';
 
@@ -342,6 +358,63 @@
       fetch(`/api/vouchers/${v.id}/qrcode`, { headers: { Authorization: 'Bearer ' + token } })
         .then(r => r.blob())
         .then(blob => { card.querySelector('img.qr').src = URL.createObjectURL(blob); });
+    }
+  }
+
+  // Targets the "generic BLE ESC/POS thermal printer" profile used by most
+  // cheap 58mm/80mm Bluetooth receipt printers sold for this exact use
+  // case (voucher/ticket printing). Service 0xFF00 / write characteristic
+  // 0xFF02 is the common pairing for these boards, but printer firmware
+  // varies - if connect succeeds but nothing prints, check your specific
+  // printer's documented UUIDs and swap them in below.
+  const THERMAL_SERVICE_UUID = 0x18f0;
+  const THERMAL_CHAR_UUID = 0x2af1;
+  const ESC = 0x1b;
+
+  async function connectThermalPrinter() {
+    thermalDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [THERMAL_SERVICE_UUID] }],
+    });
+    const server = await thermalDevice.gatt.connect();
+    const service = await server.getPrimaryService(THERMAL_SERVICE_UUID);
+    thermalChar = await service.getCharacteristic(THERMAL_CHAR_UUID);
+  }
+
+  function buildReceiptBytes(v) {
+    const enc = new TextEncoder();
+    const lines = [];
+    lines.push(new Uint8Array([ESC, 0x40])); // init
+    lines.push(new Uint8Array([ESC, 0x61, 0x01])); // center align
+    lines.push(enc.encode(branding.businessName + '\n'));
+    lines.push(enc.encode('--------------------------\n'));
+    lines.push(new Uint8Array([ESC, 0x21, 0x30])); // double-size text
+    lines.push(enc.encode(v.code + '\n'));
+    lines.push(new Uint8Array([ESC, 0x21, 0x00])); // normal text
+    lines.push(enc.encode(`${currency} ${Number(v.package_price).toFixed(2)}  -  ${formatDuration(v.package_duration_minutes)}\n`));
+    lines.push(enc.encode('--------------------------\n'));
+    lines.push(enc.encode('\n\n\n'));
+    lines.push(new Uint8Array([0x1d, 0x56, 0x00])); // full cut
+    return lines;
+  }
+
+  async function printThermal() {
+    if (!loadedVouchers.length) {
+      document.getElementById('status').textContent = 'Load some vouchers first.';
+      return;
+    }
+    try {
+      if (!thermalChar) await connectThermalPrinter();
+      for (const v of loadedVouchers) {
+        for (const chunk of buildReceiptBytes(v)) {
+          await thermalChar.writeValueWithoutResponse(chunk);
+        }
+      }
+    } catch (err) {
+      // User cancelling the device picker throws too - don't show that as
+      // an error, it's an expected outcome of "changed their mind".
+      if (err.name !== 'NotFoundError') {
+        document.getElementById('status').textContent = 'Thermal printer error: ' + err.message;
+      }
     }
   }
 
