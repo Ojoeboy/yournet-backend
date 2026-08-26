@@ -124,7 +124,8 @@
   @media print {
     @page{margin:6mm}
     body{background:#fff;color:#000}
-    .app-sidebar,.page-header,.print-head,.toolbar,.empty,.batches-panel{display:none}
+    .app-sidebar,.page-header,.print-head,.toolbar,.empty{display:none}
+    .batches-panel{display:none !important} /* !important so this beats the inline style toggleBatches() sets when the panel is left open */
     #yournetLangSwitcherContainer,#app-mobile-shell{display:none !important}
     .app-main{padding:0;max-width:none}
     .card{border-radius:6px;break-inside:avoid;page-break-inside:avoid}
@@ -217,14 +218,14 @@
     </div>
   </div>
   <div class="spacer"></div>
-  <button class="btn ghost" onclick="toggleBatches()" data-i18n="batches">Batches</button>
+  <button class="btn ghost" onclick="toggleBatches()">Batches</button>
   <button class="btn ghost" onclick="load()" data-i18n="refresh">Refresh</button>
   <button class="btn" onclick="window.print()" data-i18n="print">Print</button>
   <button class="btn ghost" id="thermalBtn" onclick="printThermal()" title="Bluetooth ESC/POS thermal printer">Print thermal</button>
 </div>
 
 <div class="batches-panel" id="batchesPanel" style="display:none">
-  <div class="sub" data-i18n="batchesPanelSub">Tap a batch to view it below, or print its unused vouchers directly.</div>
+  <div class="sub">Tap a batch to view it below, or print its unused vouchers directly.</div>
   <div class="batches-grid" id="batchesGrid"></div>
 </div>
 
@@ -410,7 +411,6 @@
     if (status) params.set('status', status);
     if (agentId) params.set('agentId', agentId);
     if (batch) params.set('batch', batch);
-
     const res = await fetch('/api/vouchers?' + params.toString(), { headers: { Authorization: 'Bearer ' + token } });
     const vouchers = await res.json();
     loadedVouchers = vouchers;
@@ -420,6 +420,13 @@
     const grid = document.getElementById('grid');
     grid.className = 'grid' + (mode === 'card' ? '' : ' ' + mode);
     grid.innerHTML = '';
+
+    // Collected so load() can await every QR image actually finishing
+    // before it resolves - without this, printBatchUnused() (and a plain
+    // Print click right after Refresh) can fire window.print() while the
+    // QR <img> tags are still empty, since the fetch below was previously
+    // fire-and-forget and not part of what load() waited on.
+    const qrLoads = [];
 
     for (const v of vouchers) {
       const card = document.createElement('div');
@@ -464,10 +471,17 @@
 
       // QR endpoint requires auth, so fetch it as an image blob instead of
       // a plain <img src> (which can't send an Authorization header).
-      fetch(`/api/vouchers/${v.id}/qrcode`, { headers: { Authorization: 'Bearer ' + token } })
-        .then(r => r.blob())
-        .then(blob => { card.querySelector('img.qr').src = URL.createObjectURL(blob); });
+      // Pushed onto qrLoads (not left fire-and-forget) so load() can await
+      // it - see the comment above the qrLoads declaration.
+      qrLoads.push(
+        fetch(`/api/vouchers/${v.id}/qrcode`, { headers: { Authorization: 'Bearer ' + token } })
+          .then(r => r.blob())
+          .then(blob => { card.querySelector('img.qr').src = URL.createObjectURL(blob); })
+          .catch(() => { /* one bad QR shouldn't block the rest of the batch from printing */ })
+      );
     }
+
+    await Promise.all(qrLoads);
   }
 
   // Targets the "generic BLE ESC/POS thermal printer" profile used by most
