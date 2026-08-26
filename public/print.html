@@ -119,6 +119,7 @@
   .card.sheet .price,.card.sheet .duration,.card.sheet .limit{font-size:9px}
   .card.sheet .agent-badge{font-size:8px;padding:2px 6px;margin-top:4px;align-self:flex-start}
   .card.sheet .permanent{font-size:8px;margin-top:3px;padding-top:3px}
+  .card.sheet .label{display:none} /* "VOUCHER CODE" was still full-size (10.5px) here - ate into the QR's space budget at this density */
 
   /* ---------- print output ---------- */
   @media print {
@@ -168,6 +169,7 @@
     .card.sheet .meta{font-size:6px;justify-content:space-between;color:#444}
     .card.sheet .limit{font-size:6px}
     .card.sheet .permanent{font-size:5.5px;margin-top:0.5mm;padding-top:0.5mm;border-top:0.5pt solid #ddd;color:#888}
+    .card.sheet .label{display:none}
     .card.sheet .agent-badge{display:none} /* no room at this density - agent stays visible in card/compact modes */
   }
 </style>
