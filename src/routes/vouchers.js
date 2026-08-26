@@ -44,12 +44,39 @@ router.get('/print-branding', asyncHandler(async (req, res) => {
   });
 }));
 
+// Batch summary for print.html's "browse by batch" panel - one row per
+// distinct batch name (plus one row for batch IS NULL, covering vouchers
+// generated before a batch label was typed in), with unused/total counts
+// so the panel can show "12 unused - 50 total" without a second call per
+// tile. site_id is included so a tenant running multiple sites can tell
+// two same-named batches apart.
+router.get('/batches', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT v.batch, v.site_id, s.name AS site_name,
+            COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE v.status='unused')::int AS unused,
+            MAX(v.created_at) AS last_created
+     FROM vouchers v
+     JOIN sites s ON s.id = v.site_id
+     WHERE v.tenant_id=$1
+     GROUP BY v.batch, v.site_id, s.name
+     ORDER BY last_created DESC`,
+    [req.tenantId]
+  );
+  res.json(rows);
+}));
+
 router.get('/', asyncHandler(async (req, res) => {
   const { status, batch, agentId } = req.query;
   const clauses = ['v.tenant_id=$1'];
   const params = [req.tenantId];
   if (status) { params.push(status); clauses.push(`v.status=$${params.length}`); }
-  if (batch) { params.push(batch); clauses.push(`v.batch=$${params.length}`); }
+  // '__none__' is the sentinel print.html sends for the "Ungrouped" tile
+  // (vouchers with no batch typed in at generation time) - can't pass NULL
+  // through a query string, and a real batch name could theoretically be
+  // any string, so this keeps "no batch" unambiguous from "no filter".
+  if (batch === '__none__') { clauses.push('v.batch IS NULL'); }
+  else if (batch) { params.push(batch); clauses.push(`v.batch=$${params.length}`); }
   if (agentId === 'none') {
     clauses.push('v.agent_id IS NULL');
   } else if (agentId) {

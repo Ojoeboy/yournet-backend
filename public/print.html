@@ -44,6 +44,26 @@
   .empty{background:var(--yn-panel);border:1px dashed var(--yn-line);border-radius:14px;
     padding:40px 20px;text-align:center;color:var(--yn-muted);font-size:13.5px}
 
+  /* ---------- batches panel ---------- */
+  .batches-panel{
+    background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:14px;
+    padding:14px 16px;margin-bottom:20px;
+  }
+  .batches-panel .sub{font-size:12px;color:var(--yn-muted);margin-bottom:12px}
+  .batches-grid{display:grid;grid-template-columns:repeat(auto-fill, 200px);gap:10px}
+  .batches-empty{font-size:12.5px;color:var(--yn-muted);padding:8px 0}
+  .batch-tile{
+    background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:10px;
+    padding:11px 12px;cursor:pointer;transition:border-color .15s;
+  }
+  .batch-tile:hover{border-color:var(--yn-teal)}
+  .batch-tile.selected{border-color:var(--yn-teal);box-shadow:0 0 0 1px var(--yn-teal) inset}
+  .batch-tile .batch-name{font-weight:800;font-size:13px;color:var(--yn-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .batch-tile .batch-site{font-size:10.5px;color:var(--yn-muted);margin-top:1px}
+  .batch-tile .batch-counts{font-size:11.5px;color:var(--yn-teal);margin-top:6px}
+  .batch-tile .batch-actions{display:flex;gap:6px;margin-top:9px}
+  .batch-tile .btn.sm,.batch-tile .btn.ghost.sm{padding:6px 9px;font-size:11px}
+
   /* ---------- on-screen card grid ---------- */
   .grid{display:grid;grid-template-columns:repeat(auto-fill, 320px);gap:14px}
   .card{
@@ -61,6 +81,8 @@
   .card .meta{display:flex;gap:10px;flex-wrap:wrap}
   .card .price{font-size:12px;color:var(--yn-gold2);font-weight:700}
   .card .duration{font-size:12px;color:#9fd8d0}
+  .card .limit{font-size:12px;color:#9fd8d0}
+  .card .permanent{font-size:10.5px;color:var(--yn-muted);margin-top:6px;padding-top:6px;border-top:1px solid var(--yn-line)}
   .card .agent-badge{
     margin-top:8px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
     padding:3px 8px;border-radius:20px;background:rgba(46,196,182,.12);color:var(--yn-teal);
@@ -84,6 +106,7 @@
   .card.compact img.qr{width:48px;height:48px;padding:2px}
   .card.compact .brand{font-size:12px}
   .card.compact .agent-badge{margin-top:5px}
+  .card.compact .permanent{font-size:9px;margin-top:4px;padding-top:4px}
 
   /* A4-sheet mode (on-screen preview mirrors the print grid below) */
   .grid.sheet{grid-template-columns:repeat(5, 148px);gap:8px;justify-content:start}
@@ -93,47 +116,48 @@
   .card.sheet .code{font-size:13px;margin:2px 0}
   .card.sheet img.qr{width:44px;height:44px;align-self:center}
   .card.sheet .meta{font-size:9px;gap:6px}
-  .card.sheet .price,.card.sheet .duration{font-size:9px}
+  .card.sheet .price,.card.sheet .duration,.card.sheet .limit{font-size:9px}
   .card.sheet .agent-badge{font-size:8px;padding:2px 6px;margin-top:4px;align-self:flex-start}
+  .card.sheet .permanent{font-size:8px;margin-top:3px;padding-top:3px}
 
   /* ---------- print output ---------- */
   @media print {
     @page{margin:6mm}
     body{background:#fff;color:#000}
-    .app-sidebar,.page-header,.print-head,.toolbar,.empty{display:none}
+    .app-sidebar,.page-header,.print-head,.toolbar,.empty,.batches-panel{display:none}
     #yournetLangSwitcherContainer,#app-mobile-shell{display:none !important}
     .app-main{padding:0;max-width:none}
-    .card{border-radius:6px}
+    .card{border-radius:6px;break-inside:avoid;page-break-inside:avoid}
     .card .del-btn{display:none}
 
     .grid{grid-template-columns:repeat(2, 86mm);gap:4mm;justify-content:center}
-    .card{width:86mm;background:#fff;border:1.5px dashed #999;color:#000}
+    .card{width:86mm;background:#fff;border:2px solid #0d7a6c;color:#000}
     .card .brand{color:#a5670f}
     .card .code{color:#0d1a1e}
     .card .price{color:#8a5a00}
     .card .duration{color:#333}
+    .card .limit{color:#333}
+    .card .permanent{color:#666;border-top:1px solid #ddd}
     .card .agent-badge{background:#eef8f6;color:#0d7a6c}
     .card .agent-badge.admin{background:#fbf1e2;color:#a5670f}
 
     .grid.compact{grid-template-columns:repeat(4, 48mm);gap:2mm}
-    .card.compact{width:48mm;padding:2mm 3mm;border:1px dashed #bbb}
+    .card.compact{width:48mm;padding:2mm 3mm;border:1.5px solid #a5670f}
     .card.compact img.qr{width:15mm;height:15mm}
     .card.compact .code{font-size:12px}
     .card.compact .brand{font-size:9px}
+    .card.compact .permanent{border-top:1px solid #ddd}
 
-    /* 5 columns x 10 rows = exactly 50 vouchers per A4 sheet.
-       Corner tick marks (drawn via ::before/::after) stand in for a
-       cut-line so a solid border doesn't eat into the tight column width -
-       a real printed border at this size reads as a thick black box, not
-       a clean scratch-card edge. */
+    /* 5 columns x 10 rows = exactly 50 vouchers per A4 sheet. A slim
+       brand-teal border stands in for the cut-line here - thin enough
+       (0.5pt) and coloured rather than black, so it still reads as a
+       clean scratch-card edge instead of the thick black box a full-weight
+       border would become at this width. */
     .grid.sheet{grid-template-columns:repeat(5, 36.4mm);gap:1.8mm;justify-content:center}
     .card.sheet{
-      width:36.4mm;height:26.5mm;padding:1.6mm 2mm;border:1px solid #ccc;border-radius:2mm;
-      display:flex;flex-direction:column;justify-content:space-between;gap:0;position:relative;
+      width:36.4mm;height:26.5mm;padding:1.6mm 2mm;border:0.5pt solid #0d7a6c;border-radius:1.6mm;
+      display:flex;flex-direction:column;justify-content:space-between;gap:0;
     }
-    .card.sheet::before,.card.sheet::after{content:'';position:absolute;width:2.2mm;height:2.2mm;border:1px solid #999}
-    .card.sheet::before{top:-1px;left:-1px;border-width:1px 0 0 1px}
-    .card.sheet::after{bottom:-1px;right:-1px;border-width:0 1px 1px 0}
     .card.sheet .brand-row{gap:3px;margin-bottom:0}
     .card.sheet .brand-row img.logo{width:9px;height:9px}
     .card.sheet .brand{font-size:6.6px;color:#a5670f}
@@ -141,6 +165,8 @@
     .card.sheet .code{font-size:9.5px;margin:1mm 0;color:#0d1a1e;letter-spacing:.02em}
     .card.sheet img.qr{width:11mm;height:11mm;align-self:center;padding:0}
     .card.sheet .meta{font-size:6px;justify-content:space-between;color:#444}
+    .card.sheet .limit{font-size:6px}
+    .card.sheet .permanent{font-size:5.5px;margin-top:0.5mm;padding-top:0.5mm;border-top:0.5pt solid #ddd;color:#888}
     .card.sheet .agent-badge{display:none} /* no room at this density - agent stays visible in card/compact modes */
   }
 </style>
@@ -180,7 +206,7 @@
   </div>
   <div class="field">
     <label data-i18n="batch">Batch</label>
-    <input id="batchFilter" placeholder="Any" oninput="debouncedLoad()">
+    <input id="batchFilter" placeholder="Any" oninput="document.querySelectorAll('.batch-tile.selected').forEach(t=>t.classList.remove('selected'));debouncedLoad()">
   </div>
   <div class="field">
     <label data-i18n="layout">Layout</label>
@@ -191,9 +217,15 @@
     </div>
   </div>
   <div class="spacer"></div>
+  <button class="btn ghost" onclick="toggleBatches()" data-i18n="batches">Batches</button>
   <button class="btn ghost" onclick="load()" data-i18n="refresh">Refresh</button>
   <button class="btn" onclick="window.print()" data-i18n="print">Print</button>
   <button class="btn ghost" id="thermalBtn" onclick="printThermal()" title="Bluetooth ESC/POS thermal printer">Print thermal</button>
+</div>
+
+<div class="batches-panel" id="batchesPanel" style="display:none">
+  <div class="sub" data-i18n="batchesPanelSub">Tap a batch to view it below, or print its unused vouchers directly.</div>
+  <div class="batches-grid" id="batchesGrid"></div>
 </div>
 
 <div id="empty" class="empty" style="display:none">No vouchers match these filters yet. Generate a batch first, or widen the filters above.</div>
@@ -270,6 +302,77 @@
     debounceTimer = setTimeout(load, 350);
   }
 
+  const UNGROUPED_LABEL = '(no batch)';
+  let batchesLoaded = false;
+
+  function toggleBatches() {
+    const panel = document.getElementById('batchesPanel');
+    const willShow = panel.style.display === 'none';
+    panel.style.display = willShow ? 'block' : 'none';
+    if (willShow && !batchesLoaded) loadBatches();
+  }
+
+  async function loadBatches() {
+    const gridEl = document.getElementById('batchesGrid');
+    gridEl.innerHTML = '<div class="batches-empty">Loading&hellip;</div>';
+    try {
+      const res = await fetch('/api/vouchers/batches', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) throw new Error('load failed');
+      const batches = await res.json();
+      batchesLoaded = true;
+      if (!batches.length) {
+        gridEl.innerHTML = '<div class="batches-empty">No vouchers generated yet.</div>';
+        return;
+      }
+      gridEl.innerHTML = '';
+      batches.forEach(b => {
+        const label = b.batch || UNGROUPED_LABEL;
+        const tile = document.createElement('div');
+        tile.className = 'batch-tile';
+        tile.dataset.batch = label;
+        tile.innerHTML = `
+          <div class="batch-name">${label}</div>
+          <div class="batch-site">${b.site_name || ''}</div>
+          <div class="batch-counts">${b.unused} unused &middot; ${b.total} total</div>
+          <div class="batch-actions">
+            <button type="button" class="btn ghost sm">View</button>
+            <button type="button" class="btn sm">Print unused</button>
+          </div>
+        `;
+        const [viewBtn, printBtn] = tile.querySelectorAll('button');
+        viewBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); viewBatch(); };
+        printBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); printBatchUnused(); };
+        tile.onclick = () => { selectBatchTile(tile, label); viewBatch(); };
+        gridEl.appendChild(tile);
+      });
+    } catch (err) {
+      gridEl.innerHTML = '<div class="batches-empty">Could not load batches.</div>';
+    }
+  }
+
+  function selectBatchTile(tile, label) {
+    document.querySelectorAll('.batch-tile').forEach(t => t.classList.remove('selected'));
+    tile.classList.add('selected');
+    document.getElementById('batchFilter').value = label;
+  }
+
+  // Just loads that batch into the current view so it can be checked
+  // before printing - the actual print stays a separate, explicit action.
+  async function viewBatch() {
+    await load();
+    document.getElementById('grid').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Forces status to unused (printing an already-redeemed voucher again
+  // hands out a dead code) and batch to whichever tile was clicked, so this
+  // is always exactly "the unused vouchers in this one batch" - not
+  // whatever the status filter happened to be left on.
+  async function printBatchUnused() {
+    document.getElementById('statusFilter').value = 'unused';
+    await load();
+    window.print();
+  }
+
   async function loadBranding() {
     try {
       const res = await fetch('/api/vouchers/print-branding', { headers: { Authorization: 'Bearer ' + token } });
@@ -297,7 +400,11 @@
   async function load() {
     const status = document.getElementById('statusFilter').value;
     const agentId = document.getElementById('agentFilter').value;
-    const batch = document.getElementById('batchFilter').value.trim();
+    let batch = document.getElementById('batchFilter').value.trim();
+    // The "(no batch)" tile fills the input with this exact label so it's
+    // readable on screen; translate it back to the server's NULL-batch
+    // sentinel here rather than leaking '__none__' into the visible field.
+    if (batch === UNGROUPED_LABEL) batch = '__none__';
 
     const params = new URLSearchParams();
     if (status) params.set('status', status);
@@ -346,8 +453,10 @@
           <div class="meta">
             <div class="price">${currency} ${Number(v.package_price).toFixed(2)}</div>
             <div class="duration">${formatDuration(v.package_duration_minutes)}</div>
+            <div class="limit">Limit: 1</div>
           </div>
           ${agentBadge}
+          <div class="permanent">Permanent &ndash; no pre-redemption expiry</div>
         </div>
         <img class="qr" alt="QR">
       `;
