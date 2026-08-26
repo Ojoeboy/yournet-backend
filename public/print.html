@@ -150,14 +150,16 @@
     .card.compact .brand{font-size:9px}
     .card.compact .permanent{border-top:1px solid #ddd}
 
-    /* 5 columns x 10 rows = exactly 50 vouchers per A4 sheet. A slim
-       brand-teal border stands in for the cut-line here - thin enough
-       (0.5pt) and coloured rather than black, so it still reads as a
-       clean scratch-card edge instead of the thick black box a full-weight
-       border would become at this width. */
-    .grid.sheet{grid-template-columns:repeat(5, 36.4mm);gap:1.8mm;justify-content:center}
+    /* 5 columns x 10 rows = exactly 50 vouchers per A4 sheet. Square
+       corners (no border-radius) here, unlike card/compact mode - a
+       rounded corner is much harder to cut cleanly by hand or with a
+       paper cutter than a straight line, and at this density every
+       card is touching its neighbours on all sides, so the border IS
+       the cut guide. 0.75pt is thick enough to see and follow with
+       scissors while still reading as a clean edge, not a heavy box. */
+    .grid.sheet{grid-template-columns:repeat(5, 36.4mm);gap:1.8mm 3mm;justify-content:center}
     .card.sheet{
-      width:36.4mm;height:26.5mm;padding:1.6mm 2mm;border:0.5pt solid #0d7a6c;border-radius:1.6mm;
+      width:36.4mm;height:26.5mm;padding:1.6mm 2mm;border:0.75pt solid #0d7a6c;border-radius:0;
       display:flex;flex-direction:column;justify-content:space-between;gap:0;
     }
     .card.sheet .brand-row{gap:3px;margin-bottom:0}
