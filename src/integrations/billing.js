@@ -14,7 +14,12 @@ const paystack = axios.create({
 // own customers. Adjust prices freely; this is just a starting point.
 const PLANS = {
   starter: { label: 'Starter', priceGHS: 50, days: 30 },
-  pro: { label: 'Pro', priceGHS: 150, days: 30 },
+  // 4 months (120 days) for GHS 180 - a bulk discount vs. paying Starter
+  // four separate times (GHS 200), not a different feature tier. See
+  // routes/billing.js for the "no accidental collision with the /license
+  // auto-renewal cron" and "early payment doesn't lose days" fixes that
+  // make a multi-month purchase like this safe.
+  pro: { label: 'Pro', priceGHS: 180, days: 120 },
 };
 
 async function initializePayment({ email, amountGHS, tenantId, planCode, callbackPath }) {

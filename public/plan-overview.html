@@ -80,6 +80,14 @@
       <div class="value" id="planEnds">&mdash;</div>
     </div>
   </div>
+  <div id="cancelAutoRenewWrap" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--yn-line)">
+    <div style="font-size:12px;color:var(--yn-muted);margin-bottom:8px">
+      Your card is set to auto-renew. Cancelling stops future charges - you keep access until your current period ends on the date above; nothing is refunded and nothing changes immediately.
+    </div>
+    <button id="cancelAutoRenewBtn" style="padding:8px 14px;border:1px solid var(--yn-danger);border-radius:8px;background:transparent;color:var(--yn-danger);font-weight:700;font-size:13px;cursor:pointer">
+      Cancel auto-renewal
+    </button>
+  </div>
 </div>
 
 <div class="card" id="gatewaysCard">
@@ -149,6 +157,12 @@
     const status = data.subscriptionStatus || 'manual';
     statusEl.textContent = status.replace('_', ' ');
     statusEl.className = 'status-pill ' + status;
+
+    // Only 'active' means there's a saved, reusable card authorization
+    // actually being auto-charged (see subscription_status derivation in
+    // routes/license.js) - 'manual', 'past_due', and 'canceled' all mean
+    // there's nothing to cancel.
+    document.getElementById('cancelAutoRenewWrap').style.display = status === 'active' ? 'block' : 'none';
   }
 
   function renderGateways(gateways) {
@@ -222,6 +236,30 @@
       btn.classList.add('active');
       document.getElementById('log-' + btn.dataset.tab).classList.add('active');
     });
+  });
+
+  document.getElementById('cancelAutoRenewBtn').addEventListener('click', async () => {
+    const endDate = document.getElementById('planEnds').textContent;
+    const confirmed = confirm(
+      `Cancel auto-renewal? Your card will not be charged again. You'll keep access until ${endDate}, then the account will need to be manually renewed to continue.`
+    );
+    if (!confirmed) return;
+
+    const btn = document.getElementById('cancelAutoRenewBtn');
+    btn.disabled = true;
+    btn.textContent = 'Cancelling\u2026';
+    try {
+      const res = await fetch('/api/dashboard/billing/cancel-auto-renew', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!res.ok) throw new Error('Could not cancel auto-renewal. Please try again.');
+      await load();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+      btn.textContent = 'Cancel auto-renewal';
+    }
   });
 
   load();

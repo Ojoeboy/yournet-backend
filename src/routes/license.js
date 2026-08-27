@@ -166,13 +166,24 @@ async function fulfillOrder(order, provider, authorizationCode) {
 
   try {
   if (order.purpose === 'reactivate') {
-    const subscriptionStatus = authorizationCode ? 'active' : 'manual';
+    // FIX (auth-preservation): previously this always wrote
+    // `authorizationCode || null`, so a payment that legitimately has no
+    // reusable token (momo, Hubtel - see AUTO_RENEW_PROVIDERS above) would
+    // silently WIPE a card authorization saved by an earlier payment,
+    // downgrading a working auto-renew setup to 'manual' with no warning
+    // to the tenant. COALESCE keeps whatever was already saved when this
+    // particular payment didn't produce a new one; subscription_status is
+    // then derived from whichever authorization actually ends up in place
+    // (new or preserved), not from this payment's outcome alone.
     await pool.query(
       `UPDATE tenants
        SET plan='licensed', plan_expires_at=$1, next_billing_at=$1,
-           subscription_status=$2, billing_provider=$3, billing_authorization=$4, plan_started_at=now()
-       WHERE id=$5`,
-      [nextBillingAt, subscriptionStatus, provider, authorizationCode || null, order.tenant_id]
+           billing_provider=$2,
+           billing_authorization = COALESCE($3, billing_authorization),
+           subscription_status = CASE WHEN COALESCE($3, billing_authorization) IS NOT NULL THEN 'active' ELSE 'manual' END,
+           plan_started_at=now()
+       WHERE id=$4`,
+      [nextBillingAt, provider, authorizationCode || null, order.tenant_id]
     );
     await pool.query(
       `INSERT INTO subscription_payments (tenant_id, amount, currency, provider, provider_reference, status, kind)

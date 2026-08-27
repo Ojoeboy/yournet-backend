@@ -504,7 +504,7 @@ router.get('/sites/:id/access-points', asyncHandler(async (req, res) => {
 // linked gateways (vouchers + PPPoE), sorted newest first.
 const SAAS_PLANS = {
   starter: { label: 'Starter', priceGHS: 50 },
-  pro: { label: 'Pro', priceGHS: 150 },
+  pro: { label: 'Pro', priceGHS: 180 }, // 4 months for GHS 180 - see integrations/billing.js PLANS
 };
 const LICENSE_SIGNUP_PRICE_GHS = Number(process.env.LICENSE_SIGNUP_PRICE_GHS || 150);
 const LICENSE_REACTIVATION_PRICE_GHS = Number(process.env.LICENSE_REACTIVATION_PRICE_GHS || 50);
@@ -575,6 +575,28 @@ router.get('/plan-overview', asyncHandler(async (req, res) => {
     gateways,
     subscriptionPayments: subscriptionLog,
     customerPayments: customerLog,
+  });
+}));
+
+// Self-service "stop auto-renewing my card" - the one thing that was
+// previously missing entirely. Deliberately does NOT touch plan_expires_at:
+// the tenant already paid for whatever time remains, so they keep access
+// until it naturally runs out, same as anyone whose subscription lapses on
+// its own. Clearing billing_authorization is what actually stops future
+// charges - the /license auto-renewal cron's WHERE clause requires it to
+// be non-null, so once this runs, that tenant is never picked up again.
+router.post('/billing/cancel-auto-renew', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE tenants
+     SET billing_authorization = NULL, subscription_status = 'canceled'
+     WHERE id=$1
+     RETURNING subscription_status, plan_expires_at`,
+    [req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Tenant not found' });
+  res.json({
+    subscriptionStatus: rows[0].subscription_status,
+    planExpiresAt: rows[0].plan_expires_at,
   });
 }));
 

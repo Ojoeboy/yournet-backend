@@ -56,8 +56,27 @@ router.get('/callback', asyncHandler(async (req, res) => {
     );
 
     if (success && tenantId && plan) {
+      // Two fixes combined here:
+      // (1) COLLISION FIX: next_billing_at is now set to the SAME value as
+      //     plan_expires_at. Previously this update only touched
+      //     plan_expires_at, so the /license auto-renewal cron (which
+      //     watches next_billing_at) never learned a Starter/Pro payment
+      //     happened here - it would charge on its own old schedule and
+      //     reset plan_expires_at back down, silently erasing whatever
+      //     Pro/Starter time was just paid for.
+      // (2) EARLY-PAYMENT FIX: extends from GREATEST(now(), current
+      //     plan_expires_at) instead of always from now(). Previously,
+      //     paying a few days before expiry actually LOST those remaining
+      //     days (new expiry was always "today + plan.days", even if today
+      //     was before the old expiry). Now an early payment always adds
+      //     the full plan.days on top of whatever time is left.
       await pool.query(
-        `UPDATE tenants SET plan=$1, plan_expires_at=now() + ($2 || ' days')::interval, plan_started_at=now() WHERE id=$3`,
+        `UPDATE tenants
+         SET plan=$1,
+             plan_expires_at = GREATEST(now(), COALESCE(plan_expires_at, now())) + ($2 || ' days')::interval,
+             next_billing_at = GREATEST(now(), COALESCE(plan_expires_at, now())) + ($2 || ' days')::interval,
+             plan_started_at = now()
+         WHERE id=$3`,
         [planCode, plan.days, tenantId]
       );
     }

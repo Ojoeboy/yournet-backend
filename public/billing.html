@@ -11,6 +11,7 @@
   .plan{background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:14px;padding:18px;margin-bottom:14px}
   .plan h2{margin:0 0 4px;color:var(--yn-teal);font-size:16px}
   .plan .price{font-size:22px;font-weight:800;color:var(--yn-gold2);margin:6px 0}
+  .plan .plan-note{font-size:12px;color:var(--yn-muted);line-height:1.5;margin-bottom:12px}
   button{padding:10px 16px;border:none;border-radius:8px;background:var(--yn-gold);color:var(--yn-ink);
     font-weight:700;cursor:pointer;font-size:14px}
   .msg{margin-top:14px;font-size:13px;padding:10px;border-radius:8px;display:none}
@@ -29,12 +30,14 @@
 <div class="plan">
   <h2>Starter</h2>
   <div class="price">GHS 50 <span data-i18n="perMonth">/ month</span></div>
+  <div class="plan-note">Renews your subscription by 1 month. Pay any time - even a few days before you're due - and the new month is added on top of whatever time you have left, so paying early never costs you days.</div>
   <button onclick="pay('starter')" data-i18n="payWithPaystackBtn">Pay with Paystack</button>
 </div>
 
 <div class="plan">
   <h2>Pro</h2>
-  <div class="price">GHS 150 <span data-i18n="perMonth">/ month</span></div>
+  <div class="price">GHS 180 <span>/ 4 months</span></div>
+  <div class="plan-note">Same features as Starter - this is a bulk discount for paying 4 months at once (GHS 180 vs GHS 200 if paid as Starter four separate times), not a different tier.</div>
   <button onclick="pay('pro')" data-i18n="payWithPaystackBtn">Pay with Paystack</button>
 </div>
 
