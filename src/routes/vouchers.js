@@ -50,6 +50,60 @@ router.get('/print-branding', asyncHandler(async (req, res) => {
 // so the panel can show "12 unused - 50 total" without a second call per
 // tile. site_id is included so a tenant running multiple sites can tell
 // two same-named batches apart.
+// Search vouchers by code (partial match) for the "look up a code" search
+// box on print.html - returns status plus, for a redeemed voucher, when
+// and from which device. Only MAC is available here, not IP: nothing in
+// this system captures Framed-IP-Address anywhere (radius_sessions only
+// ever stores client_mac - see radiusAccountingService.js), so there is
+// no IP to show even for an active session.
+router.get('/search', asyncHandler(async (req, res) => {
+  const term = (req.query.code || '').trim();
+  if (!term) return res.json([]);
+
+  const { rows } = await pool.query(
+    `SELECT v.id, v.code, v.status, v.created_at, v.redeemed_at, v.expires_at, v.client_mac,
+            p.label AS package_label,
+            s.name AS site_name,
+            rs.status AS session_status, rs.started_at AS session_started_at,
+            rs.last_seen_at AS session_last_seen_at, rs.stopped_at AS session_stopped_at
+     FROM vouchers v
+     JOIN packages p ON p.id = v.package_id
+     JOIN sites s ON s.id = v.site_id
+     -- Most recent session for this voucher, if any - a voucher can only
+     -- ever be redeemed by one device (see "Limit: 1" on the printed
+     -- card), but LATERAL + LIMIT 1 keeps this correct even if a device
+     -- reconnected and produced more than one radius_sessions row.
+     LEFT JOIN LATERAL (
+       SELECT * FROM radius_sessions rs WHERE rs.voucher_id = v.id ORDER BY rs.started_at DESC LIMIT 1
+     ) rs ON true
+     WHERE v.tenant_id=$1 AND v.code ILIKE $2
+     ORDER BY v.created_at DESC
+     LIMIT 20`,
+    [req.tenantId, `%${term}%`]
+  );
+
+  res.json(rows.map((v) => ({
+    id: v.id,
+    code: v.code,
+    status: v.status,
+    packageLabel: v.package_label,
+    siteName: v.site_name,
+    createdAt: v.created_at,
+    redeemedAt: v.redeemed_at,
+    expiresAt: v.expires_at,
+    clientMac: v.client_mac,
+    // Whether the device is connected RIGHT NOW (not just "was redeemed
+    // at some point") - session_status='active' plus a recent last_seen_at
+    // is the closest this system has to "currently online", since RADIUS
+    // interim-updates (last_seen_at) stop arriving once a device
+    // disconnects but the session isn't always cleanly Stop'd right away.
+    sessionStatus: v.session_status,
+    sessionStartedAt: v.session_started_at,
+    sessionLastSeenAt: v.session_last_seen_at,
+    sessionStoppedAt: v.session_stopped_at,
+  })));
+}));
+
 router.get('/batches', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT v.batch, v.site_id, s.name AS site_name,

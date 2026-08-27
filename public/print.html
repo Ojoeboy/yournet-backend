@@ -64,6 +64,21 @@
   .batch-tile .batch-actions{display:flex;gap:6px;margin-top:9px}
   .batch-tile .btn.sm,.batch-tile .btn.ghost.sm{padding:6px 9px;font-size:11px}
 
+  .search-result{
+    background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:10px;
+    padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:14px;
+  }
+  .search-result .sr-code{font-family:'SF Mono',Consolas,monospace;font-weight:800;font-size:14px;color:var(--yn-cream)}
+  .search-result .sr-meta{font-size:11.5px;color:var(--yn-muted);margin-top:2px}
+  .search-result .sr-status{font-size:11px;font-weight:700;text-transform:uppercase;padding:3px 9px;border-radius:20px;flex-shrink:0}
+  .search-result .sr-status.unused{background:rgba(255,255,255,.06);color:var(--yn-muted)}
+  .search-result .sr-status.active{background:rgba(46,196,182,.12);color:var(--yn-teal)}
+  .search-result .sr-status.expired{background:rgba(255,107,107,.12);color:var(--yn-danger)}
+  .search-result .sr-status.redeeming{background:rgba(232,163,61,.12);color:var(--yn-gold)}
+  .search-result .sr-detail{font-size:12px;color:var(--yn-cream);margin-top:8px;line-height:1.6}
+  .search-result .sr-detail .sr-live{color:var(--yn-teal);font-weight:700}
+  .search-result .sr-detail .sr-offline{color:var(--yn-muted)}
+
   /* ---------- on-screen card grid ---------- */
   .grid{display:grid;grid-template-columns:repeat(auto-fill, 320px);gap:14px}
   .card{
@@ -221,6 +236,10 @@
       <button data-mode="sheet" onclick="setMode('sheet')">A4 &middot; 50/page</button>
     </div>
   </div>
+  <div class="field">
+    <label>Search code</label>
+    <input id="codeSearch" placeholder="e.g. 2J97-7F45" oninput="debouncedCodeSearch()">
+  </div>
   <div class="spacer"></div>
   <button class="btn ghost" onclick="toggleBatches()">Batches</button>
   <button class="btn ghost" onclick="load()" data-i18n="refresh">Refresh</button>
@@ -231,6 +250,11 @@
 <div class="batches-panel" id="batchesPanel" style="display:none">
   <div class="sub">Tap a batch to view it below, or print its unused vouchers directly.</div>
   <div class="batches-grid" id="batchesGrid"></div>
+</div>
+
+<div class="batches-panel" id="searchResultsPanel" style="display:none">
+  <div class="sub">Matches for the code you typed - not what will print, just a lookup.</div>
+  <div id="searchResultsList"></div>
 </div>
 
 <div id="empty" class="empty" style="display:none">No vouchers match these filters yet. Generate a batch first, or widen the filters above.</div>
@@ -305,6 +329,93 @@
   function debouncedLoad() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(load, 350);
+  }
+
+  // ---------- code search/lookup ----------
+  let searchDebounceTimer;
+  function debouncedCodeSearch() {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(runCodeSearch, 350);
+  }
+
+  function fmtWhen(iso) {
+    if (!iso) return null;
+    return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
+  // "Currently online" is inferred, not exact: a RADIUS interim-update
+  // (session_last_seen_at) usually stops arriving within a few minutes of
+  // a device actually disconnecting, but the router doesn't always send a
+  // clean Stop right away - so this is treated as stale, not live, once
+  // last_seen_at is more than 5 minutes old, even if session_status still
+  // technically reads 'active'.
+  function isSessionLive(v) {
+    if (v.sessionStatus !== 'active' || !v.sessionLastSeenAt) return false;
+    return (Date.now() - new Date(v.sessionLastSeenAt).getTime()) < 5 * 60 * 1000;
+  }
+
+  function renderSearchResult(v) {
+    const el = document.createElement('div');
+    el.className = 'search-result';
+
+    let detail = '';
+    if (v.status === 'unused') {
+      detail = 'Not redeemed yet.';
+    } else if (v.status === 'redeeming') {
+      detail = 'A redemption is in progress right now (not yet confirmed).';
+    } else if (v.status === 'active' || v.status === 'expired') {
+      const parts = [];
+      if (v.redeemedAt) parts.push(`Redeemed ${fmtWhen(v.redeemedAt)}`);
+      if (v.expiresAt) parts.push(`${v.status === 'expired' ? 'expired' : 'expires'} ${fmtWhen(v.expiresAt)}`);
+      if (v.clientMac) parts.push(`MAC ${v.clientMac}`);
+      detail = parts.join(' &middot; ');
+      if (v.status === 'active') {
+        detail += isSessionLive(v)
+          ? ' &middot; <span class="sr-live">\u25cf online now</span>'
+          : v.sessionLastSeenAt
+            ? ` &middot; <span class="sr-offline">last seen ${fmtWhen(v.sessionLastSeenAt)}</span>`
+            : '';
+      }
+    }
+
+    el.innerHTML = `
+      <div>
+        <div class="sr-code">${v.code}</div>
+        <div class="sr-meta">${v.packageLabel} &middot; ${v.siteName}</div>
+        <div class="sr-detail">${detail}</div>
+      </div>
+      <div class="sr-status ${v.status}">${v.status}</div>
+    `;
+    return el;
+  }
+
+  async function runCodeSearch() {
+    const term = document.getElementById('codeSearch').value.trim();
+    const panel = document.getElementById('searchResultsPanel');
+    const listEl = document.getElementById('searchResultsList');
+
+    if (!term) {
+      panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = 'block';
+    listEl.innerHTML = '<div class="batches-empty">Searching&hellip;</div>';
+
+    try {
+      const res = await fetch(`/api/vouchers/search?code=${encodeURIComponent(term)}`, {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!res.ok) throw new Error('search failed');
+      const results = await res.json();
+      if (!results.length) {
+        listEl.innerHTML = '<div class="batches-empty">No voucher codes match that.</div>';
+        return;
+      }
+      listEl.innerHTML = '';
+      results.forEach((v) => listEl.appendChild(renderSearchResult(v)));
+    } catch (err) {
+      listEl.innerHTML = '<div class="batches-empty">Could not search right now.</div>';
+    }
   }
 
   const UNGROUPED_LABEL = '(no batch)';
