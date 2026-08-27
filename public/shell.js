@@ -13,7 +13,7 @@
   // shipping; nothing else needs to change.
   const HELP_CONTACT = {
     email: 'yournetcontrol@gmail.com',
-    whatsappNumber: 'https://chat.whatsapp.com/ILeuwpduGUKHcJ1DWdrLIX?s=cl&p=a&mlu=4', // digits only, country code, no leading +
+    whatsappNumber: 'https://chat.whatsapp.com/ILeuwpduGUKHcJ1DWdrLIX?s=cl&p=a&mlu=4', // full WhatsApp group invite link.
     phoneNumber: '+233546539112',
   };
 
@@ -37,7 +37,7 @@
       primary: false, section: 'Help', external: true,
     },
     {
-      key: 'help-whatsapp', href: HELP_CONTACT.https://chat.whatsapp.com/ILeuwpduGUKHcJ1DWdrLIX?s=cl&p=a&mlu=4, icon: '\u{1F4AC}',
+      key: 'help-whatsapp', href: HELP_CONTACT.whatsappNumber, icon: '\u{1F4AC}',
       label: 'WhatsApp', primary: false, section: 'Help', external: true,
     },
     {
