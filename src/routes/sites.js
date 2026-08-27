@@ -445,7 +445,12 @@ router.post('/:id/portal-logo', asyncHandler(async (req, res) => {
       'UPDATE sites SET portal_logo_url=$1 WHERE id=$2 AND tenant_id=$3 RETURNING portal_logo_url',
       [logoUrl, req.params.id, req.tenantId]
     );
-    storage.deleteLogo(oldLogoUrl).catch(() => {});
+    // Only actually deletes if nothing else (this tenant's account_logo,
+    // or another site) still points at the old URL - see
+    // storage.deleteLogoIfUnused. Matters because "Use account saved
+    // logo" can leave the account logo and a site's portal logo pointing
+    // at the exact same R2 object.
+    storage.deleteLogoIfUnused(pool, oldLogoUrl).catch(() => {});
     res.json({ ok: true, logoUrl: rows[0].portal_logo_url });
   });
 }));
@@ -509,11 +514,26 @@ router.post('/:id/portal/clear-field', asyncHandler(async (req, res) => {
   const column = CLEARABLE_PORTAL_FIELDS[req.body.field];
   if (!column) return res.status(400).json({ error: `field must be one of: ${Object.keys(CLEARABLE_PORTAL_FIELDS).join(', ')}` });
 
+  // Only the logo field is an R2-hosted file (backgroundImageUrl etc. are
+  // plain pasted URLs) - fetched before the UPDATE below so there's an old
+  // value to check/delete after clearing. See storage.deleteLogoIfUnused
+  // for why this can't just delete unconditionally.
+  let oldLogoUrl = null;
+  if (req.body.field === 'logoUrl') {
+    const { rows: existing } = await pool.query('SELECT portal_logo_url FROM sites WHERE id=$1 AND tenant_id=$2', [
+      req.params.id, req.tenantId,
+    ]);
+    oldLogoUrl = existing[0]?.portal_logo_url || null;
+  }
+
   const { rows } = await pool.query(
     `UPDATE sites SET ${column} = NULL WHERE id=$1 AND tenant_id=$2 RETURNING ${PORTAL_FIELDS}`,
     [req.params.id, req.tenantId]
   );
   if (!rows.length) return res.status(404).json({ error: 'Site not found' });
+
+  if (oldLogoUrl) storage.deleteLogoIfUnused(pool, oldLogoUrl).catch(() => {});
+
   res.json(rows[0]);
 }));
 

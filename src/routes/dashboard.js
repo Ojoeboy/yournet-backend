@@ -40,8 +40,10 @@ router.post('/logo', asyncHandler(async (req, res) => {
     const logoUrl = await storage.uploadLogo(req.file.buffer, req.file.mimetype, 'account-logos');
     await pool.query('UPDATE tenants SET account_logo=$1 WHERE id=$2', [logoUrl, req.tenantId]);
 
-    // Clean up the replaced object in R2 (no-op for old base64 rows or if R2 isn't configured).
-    storage.deleteLogo(oldLogoUrl).catch(() => {});
+    // Only actually deletes if no site's portal_logo_url still points at
+    // the old URL (see deleteLogoIfUnused) - "Use account saved logo"
+    // means a site can be displaying this exact file.
+    storage.deleteLogoIfUnused(pool, oldLogoUrl).catch(() => {});
 
     res.json({ ok: true, logoUrl });
   });
@@ -51,7 +53,7 @@ router.delete('/logo', asyncHandler(async (req, res) => {
   const { rows: existing } = await pool.query('SELECT account_logo FROM tenants WHERE id=$1', [req.tenantId]);
   const oldLogoUrl = existing[0]?.account_logo || null;
   await pool.query('UPDATE tenants SET account_logo=NULL WHERE id=$1', [req.tenantId]);
-  storage.deleteLogo(oldLogoUrl).catch(() => {});
+  storage.deleteLogoIfUnused(pool, oldLogoUrl).catch(() => {});
   res.json({ ok: true });
 }));
 

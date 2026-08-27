@@ -90,4 +90,29 @@ async function deleteLogo(url) {
   }
 }
 
-module.exports = { uploadLogo, deleteLogo, isConfigured };
+/**
+ * Deletes a logo from R2, but only if nothing else still points at it.
+ * "Use account saved logo" copies a URL string from tenants.account_logo
+ * into sites.portal_logo_url with no reference tracking - two rows can end
+ * up sharing the same R2 object. Deleting unconditionally on one side's
+ * replace/remove would silently break whichever other row(s) still
+ * displayed that same URL. Call this AFTER the row being changed has
+ * already been updated to its new value, so the count below reflects
+ * what's true now, not the about-to-be-replaced old row.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {string|null} url
+ */
+async function deleteLogoIfUnused(pool, url) {
+  if (!isConfigured || !url || !url.startsWith(R2_PUBLIC_URL + '/')) return;
+  const { rows } = await pool.query(
+    `SELECT
+       (SELECT count(*) FROM tenants WHERE account_logo = $1) +
+       (SELECT count(*) FROM sites WHERE portal_logo_url = $1) AS refs`,
+    [url]
+  );
+  if (Number(rows[0].refs) > 0) return; // still displayed elsewhere - leave it in R2
+  await deleteLogo(url);
+}
+
+module.exports = { uploadLogo, deleteLogo, deleteLogoIfUnused, isConfigured };
