@@ -212,6 +212,18 @@ app.get('/reset-password', (req, res) => {
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
+// DB-touching health check, distinct from /health above. /health (and
+// /login, which UptimeRobot was already pinging) only prove this Express
+// process is awake - Render's free tier - but Neon's serverless Postgres
+// has its own separate autosuspend timer that idles regardless of whether
+// this process is up. Point a second UptimeRobot monitor at this route so
+// something actually queries the DB on a schedule and keeps Neon's compute
+// endpoint from suspending between real hotspot visits to /p/:siteId.
+app.get('/api/public/health', asyncHandler(async (req, res) => {
+  await pool.query('SELECT 1');
+  res.json({ ok: true, db: true });
+}));
+
 // Centralized error handler - MUST be registered after every route above.
 // Anything forwarded via next(err), including every asyncHandler-wrapped
 // route, ends up here as a clean JSON response instead of a stack trace
