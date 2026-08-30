@@ -218,6 +218,36 @@
       // grant to the requesting IP - see src/integrations/meraki.js).
       // Every other provider already authorized the client server-side,
       // so redirectUrl is null for them and this is skipped.
+      if (data.radiusMode) {
+        // RADIUS-mode sites: /redeem above only confirmed the code is
+        // valid - it never logs the device in. The router itself only
+        // authenticates (and sends the RADIUS Access-Request) when this
+        // browser submits the code as username+password directly to the
+        // MikroTik's OWN hotspot login page. See src/routes/portal.js
+        // and src/integrations/radius.js for the server-side half of
+        // this. Router IP is hardcoded for now (this specific site's
+        // router); once multiple RADIUS-mode sites exist, this should
+        // instead read a `loginUrl` query param that the router's
+        // login.html passes through via its $(link-login-only) variable.
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = 'http://192.168.88.1/login';
+        const fields = {
+          username: code,
+          password: code,
+          dst: params.get('originUrl') || 'http://neverssl.com',
+        };
+        for (const [k, v] of Object.entries(fields)) {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = k;
+          input.value = v;
+          form.appendChild(input);
+        }
+        document.body.appendChild(form);
+        form.submit();
+        return;
+      }
       if (data.redirectUrl) {
         window.location.href = data.redirectUrl;
         return;
