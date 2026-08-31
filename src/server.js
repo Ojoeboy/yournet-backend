@@ -43,6 +43,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || origin === process.env.APP_BASE_URL) return callback(null, true);
+    console.log('CORS rejected origin:', JSON.stringify(origin), 'expected:', JSON.stringify(process.env.APP_BASE_URL));
     callback(new Error('Not allowed by CORS'));
   },
 }));
