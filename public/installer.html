@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Installer Portal</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:20px;max-width:560px;margin-inline:auto}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{color:#6b8a91;font-size:13px;margin-bottom:18px;line-height:1.5}
+  .page-header{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin:0 0 22px}
+  .page-header-logo{height:40px;width:auto;margin-bottom:4px}
+  .page-header h1{margin:0;font-size:19px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#e8f0f1;margin-bottom:4px}
+  .page-header .sub{color:#6b8a91;font-size:13px;margin-bottom:0}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:18px;margin-bottom:14px}
+  .card h2{font-size:15px;margin:0 0 10px;color:#2ec4b6}
+  label{display:block;font-size:12px;color:#9fb6bc;margin:10px 0 4px}
+  input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#0d1a1e;color:#fff;font-size:14px}
+  button{width:100%;margin-top:14px;padding:11px;border:none;border-radius:8px;background:#e8a33d;color:#0d1a1e;
+    font-weight:700;cursor:pointer;font-size:14px}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.secondary{background:transparent;border:1px solid rgba(255,255,255,.2);color:#e8f0f1;margin-top:8px}
+  button.danger{background:transparent;border:1px solid rgba(255,107,107,.35);color:#ff6b6b;margin-top:8px}
+  .msg{margin-top:10px;font-size:13px}
+  .msg.err{color:#ff6b6b}
+  .msg.ok{color:#6bd68a}
+  .hidden{display:none}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .topbar button{width:auto;padding:7px 12px;font-size:12px;margin-top:0}
+
+  .tabs{display:flex;background:#0d1a1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;
+    padding:3px;gap:2px;margin-bottom:16px}
+  .tabs button{flex:1;margin:0;padding:9px 6px;font-size:12.5px;font-weight:700;border-radius:7px;
+    background:transparent;color:#9fb6bc}
+  .tabs button.active{background:#2ec4b6;color:#04211d}
+
+  .radio-row{display:flex;gap:10px;margin-top:6px;flex-wrap:wrap}
+  .radio-row label{display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;color:#e8f0f1;margin:0}
+  .pwd-wrap{position:relative}
+  .pwd-wrap input{padding-right:40px}
+  .pwd-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;
+    border:none;cursor:pointer;font-size:16px;padding:4px 6px;margin:0;color:#6b8a91;line-height:1;width:auto}
+
+  /* Site list */
+  .site-row{background:linear-gradient(135deg,#14282e,#0d1a1e);border:1px solid rgba(255,255,255,.1);
+    border-radius:12px;padding:13px;display:flex;justify-content:space-between;align-items:center;
+    gap:10px;margin-bottom:10px;cursor:pointer}
+  .site-row .name{font-weight:700;font-size:14px}
+  .site-row .meta{font-size:11.5px;color:#9fb6bc;margin-top:3px}
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .badge.in_progress{background:rgba(232,163,61,.18);color:#e8c777}
+  .badge.testing{background:rgba(46,196,182,.18);color:#2ec4b6}
+  .badge.live{background:rgba(107,214,138,.18);color:#6bd68a}
+
+  /* Wizard step indicator */
+  .steps{display:flex;justify-content:space-between;margin-bottom:16px}
+  .step{flex:1;text-align:center;font-size:11px;color:#6b8a91;position:relative;padding-bottom:8px;
+    border-bottom:3px solid rgba(255,255,255,.08)}
+  .step.active{color:#2ec4b6;border-bottom-color:#2ec4b6;font-weight:700}
+  .step.done{color:#6bd68a;border-bottom-color:#6bd68a}
+
+  .link-row{display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap}
+  .link-row input{flex:1;min-width:100px}
+  .link-row button{margin:0;padding:8px 10px;background:rgba(255,107,107,.15);color:#ff6b6b;width:auto}
+  .note{font-size:12px;color:#6b8a91;line-height:1.6;margin-top:8px}
+
+  table.kv{width:100%;font-size:13px;margin-top:8px}
+  table.kv td{padding:4px 8px 4px 0;vertical-align:top}
+  table.kv td.k{color:#6b8a91;white-space:nowrap}
+  code{background:#0d1a1e;padding:2px 6px;border-radius:4px;word-break:break-all}
+
+  .copy-btn{width:auto;padding:2px 8px;font-size:11px;margin:0 0 0 6px;background:#1a363e;color:#e8f0f1}
+
+  .test-result{padding:14px;border-radius:10px;text-align:center;font-weight:700;font-size:15px;margin-top:10px}
+  .test-result.pass{background:rgba(107,214,138,.15);color:#6bd68a}
+  .test-result.fail{background:rgba(255,107,107,.15);color:#ff6b6b}
+</style>
+</head>
+<body>
+<script src="/bg-rotate.js"></script>
+<div class="page-header">
+  <img src="/img/logo-icon.png" alt="" class="page-header-logo">
+  <h1>Installer Portal</h1>
+  <div class="sub">Set up a site from start to finish - no admin dashboard needed.</div>
+</div>
+
+<!-- ============ Login / Register ============ -->
+<div id="auth-card">
+  <div class="tabs">
+    <button data-authtab="login" class="active" onclick="setAuthTab('login')">Log in</button>
+    <button data-authtab="register" onclick="setAuthTab('register')">Register with invite code</button>
+  </div>
+
+  <div class="card" id="login-panel">
+    <label>Email</label>
+    <input id="loginEmail" type="email" autocomplete="username">
+    <label>Password</label>
+    <input id="loginPassword" type="password" autocomplete="current-password">
+    <button onclick="login()">Log in</button>
+    <div class="msg" id="login-msg"></div>
+  </div>
+
+  <div class="card hidden" id="register-panel">
+    <label>Invite code</label>
+    <input id="regCode" placeholder="e.g. INST-AB3D-9KQF" autocomplete="off" style="text-transform:uppercase">
+    <label>Your name</label>
+    <input id="regName" autocomplete="name">
+    <label>Email</label>
+    <input id="regEmail" type="email" autocomplete="username">
+    <label>Password</label>
+    <input id="regPassword" type="password" autocomplete="new-password" placeholder="8+ characters">
+    <button onclick="register()">Create account</button>
+    <div class="msg" id="register-msg"></div>
+  </div>
+</div>
+
+<!-- ============ Dashboard: My Sites ============ -->
+<div class="hidden" id="dashboard">
+  <div class="topbar">
+    <div id="installerName" style="font-weight:700"></div>
+    <button class="secondary" onclick="logout()">Log out</button>
+  </div>
+
+  <div class="card" id="sites-list-card">
+    <h2>My Sites</h2>
+    <div id="sitesEmpty" class="msg" style="display:none">No sites yet - start your first one below.</div>
+    <div id="sitesList"></div>
+    <button onclick="startNewSite()">+ New Site</button>
+  </div>
+
+  <!-- ============ Wizard ============ -->
+  <div class="hidden" id="wizard">
+    <div class="steps">
+      <div class="step" id="step-ind-basics">1. Basics</div>
+      <div class="step" id="step-ind-config">2. Router Config</div>
+      <div class="step" id="step-ind-test">3. Test</div>
+      <div class="step" id="step-ind-done">4. Done</div>
+    </div>
+
+    <!-- Step 1: Basics -->
+    <div class="card" id="step-basics">
+      <h2>Site basics</h2>
+      <label>Site name</label>
+      <input id="wSiteName" placeholder="e.g. Main compound">
+
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:#0f1e22;padding:10px;border-radius:6px;border:1px solid #234;margin-top:14px">
+        <input type="checkbox" id="wUseRadius" style="width:auto" onchange="onRadiusToggle()">
+        <span>This router is behind CGNAT / Starlink / has no public IP - use RADIUS mode instead</span>
+      </label>
+      <p id="wRadiusHint" class="hidden note">
+        We can't reach a router with no public IP directly, so the router will call <em>us</em> instead.
+        No IP/username/password needed here - after saving, you'll get a secret and setup commands to paste into the router.
+      </p>
+
+      <div id="wDirectFields">
+        <label>Router IP address</label>
+        <input id="wHost" placeholder="e.g. 192.168.88.1">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label>API port</label>
+            <input id="wPort" value="8728">
+          </div>
+          <div style="flex:1">
+            <label>Hotspot profile</label>
+            <select id="wProfile"><option value="default" selected>default</option></select>
+            <button type="button" class="secondary" style="padding:8px;font-size:11px" onclick="fetchProfiles()">Fetch from router</button>
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:6px">
+          <input type="checkbox" id="wUseTls" style="width:auto">
+          <span>Connect over API-SSL (port 8729)</span>
+        </label>
+        <label>Router API username</label>
+        <input id="wUser" placeholder="admin">
+        <label>Router API password</label>
+        <div class="pwd-wrap">
+          <input id="wPass" type="password">
+          <button type="button" class="pwd-toggle" onclick="togglePwd('wPass')">👁</button>
+        </div>
+      </div>
+
+      <button onclick="saveBasics()" id="saveBasicsBtn">Save & continue</button>
+      <div class="msg" id="basics-msg"></div>
+    </div>
+
+    <!-- Step 2: Router Config -->
+    <div class="hidden card" id="step-config">
+      <h2>Network shape</h2>
+      <p class="note">Answer a few questions about the actual site so the config matches reality.</p>
+
+      <label>How does this router get its internet?</label>
+      <div class="radio-row">
+        <label><input type="radio" name="wanType" value="dhcp" checked> DHCP (Starlink-style)</label>
+        <label><input type="radio" name="wanType" value="static"> Static IP</label>
+        <label><input type="radio" name="wanType" value="pppoe"> PPPoE</label>
+      </div>
+      <div id="staticFields" class="hidden">
+        <label>Static IP (with /prefix)</label>
+        <input id="staticAddress" placeholder="e.g. 41.203.10.5/24">
+        <label>Gateway</label>
+        <input id="staticGateway" placeholder="e.g. 41.203.10.1">
+      </div>
+      <div id="pppoeFields" class="hidden">
+        <label>PPPoE username</label>
+        <input id="pppoeUsername">
+        <label>PPPoE password</label>
+        <input id="pppoePassword" type="password">
+      </div>
+      <label>Which port is the internet plugged into?</label>
+      <input id="wanInterface" value="ether1">
+
+      <label>Wired AP ports (comma-separated)</label>
+      <input id="wiredPorts" value="2,3,4,5">
+
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-top:10px">
+        <input type="checkbox" id="routerHasWifi" style="width:auto">
+        <span>This router also has its own WiFi radio (wireless backhaul to remote APs)</span>
+      </label>
+      <div id="wirelessLinksArea" class="hidden">
+        <label>Wireless menu type</label>
+        <select id="wirelessSyntax">
+          <option value="legacy">Legacy "Wireless" (RouterOS 6 / older chips)</option>
+          <option value="wifi6">WiFi 6/6E "WiFi" package (newer RouterOS 7 chips)</option>
+        </select>
+        <div id="linkRows"></div>
+        <button type="button" class="secondary" onclick="addLinkRow()">+ Add wireless-connected AP</button>
+      </div>
+
+      <button onclick="downloadConfig()">Generate & download .rsc config</button>
+      <div class="msg" id="config-msg"></div>
+
+      <div id="radiusInstructions" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)">
+        <h2>RADIUS setup</h2>
+        <p class="note">Enter these into the router's RADIUS client config:</p>
+        <table class="kv">
+          <tr><td class="k">Server address</td><td id="rHost">-</td></tr>
+          <tr><td class="k">Auth port</td><td id="rAuthPort">-</td></tr>
+          <tr><td class="k">Accounting port</td><td id="rAcctPort">-</td></tr>
+          <tr><td class="k">NAS-Identifier</td><td><code id="rNasId">-</code><button class="copy-btn" onclick="copyField('rNasId')">copy</button></td></tr>
+          <tr><td class="k">Secret</td><td><code id="rSecret">-</code><button class="copy-btn" onclick="copyField('rSecret')">copy</button></td></tr>
+        </table>
+        <p class="note">On RouterOS: <code>/radius add service=hotspot address=&lt;server address&gt; secret=&lt;secret&gt; nas-identifier=&lt;NAS-Identifier&gt; authentication-port=&lt;auth port&gt; accounting-port=&lt;accounting port&gt;</code>, then <code>/ip hotspot profile set [find] use-radius=yes</code>.</p>
+      </div>
+
+      <button class="secondary" onclick="goToStep('test')">Continue to Test & Verify</button>
+    </div>
+
+    <!-- Step 3: Test & Verify -->
+    <div class="hidden card" id="step-test">
+      <h2>Test & verify</h2>
+      <p class="note">Run a live check against the router before calling this job done.</p>
+      <button onclick="runTest()" id="runTestBtn">Run test</button>
+      <div id="testResultArea"></div>
+      <button class="secondary" onclick="goToStep('done')">Continue</button>
+    </div>
+
+    <!-- Step 4: Done -->
+    <div class="hidden card" id="step-done">
+      <h2>Wrap up</h2>
+      <p class="note">Mark this site live once you're satisfied it's working, or leave it as-is and come back later.</p>
+      <button onclick="setStatus('testing')" class="secondary">Mark as "Testing"</button>
+      <button onclick="setStatus('live')">Mark as "Live"</button>
+      <div class="msg" id="done-msg"></div>
+      <button class="secondary" onclick="backToDashboard()">Back to My Sites</button>
+    </div>
+
+    <button class="secondary" onclick="backToDashboard()" style="margin-top:4px">← Back to My Sites (without finishing)</button>
+  </div>
+</div>
+
+<script>
+  let token = localStorage.getItem('yournet_installer_token');
+  let installer = JSON.parse(localStorage.getItem('yournet_installer') || 'null');
+  let currentSiteId = null;
+
+  function showMsg(id, text, cls) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = 'msg ' + (cls || '');
+  }
+
+  function togglePwd(id) {
+    const input = document.getElementById(id);
+    const btn = input.nextElementSibling;
+    input.type = input.type === 'password' ? 'text' : 'password';
+    btn.textContent = input.type === 'password' ? '👁' : '🙈';
+  }
+
+  function copyField(id) {
+    navigator.clipboard.writeText(document.getElementById(id).textContent);
+  }
+
+  async function api(path, method, body) {
+    const res = await fetch(path, {
+      method: method || 'GET',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || 'Request failed'), { code: data.error });
+    return data;
+  }
+
+  // ---------------- Auth ----------------
+  function setAuthTab(tab) {
+    document.querySelectorAll('[data-authtab]').forEach(b => b.classList.toggle('active', b.dataset.authtab === tab));
+    document.getElementById('login-panel').classList.toggle('hidden', tab !== 'login');
+    document.getElementById('register-panel').classList.toggle('hidden', tab !== 'register');
+  }
+
+  async function login() {
+    try {
+      const data = await api('/api/installers/login', 'POST', {
+        email: document.getElementById('loginEmail').value,
+        password: document.getElementById('loginPassword').value,
+      });
+      onAuthed(data);
+    } catch (err) {
+      showMsg('login-msg', err.message, 'err');
+    }
+  }
+
+  async function register() {
+    try {
+      const data = await api('/api/installers/register', 'POST', {
+        code: document.getElementById('regCode').value.trim(),
+        name: document.getElementById('regName').value,
+        email: document.getElementById('regEmail').value,
+        password: document.getElementById('regPassword').value,
+      });
+      onAuthed(data);
+    } catch (err) {
+      showMsg('register-msg', err.message, 'err');
+    }
+  }
+
+  function onAuthed(data) {
+    token = data.token;
+    installer = data.installer;
+    localStorage.setItem('yournet_installer_token', token);
+    localStorage.setItem('yournet_installer', JSON.stringify(installer));
+    showDashboard();
+  }
+
+  function logout() {
+    localStorage.removeItem('yournet_installer_token');
+    localStorage.removeItem('yournet_installer');
+    token = null;
+    installer = null;
+    document.getElementById('dashboard').classList.add('hidden');
+    document.getElementById('auth-card').classList.remove('hidden');
+  }
+
+  async function showDashboard() {
+    document.getElementById('auth-card').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('installerName').textContent = installer.name;
+    await loadSites();
+  }
+
+  // ---------------- My Sites ----------------
+  const STATUS_LABEL = { in_progress: 'In progress', testing: 'Testing', live: 'Live' };
+
+  async function loadSites() {
+    try {
+      const sites = await api('/api/installers/me/sites');
+      const list = document.getElementById('sitesList');
+      document.getElementById('sitesEmpty').style.display = sites.length ? 'none' : 'block';
+      list.innerHTML = sites.map(s => `
+        <div class="site-row" onclick="resumeSite('${s.id}')">
+          <div>
+            <div class="name">${s.name}</div>
+            <div class="meta">Router: ${s.connection_status}</div>
+          </div>
+          <span class="badge ${s.install_status}">${STATUS_LABEL[s.install_status] || s.install_status}</span>
+        </div>
+      `).join('');
+    } catch (err) {
+      if (err.message.includes('Invalid or expired') || err.message.includes('Missing token')) logout();
+    }
+  }
+
+  function resetWizardFields() {
+    document.getElementById('wSiteName').value = '';
+    document.getElementById('wUseRadius').checked = false;
+    document.getElementById('wHost').value = '';
+    document.getElementById('wPort').value = '8728';
+    document.getElementById('wUser').value = '';
+    document.getElementById('wPass').value = '';
+    document.getElementById('wUseTls').checked = false;
+    document.getElementById('radiusInstructions').classList.add('hidden');
+    document.getElementById('testResultArea').innerHTML = '';
+    onRadiusToggle();
+  }
+
+  function startNewSite() {
+    currentSiteId = null;
+    resetWizardFields();
+    document.getElementById('wizard').classList.remove('hidden');
+    goToStep('basics');
+  }
+
+  async function resumeSite(id) {
+    try {
+      const site = await api(`/api/installers/me/sites/${id}`);
+      currentSiteId = id;
+      resetWizardFields();
+      document.getElementById('wSiteName').value = site.name;
+      document.getElementById('wHost').value = site.mk_host || '';
+      document.getElementById('wPort').value = site.mk_api_port || 8728;
+      document.getElementById('wUser').value = site.mk_username || '';
+      document.getElementById('wUseTls').checked = !!site.mk_use_tls;
+      document.getElementById('wUseRadius').checked = site.mk_auth_mode === 'radius';
+      onRadiusToggle();
+      document.getElementById('wizard').classList.remove('hidden');
+      const step = site.install_status === 'in_progress' ? 'basics' : site.install_status === 'testing' ? 'test' : 'done';
+      goToStep(step);
+      document.getElementById('wizard').scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+      showMsg('sites-list-card', err.message, 'err');
+    }
+  }
+
+  function backToDashboard() {
+    document.getElementById('wizard').classList.add('hidden');
+    currentSiteId = null;
+    loadSites();
+  }
+
+  // ---------------- Wizard navigation ----------------
+  const STEP_IDS = ['basics', 'config', 'test', 'done'];
+  function goToStep(step) {
+    STEP_IDS.forEach(s => {
+      document.getElementById('step-' + s).classList.toggle('hidden', s !== step);
+      const ind = document.getElementById('step-ind-' + s);
+      ind.classList.toggle('active', s === step);
+      ind.classList.toggle('done', STEP_IDS.indexOf(s) < STEP_IDS.indexOf(step));
+    });
+  }
+
+  function onRadiusToggle() {
+    const useRadius = document.getElementById('wUseRadius').checked;
+    document.getElementById('wDirectFields').classList.toggle('hidden', useRadius);
+    document.getElementById('wRadiusHint').classList.toggle('hidden', !useRadius);
+  }
+
+  document.querySelectorAll('input[name="wanType"]').forEach(r => {
+    r.addEventListener('change', () => {
+      document.getElementById('staticFields').classList.toggle('hidden', r.value !== 'static' || !r.checked);
+      document.getElementById('pppoeFields').classList.toggle('hidden', r.value !== 'pppoe' || !r.checked);
+    });
+  });
+  document.getElementById('routerHasWifi').addEventListener('change', (e) => {
+    document.getElementById('wirelessLinksArea').classList.toggle('hidden', !e.target.checked);
+  });
+
+  function addLinkRow() {
+    const row = document.createElement('div');
+    row.className = 'link-row';
+    row.innerHTML = `
+      <input placeholder="AP name" class="link-name">
+      <input placeholder="Backhaul SSID" class="link-ssid">
+      <input placeholder="Backhaul password" class="link-password">
+      <button type="button" onclick="this.parentElement.remove()">✕</button>
+    `;
+    document.getElementById('linkRows').appendChild(row);
+  }
+
+  // ---------------- Step 1: Basics ----------------
+  async function fetchProfiles() {
+    try {
+      const data = await api('/api/installers/me/mikrotik/hotspot-profiles', 'POST', {
+        host: document.getElementById('wHost').value,
+        port: document.getElementById('wPort').value,
+        username: document.getElementById('wUser').value,
+        password: document.getElementById('wPass').value,
+        useTls: document.getElementById('wUseTls').checked,
+      });
+      const sel = document.getElementById('wProfile');
+      sel.innerHTML = data.profiles.length
+        ? data.profiles.map(p => `<option value="${p}">${p}</option>`).join('')
+        : '<option value="default">default</option>';
+    } catch (err) {
+      showMsg('basics-msg', err.message, 'err');
+    }
+  }
+
+  async function saveBasics() {
+    const name = document.getElementById('wSiteName').value.trim();
+    if (!name) return showMsg('basics-msg', 'Site name is required.', 'err');
+    const useRadius = document.getElementById('wUseRadius').checked;
+
+    const payload = { name };
+    if (!useRadius) {
+      Object.assign(payload, {
+        host: document.getElementById('wHost').value,
+        port: Number(document.getElementById('wPort').value) || undefined,
+        username: document.getElementById('wUser').value,
+        password: document.getElementById('wPass').value,
+        hotspotProfile: document.getElementById('wProfile').value,
+        useTls: document.getElementById('wUseTls').checked,
+      });
+    }
+
+    try {
+      let site;
+      if (currentSiteId) {
+        site = await api(`/api/installers/me/sites/${currentSiteId}`, 'PATCH', payload);
+      } else {
+        site = await api('/api/installers/me/sites', 'POST', payload);
+        currentSiteId = site.id;
+      }
+
+      if (useRadius) {
+        showMsg('basics-msg', 'Site saved - setting up RADIUS...', 'ok');
+        const r = await api(`/api/installers/me/sites/${currentSiteId}/radius-mode`, 'POST', { enable: true });
+        renderRadiusInstructions(r);
+      } else {
+        showMsg('basics-msg', 'Site saved.', 'ok');
+        document.getElementById('radiusInstructions').classList.add('hidden');
+      }
+      goToStep('config');
+    } catch (err) {
+      showMsg('basics-msg', err.message, 'err');
+    }
+  }
+
+  function renderRadiusInstructions(r) {
+    document.getElementById('radiusInstructions').classList.remove('hidden');
+    document.getElementById('rHost').textContent = r.serverHost || 'not configured on this deployment yet - ask your manager';
+    document.getElementById('rAuthPort').textContent = r.authPort;
+    document.getElementById('rAcctPort').textContent = r.acctPort;
+    document.getElementById('rNasId').textContent = r.nasIdentifier;
+    document.getElementById('rSecret').textContent = r.secret;
+  }
+
+  // ---------------- Step 2: Router Config ----------------
+  async function downloadConfig() {
+    const msg = document.getElementById('config-msg');
+    const wanType = document.querySelector('input[name="wanType"]:checked').value;
+    const wiredPorts = document.getElementById('wiredPorts').value.split(',').map(s => s.trim()).filter(Boolean).map(Number);
+    const routerHasWifi = document.getElementById('routerHasWifi').checked;
+    const wirelessSyntax = document.getElementById('wirelessSyntax').value;
+    const wirelessLinks = routerHasWifi
+      ? Array.from(document.querySelectorAll('#linkRows .link-row')).map(row => ({
+          name: row.querySelector('.link-name').value,
+          ssid: row.querySelector('.link-ssid').value,
+          password: row.querySelector('.link-password').value,
+        }))
+      : [];
+
+    const body = {
+      wanType,
+      wanInterface: document.getElementById('wanInterface').value || 'ether1',
+      staticAddress: document.getElementById('staticAddress').value,
+      staticGateway: document.getElementById('staticGateway').value,
+      pppoeUsername: document.getElementById('pppoeUsername').value,
+      pppoePassword: document.getElementById('pppoePassword').value,
+      wiredPorts, routerHasWifi, wirelessSyntax, wirelessLinks,
+    };
+
+    try {
+      const res = await fetch(`/api/installers/me/sites/${currentSiteId}/rsc-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not generate config.');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'mikrotik-config.rsc'; a.click();
+      showMsg('config-msg', 'Downloaded - review every line before importing.', 'ok');
+    } catch (err) {
+      showMsg('config-msg', err.message, 'err');
+    }
+  }
+
+  // ---------------- Step 3: Test & Verify ----------------
+  async function runTest() {
+    const btn = document.getElementById('runTestBtn');
+    const area = document.getElementById('testResultArea');
+    btn.disabled = true;
+    area.innerHTML = '<div class="note">Testing...</div>';
+    try {
+      const result = await api(`/api/installers/me/sites/${currentSiteId}/test`, 'POST');
+      area.innerHTML = result.online
+        ? `<div class="test-result pass">✓ Connected${result.identity ? ' - ' + result.identity : ''}</div>`
+        : `<div class="test-result fail">✕ Could not connect${result.error ? ' - ' + result.error : ''}</div>`;
+      if (result.online) await api(`/api/installers/me/sites/${currentSiteId}/status`, 'POST', { status: 'testing' });
+    } catch (err) {
+      area.innerHTML = `<div class="test-result fail">✕ ${err.message}</div>`;
+    }
+    btn.disabled = false;
+  }
+
+  // ---------------- Step 4: Done ----------------
+  async function setStatus(status) {
+    try {
+      await api(`/api/installers/me/sites/${currentSiteId}/status`, 'POST', { status });
+      showMsg('done-msg', status === 'live' ? 'Marked as live.' : 'Marked as testing.', 'ok');
+    } catch (err) {
+      showMsg('done-msg', err.message, 'err');
+    }
+  }
+
+  if (token && installer) showDashboard();
+</script>
+<script src="/fontsize.js"></script>
+</body>
+</html>

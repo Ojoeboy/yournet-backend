@@ -12,9 +12,9 @@
   // in-app pages - update HELP_CONTACT below with the real details before
   // shipping; nothing else needs to change.
   const HELP_CONTACT = {
-    email: 'yournetcontrol@gmail.com',
-    whatsappNumber: 'https://chat.whatsapp.com/ILeuwpduGUKHcJ1DWdrLIX?s=cl&p=a&mlu=4', // full WhatsApp group invite link.
-    phoneNumber: '+233546539112',
+    email: 'support@example.com',
+    whatsappNumber: '233000000000', // digits only, country code, no leading +
+    phoneNumber: '+233000000000',
   };
 
   // "section" groups items in the desktop vertical sidebar only (see
@@ -37,7 +37,7 @@
       primary: false, section: 'Help', external: true,
     },
     {
-      key: 'help-whatsapp', href: HELP_CONTACT.whatsappNumber, icon: '\u{1F4AC}',
+      key: 'help-whatsapp', href: `https://wa.me/${HELP_CONTACT.whatsappNumber}`, icon: '\u{1F4AC}',
       label: 'WhatsApp', primary: false, section: 'Help', external: true,
     },
     {

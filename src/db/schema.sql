@@ -224,14 +224,8 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_use_rotating_backgrounds BOOLE
 -- Only meaningful for type='mikrotik' - Omada/UniFi/Meraki keep using
 -- their own cloud-controller flow regardless of this value.
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS mk_auth_mode TEXT NOT NULL DEFAULT 'api';
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'sites_mk_auth_mode_check'
-  ) THEN
-    ALTER TABLE sites ADD CONSTRAINT sites_mk_auth_mode_check CHECK (mk_auth_mode IN ('api', 'radius'));
-  END IF;
-END $$;
+ALTER TABLE sites ADD CONSTRAINT IF NOT EXISTS sites_mk_auth_mode_check CHECK (mk_auth_mode IN ('api', 'radius'));
+
 -- Per-site RADIUS shared secret (AES-256-GCM encrypted, same scheme as
 -- mk_password_encrypted etc. - see utils/credentialCrypto.js). Generated
 -- server-side when a tenant switches a site to radius mode; never
@@ -786,3 +780,52 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_voucher_orders_provider_ref_unique
   ON voucher_orders(provider, provider_reference);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pppoe_subscribers_site_username
   ON pppoe_subscribers(site_id, username);
+
+-- ---------------------------------------------------------------------
+-- Installer role (self-service site setup) -----------------------------
+-- A third tenant_users role alongside owner/manager and agent - installers
+-- log in at /installer (see public/installer.html + routes/installers.js),
+-- see only the sites they've set up, and can create a new site, download
+-- its Mikrotik .rsc config, run the connection test, and mark it live -
+-- all without touching the full admin dashboard or any other tenant data.
+-- Reuses tenant_users (same table agents live in) rather than a new users
+-- table - role is plain TEXT with no CHECK constraint, so 'installer'
+-- needs no migration of the column itself, and installer accounts get the
+-- exact same token_version-based revocation agents already have (see
+-- middleware/auth.js).
+--
+-- Invite codes an owner generates so installers can self-register (Q&A
+-- during design: invite-code self-registration, not owner-created-by-hand
+-- like agents) - see POST /api/sites/installer-invites in routes/sites.js
+-- and POST /api/installers/register in routes/installers.js. One code can
+-- be reused any number of times until revoked - there's no expiry field
+-- because an owner handing a code to a new hire has no reason to want it
+-- to silently stop working on its own.
+CREATE TABLE IF NOT EXISTS installer_invite_codes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  code TEXT NOT NULL UNIQUE,
+  label TEXT,                      -- optional owner note, e.g. "Kwame - Techiman crew"
+  active BOOLEAN NOT NULL DEFAULT true,
+  uses_count INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ
+);
+
+-- Which installer set up (and is scoped to) which site, and how far along
+-- that site is. One row per site - created automatically the moment an
+-- installer creates a site (routes/installers.js), and reassignable by the
+-- owner (PATCH /api/sites/site-installers/:siteId in routes/sites.js) if
+-- e.g. an installer leaves mid-job. Per the Q&A during design, an installer
+-- can keep editing a site after marking it 'live' - this table is a status
+-- label, not an access-revoking gate.
+CREATE TABLE IF NOT EXISTS site_installers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  site_id UUID NOT NULL UNIQUE REFERENCES sites(id) ON DELETE CASCADE,
+  installer_id UUID NOT NULL REFERENCES tenant_users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'testing', 'live')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_site_installers_installer ON site_installers(installer_id);

@@ -11,6 +11,7 @@ const voucherRoutes = require('./routes/vouchers');
 const packageRoutes = require('./routes/packages');
 const billingRoutes = require('./routes/billing');
 const agentRoutes = require('./routes/agents');
+const installerRoutes = require('./routes/installers');
 const dashboardRoutes = require('./routes/dashboard');
 const licenseRoutes = require('./routes/license');
 const ownerRoutes = require('./routes/owner');
@@ -33,17 +34,37 @@ app.set('trust proxy', 1);
 // device viewing it usually has no internet access yet. The rest of the
 // API returns JSON only, so this trade-off is scoped to that one page.
 app.use(helmet({ contentSecurityPolicy: false }));
-// Restricted to this app's own origin - every legitimate caller
+// Restricted to this app's own origin(s) - every legitimate caller
 // (admin.html, dashboard.html, portal pages) is served from here and none
 // of them need cross-origin access. Requests with no Origin header (curl,
 // Postman, server-to-server calls, native mobile HTTP clients) are never
 // subject to CORS in the first place, so those still work unaffected -
 // this only blocks a browser page on some OTHER origin from calling this
 // API using a token it shouldn't have anyway.
+//
+// Built from APP_BASE_URL plus two fallbacks, since APP_BASE_URL is also
+// used to build links in emails/webhooks (see billing.js, vouchers.js,
+// portal.js, auth.js) and may get pointed at a custom domain while the
+// app itself is still (or also) reachable at the Render *.onrender.com
+// URL - trailing slashes are stripped so a difference there doesn't
+// cause a false rejection like APP_BASE_URL vs the request origin did:
+// - RENDER_EXTERNAL_URL: set automatically by Render to this service's
+//   own onrender.com URL, so it always tracks the real deploy even if
+//   APP_BASE_URL drifts to a custom domain or gets left stale.
+// - ALLOWED_ORIGINS: optional comma-separated list of any other origins
+//   that should be allowed (e.g. a separate frontend host), for cases
+//   neither of the above covers.
+const allowedOrigins = [
+  process.env.APP_BASE_URL,
+  process.env.RENDER_EXTERNAL_URL,
+  ...(process.env.ALLOWED_ORIGINS || '').split(',').map((o) => o.trim()),
+]
+  .filter(Boolean)
+  .map((o) => o.replace(/\/$/, ''));
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || origin === process.env.APP_BASE_URL) return callback(null, true);
-    console.log('CORS rejected origin:', JSON.stringify(origin), 'expected:', JSON.stringify(process.env.APP_BASE_URL));
+    if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ''))) return callback(null, true);
+    console.log('CORS rejected origin:', JSON.stringify(origin), 'allowed:', JSON.stringify(allowedOrigins));
     callback(new Error('Not allowed by CORS'));
   },
 }));
@@ -135,6 +156,7 @@ app.use('/api/sites', apiLimiter, siteRoutes);
 app.use('/api/vouchers', apiLimiter, voucherRoutes);
 app.use('/api/packages', apiLimiter, packageRoutes);
 app.use('/api/agents', apiLimiter, agentRoutes);
+app.use('/api/installers', apiLimiter, installerRoutes);
 app.use('/api/dashboard', apiLimiter, dashboardRoutes);
 app.use('/api/payment-gateways', apiLimiter, paymentGatewayRoutes);
 app.use('/api/pppoe', apiLimiter, pppoeRoutes);
@@ -169,6 +191,15 @@ app.get('/pppoe', (req, res) => {
 
 app.get('/agents', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'agents.html'));
+});
+
+// Installer self-service login/wizard page - a clean URL for the same
+// reason /login, /admin, /agents etc. all get one (agent.html itself has
+// no such route and is only ever reached at /agent.html directly; this
+// gives installers the nicer link instead, since it's the one URL an
+// owner will be handing out to new installers).
+app.get('/installer', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'installer.html'));
 });
 
 app.get('/license', (req, res) => {

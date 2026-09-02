@@ -14,7 +14,7 @@ const pool = require('../db/pool');
 // own yet (there's a single password_hash on tenants itself), so it's
 // versioned off tenants.token_version, keyed by tenantId instead.
 async function currentTokenVersion(role, tenantId, userId) {
-  if (role === 'agent') {
+  if (role === 'agent' || role === 'installer') {
     const { rows } = await pool.query('SELECT token_version FROM tenant_users WHERE id=$1', [userId]);
     return rows[0]?.token_version;
   }
@@ -89,16 +89,24 @@ function requireOwnerAuth(req, res, next) {
   }
 }
 
-// Agents now get a real tenant-scoped JWT (see POST /api/agents/login), but
-// that token must NOT be able to reach owner/manager surfaces - router
+// Agents and installers both get a real tenant-scoped JWT (see
+// POST /api/agents/login and POST /api/installers/login), but neither
+// token should be able to reach owner/manager surfaces - router
 // credentials, packages, gateways, dashboard stats, pppoe billing, etc.
 // requireAuth alone only proves "this token belongs to tenant X"; this
-// adds "and it isn't an agent token" for routes that should stay
-// owner/manager-only. Apply as router.use(requireAuth, requireNotAgent)
-// on any route file agents shouldn't touch.
+// adds "and it isn't an agent or installer token" for routes that should
+// stay owner/manager-only. Apply as router.use(requireAuth, requireNotAgent)
+// on any route file agents/installers shouldn't touch.
+//
+// Installers get their OWN separate route file (routes/installers.js)
+// instead of a scoped exception carved into this list - it does not
+// import requireNotAgent, so an installer token can never reach any route
+// file below just by virtue of not being 'agent'. Every route file that
+// currently guards with requireNotAgent stays exactly as blocked to
+// installers as it already is to agents.
 function requireNotAgent(req, res, next) {
-  if (req.role === 'agent') {
-    return res.status(403).json({ error: 'Not available to agent accounts.' });
+  if (req.role === 'agent' || req.role === 'installer') {
+    return res.status(403).json({ error: 'Not available to agent or installer accounts.' });
   }
   next();
 }

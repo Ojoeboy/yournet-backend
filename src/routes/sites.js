@@ -11,6 +11,7 @@ const { encrypt, decrypt } = require('../utils/credentialCrypto');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
 const storage = require('../services/storage');
+const { buildMikrotikRsc } = require('../utils/mikrotikConfigGen');
 
 const router = express.Router();
 router.use(requireAuth, requireNotAgent);
@@ -254,104 +255,14 @@ router.post('/:id/rsc-config', asyncHandler(async (req, res) => {
     [req.tenantId]
   );
 
-  const {
-    wanType = 'dhcp',            // 'dhcp' | 'static' | 'pppoe'
-    wanInterface = 'ether1',
-    staticAddress, staticGateway, // used when wanType === 'static'
-    pppoeUsername, pppoePassword, // used when wanType === 'pppoe'
-    wiredPorts = [2, 3, 4, 5],    // ether port numbers for the wired AP bridge
-    routerHasWifi = false,
-    wirelessSyntax = 'legacy',    // 'legacy' (/interface wireless) | 'wifi6' (/interface wifi, Wi-Fi 6/6E)
-    wirelessLinks = [],           // [{ name, ssid, password }] - one per remote wireless AP
-  } = req.body || {};
-  if (!['legacy', 'wifi6'].includes(wirelessSyntax)) {
-    return res.status(400).json({ error: "wirelessSyntax must be 'legacy' or 'wifi6'" });
+  let built;
+  try {
+    built = buildMikrotikRsc(site, packages, req.body);
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
   }
 
-  const slug = site.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'yournet';
-  const hotspotProfile = site.mk_hotspot_profile || 'default';
-  const bridgeName = `bridge-${slug}`;
-
-  const profileLines = packages.map((p) => {
-    const rate = p.rate_limit_up && p.rate_limit_down ? `${p.rate_limit_up}/${p.rate_limit_down}` : '';
-    return `/ip hotspot user profile add name="${slug}-${p.label.toLowerCase().replace(/\s+/g, '-')}"` +
-      (rate ? ` rate-limit="${rate}"` : '') +
-      ` session-timeout=${p.duration_minutes}m`;
-  });
-
-  // --- WAN section, branches by type ---
-  let wanSection;
-  if (wanType === 'static') {
-    wanSection = `# Static WAN IP
-/ip address add address=${staticAddress || '<FILL-IN-YOUR-STATIC-IP>/24'} interface=${wanInterface}
-/ip route add gateway=${staticGateway || '<FILL-IN-YOUR-GATEWAY>'}`;
-  } else if (wanType === 'pppoe') {
-    wanSection = `# PPPoE WAN (fiber/DSL-style connections)
-/interface pppoe-client add interface=${wanInterface} user="${pppoeUsername || '<FILL-IN-PPPOE-USERNAME>'}" password="${pppoePassword || '<FILL-IN-PPPOE-PASSWORD>'}" name=pppoe-out1 add-default-route=yes disabled=no`;
-  } else {
-    wanSection = `# DHCP client WAN (typical for Starlink-style Ethernet-in setups)
-/ip dhcp-client add interface=${wanInterface} disabled=no`;
-  }
-  const natOutInterface = wanType === 'pppoe' ? 'pppoe-out1' : wanInterface;
-
-  // --- Wired AP bridge ports ---
-  const wiredPortLines = wiredPorts.map((n) => `/interface bridge port add bridge=${bridgeName} interface=ether${n}`);
-
-  // --- Wireless backhaul links to remote APs (only if this router has its own radio) ---
-  let wirelessSection = '';
-  if (routerHasWifi && wirelessLinks.length) {
-    if (wirelessSyntax === 'wifi6') {
-      wirelessSection = `\n# Wireless backhaul links - one WiFi 6/6E AP-mode radio per remote AP,
-# native-bridged into ${bridgeName} via datapath.bridge (no WDS needed on
-# this newer driver). IMPORTANT: each remote AP must ALSO be configured
-# (once, on that device) as a station-bridge connecting to the matching
-# SSID below - this file only configures THIS router's side of each link.
-# Only the first link can use a router with a single built-in radio - see
-# the comment above this function for what additional links need.
-${wirelessLinks.map((link, i) => {
-  const ifaceName = `wifi${i + 1}`;
-  const secName = `wifi-link${i + 1}-sec`;
-  return `/interface wifi security add name=${secName} authentication-types=wpa2-psk,wpa3-psk passphrase="${link.password || '<SET-A-STRONG-PASSWORD>'}"
-/interface wifi set [ find default-name=${ifaceName} ] configuration.mode=ap configuration.ssid="${link.ssid || `${slug}-link${i + 1}`}" security=${secName} datapath.bridge=${bridgeName} disabled=no comment="Backhaul to: ${link.name || 'remote AP ' + (i + 1)}"`;
-}).join('\n')}`;
-    } else {
-      wirelessSection = `\n# Wireless backhaul links - one WDS station-bridge per remote AP.
-# IMPORTANT: each remote AP must ALSO be configured (once, on that device)
-# as a WDS station connecting to the matching SSID below - this file only
-# configures THIS router's side of each link.
-${wirelessLinks.map((link, i) => {
-  const ifaceName = `wlan-link${i + 1}`;
-  return `/interface wireless add name=${ifaceName} mode=ap-bridge ssid="${link.ssid || `${slug}-link${i + 1}`}" wds-mode=dynamic wds-default-bridge=${bridgeName} disabled=no comment="Backhaul to: ${link.name || 'remote AP ' + (i + 1)}"
-/interface wireless security-profiles add name=${ifaceName}-sec mode=dynamic-keys authentication-types=wpa2-psk wpa2-pre-shared-key="${link.password || '<SET-A-STRONG-PASSWORD>'}"
-/interface wireless set ${ifaceName} security-profile=${ifaceName}-sec`;
-}).join('\n')}`;
-    }
-  }
-
-  const rsc = `# YourNet Control - RouterOS starting config for site: ${site.name}
-# Generated from your actual packages and network shape - REVIEW before importing.
-# See comments above the wireless section (if present) for real limitations.
-
-${wanSection}
-
-/interface bridge add name=${bridgeName}
-${wiredPortLines.join('\n') || '# No wired AP ports specified'}
-${wirelessSection}
-
-/ip pool add name=${slug}-pool ranges=10.5.0.10-10.5.0.254
-/ip address add address=10.5.0.1/24 interface=${bridgeName}
-
-/ip firewall nat add chain=srcnat out-interface=${natOutInterface} action=masquerade comment="${site.name} internet uplink"
-
-/ip hotspot profile add name="${hotspotProfile}" hotspot-address=10.5.0.1 login-by=http-chap
-
-/ip hotspot add name="${slug}-hotspot" interface=${bridgeName} address-pool=${slug}-pool profile="${hotspotProfile}"
-
-# One profile per package, with the actual limits set in your app:
-${profileLines.join('\n') || '# No active packages yet - create some in /admin first.'}
-`;
-
-  res.type('text/plain').attachment(`${slug}-mikrotik-config.rsc`).send(rsc);
+  res.type('text/plain').attachment(`${built.slug}-mikrotik-config.rsc`).send(built.rsc);
 }));
 
 // Portal branding - separate from the router-credentials PATCH above on
@@ -812,6 +723,115 @@ router.post('/:id/radius-mode', asyncHandler(async (req, res) => {
       ? `This site has ${activeCount} voucher(s) with an active session right now - those are unaffected. New redemptions won't work until the router is reconfigured for RADIUS (see the setup instructions).`
       : null,
   });
+}));
+
+// --- Installer management (owner/manager side) ------------------------
+// Everything here is still behind this file's router.use(requireAuth,
+// requireNotAgent) above, so an installer token can never reach it - only
+// the owner/manager. The installer-facing counterparts to all of this
+// live in routes/installers.js, scoped the other way (an installer to
+// only their own assigned sites).
+
+// Generates a new invite code an owner can hand to a prospective
+// installer for self-registration at /installer. Deliberately no expiry -
+// see the schema comment on installer_invite_codes for why - just active/
+// revoked. Unambiguous charset (no 0/O/1/I), same reasoning as
+// voucherService's code generator.
+function randomInviteCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 8; i++) s += chars[crypto.randomInt(chars.length)];
+  return `INST-${s.slice(0, 4)}-${s.slice(4)}`;
+}
+
+router.post('/installer-invites', asyncHandler(async (req, res) => {
+  const { label } = req.body || {};
+  const code = randomInviteCode();
+  const { rows } = await pool.query(
+    `INSERT INTO installer_invite_codes (tenant_id, code, label) VALUES ($1,$2,$3)
+     RETURNING id, code, label, active, uses_count, created_at`,
+    [req.tenantId, code, validate.isNonEmptyString(label, 200) ? label : null]
+  );
+  res.json(rows[0]);
+}));
+
+router.get('/installer-invites', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT id, code, label, active, uses_count, created_at, revoked_at
+     FROM installer_invite_codes WHERE tenant_id=$1 ORDER BY created_at DESC`,
+    [req.tenantId]
+  );
+  res.json(rows);
+}));
+
+router.patch('/installer-invites/:id/revoke', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `UPDATE installer_invite_codes SET active=false, revoked_at=now()
+     WHERE id=$1 AND tenant_id=$2 RETURNING id, code, active`,
+    [req.params.id, req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Invite code not found.' });
+  res.json(rows[0]);
+}));
+
+// Every installer this tenant has, plus every site each has touched and
+// that site's current status - powers the owner's "Installations" list.
+router.get('/installers', asyncHandler(async (req, res) => {
+  const { rows: installerRows } = await pool.query(
+    `SELECT id, name, email, created_at FROM tenant_users WHERE tenant_id=$1 AND role='installer' ORDER BY created_at DESC`,
+    [req.tenantId]
+  );
+  const { rows: siteRows } = await pool.query(
+    `SELECT si.installer_id, si.site_id, si.status AS install_status, si.updated_at,
+            s.name AS site_name, s.status AS connection_status
+     FROM site_installers si
+     JOIN sites s ON s.id = si.site_id
+     WHERE si.tenant_id=$1
+     ORDER BY si.updated_at DESC`,
+    [req.tenantId]
+  );
+  const sitesByInstaller = {};
+  for (const row of siteRows) {
+    (sitesByInstaller[row.installer_id] ||= []).push({
+      siteId: row.site_id, siteName: row.site_name, connectionStatus: row.connection_status,
+      installStatus: row.install_status, updatedAt: row.updated_at,
+    });
+  }
+  res.json(installerRows.map((i) => ({ ...i, sites: sitesByInstaller[i.id] || [] })));
+}));
+
+// Reassigns (or, with installerId omitted, simply removes) which installer
+// a site is scoped to - e.g. an installer leaves mid-job and someone else
+// finishes it, or the owner wants to take a site off the installer track
+// entirely and manage it purely from the regular admin panel from now on.
+// Removing this row doesn't touch the site itself - it keeps existing
+// under owner control either way.
+router.patch('/site-installers/:siteId', asyncHandler(async (req, res) => {
+  const { installerId } = req.body || {};
+  const { rows: siteRows } = await pool.query('SELECT id FROM sites WHERE id=$1 AND tenant_id=$2', [
+    req.params.siteId, req.tenantId,
+  ]);
+  if (!siteRows.length) return res.status(404).json({ error: 'Site not found.' });
+
+  if (!installerId) {
+    await pool.query(`DELETE FROM site_installers WHERE site_id=$1 AND tenant_id=$2`, [req.params.siteId, req.tenantId]);
+    return res.json({ ok: true, unassigned: true });
+  }
+
+  const { rows: installerRows } = await pool.query(
+    `SELECT id FROM tenant_users WHERE id=$1 AND tenant_id=$2 AND role='installer'`,
+    [installerId, req.tenantId]
+  );
+  if (!installerRows.length) return res.status(404).json({ error: 'Installer not found.' });
+
+  const { rows } = await pool.query(
+    `INSERT INTO site_installers (tenant_id, site_id, installer_id, status)
+     VALUES ($1,$2,$3,'in_progress')
+     ON CONFLICT (site_id) DO UPDATE SET installer_id=$3, updated_at=now()
+     RETURNING site_id, installer_id, status`,
+    [req.tenantId, req.params.siteId, installerId]
+  );
+  res.json(rows[0]);
 }));
 
 module.exports = router;

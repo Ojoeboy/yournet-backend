@@ -69,6 +69,7 @@
 <div class="setup-tabs" id="agents-tabs">
   <button type="button" class="setup-tab active" id="tab-overview" onclick="switchAgentsTab('overview')">Overview</button>
   <button type="button" class="setup-tab" id="tab-activity" onclick="switchAgentsTab('activity')">Activity Log</button>
+  <button type="button" class="setup-tab" id="tab-installers" onclick="switchAgentsTab('installers')">Installers</button>
 </div>
 
 <div class="card" id="overview-card">
@@ -103,6 +104,28 @@
   <div id="activityList"></div>
 </div>
 
+<!-- Installers - self-service site setup accounts, separate from Agents
+     above (they log in at /installer, not /agent.html, and can only
+     touch the sites they've personally set up - see routes/installers.js). -->
+<div class="card hidden" id="installers-card">
+  <h2>Installer invite codes</h2>
+  <p style="font-size:12px;color:var(--yn-muted);margin-bottom:8px">
+    Give a code to someone doing an on-site install - they register themselves at
+    <code>/installer</code> and get a guided wizard scoped to only the sites they set up.
+  </p>
+  <div class="row">
+    <div><label>Label (optional)</label><input id="inviteLabel" placeholder="e.g. Kwame - Techiman crew"></div>
+  </div>
+  <button onclick="createInvite()">Generate invite code</button>
+  <div class="msg" id="inviteMsg"></div>
+  <div class="table-scroll"><table id="invitesTable"></table></div>
+</div>
+
+<div class="card hidden" id="installer-list-card">
+  <h2>Installers</h2>
+  <div id="installersList"></div>
+</div>
+
   </main>
 </div>
 
@@ -129,14 +152,16 @@
     return data;
   }
 
-  const AGENTS_TAB_CARDS = { overview: 'overview-card', activity: 'activity-card' };
+  const AGENTS_TAB_CARDS = { overview: 'overview-card', activity: 'activity-card', installers: ['installers-card', 'installer-list-card'] };
 
   function switchAgentsTab(key) {
     Object.keys(AGENTS_TAB_CARDS).forEach(function (k) {
-      document.getElementById(AGENTS_TAB_CARDS[k]).classList.toggle('hidden', k !== key);
+      const cards = Array.isArray(AGENTS_TAB_CARDS[k]) ? AGENTS_TAB_CARDS[k] : [AGENTS_TAB_CARDS[k]];
+      cards.forEach((id) => document.getElementById(id).classList.toggle('hidden', k !== key));
       document.getElementById('tab-' + k).classList.toggle('active', k === key);
     });
     if (key === 'activity') loadAgentActivity();
+    if (key === 'installers') { loadInvites(); loadInstallers(); }
   }
 
   async function loadAgents() {
@@ -263,6 +288,80 @@
       }).join('');
     } catch (err) {
       list.innerHTML = `<div class="msg show err">${err.message}</div>`;
+    }
+  }
+
+  // ---------------- Installers ----------------
+  async function createInvite() {
+    const msg = document.getElementById('inviteMsg');
+    try {
+      const label = document.getElementById('inviteLabel').value.trim();
+      const invite = await api('/api/sites/installer-invites', 'POST', { label: label || undefined });
+      msg.textContent = `Code created: ${invite.code} - share this with the installer.`;
+      msg.className = 'msg show ok';
+      document.getElementById('inviteLabel').value = '';
+      await loadInvites();
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
+  }
+
+  async function loadInvites() {
+    const invites = await api('/api/sites/installer-invites');
+    const rows = invites.map(i => `<tr>
+      <td><code>${i.code}</code>${i.label ? '<br><span style="color:var(--yn-muted);font-size:11px">' + i.label + '</span>' : ''}</td>
+      <td>${i.uses_count}</td>
+      <td>${i.active ? '<span style="color:#6bd68a">Active</span>' : '<span style="color:var(--yn-muted)">Revoked</span>'}</td>
+      <td>${i.active ? `<button class="secondary" style="width:auto;padding:4px 8px;font-size:11px;margin:0" onclick="revokeInvite('${i.id}')">Revoke</button>` : ''}</td>
+    </tr>`);
+    document.getElementById('invitesTable').innerHTML =
+      '<tr><th>Code</th><th>Uses</th><th>Status</th><th></th></tr>' +
+      (rows.length ? rows.join('') : '<tr><td colspan="4" style="color:var(--yn-muted)">No invite codes yet</td></tr>');
+  }
+
+  async function revokeInvite(id) {
+    try {
+      await api(`/api/sites/installer-invites/${id}/revoke`, 'PATCH');
+      await loadInvites();
+    } catch (err) {
+      const msg = document.getElementById('inviteMsg');
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
+  }
+
+  const INSTALL_STATUS_LABEL = { in_progress: 'In progress', testing: 'Testing', live: 'Live' };
+
+  async function loadInstallers() {
+    const installers = await api('/api/sites/installers');
+    const list = document.getElementById('installersList');
+    if (!installers.length) {
+      list.innerHTML = '<div style="color:var(--yn-muted);font-size:13px">No installers have registered yet.</div>';
+      return;
+    }
+    list.innerHTML = installers.map(inst => `
+      <div style="padding:10px 0;border-bottom:1px solid var(--yn-line)">
+        <div style="font-weight:700">${inst.name} <span style="color:var(--yn-muted);font-weight:400;font-size:12px">${inst.email || ''}</span></div>
+        ${inst.sites.length ? inst.sites.map(s => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 6px 12px;font-size:13px">
+            <span>${s.siteName} <span style="color:var(--yn-muted);font-size:11px">(router: ${s.connectionStatus})</span></span>
+            <span style="display:flex;align-items:center;gap:8px">
+              <span style="color:#9fb6bc;font-size:11px">${INSTALL_STATUS_LABEL[s.installStatus] || s.installStatus}</span>
+              <button class="secondary" style="width:auto;padding:3px 8px;font-size:11px;margin:0" onclick="unassignSite('${s.siteId}')">Unassign</button>
+            </span>
+          </div>`).join('') : '<div style="padding:4px 0 4px 12px;color:var(--yn-muted);font-size:12px">No sites started yet</div>'}
+      </div>
+    `).join('');
+  }
+
+  async function unassignSite(siteId) {
+    if (!confirm('Unassign this site from its installer? The site itself stays - it just moves under your own management.')) return;
+    try {
+      await api(`/api/sites/site-installers/${siteId}`, 'PATCH', { installerId: null });
+      await loadInstallers();
+    } catch (err) {
+      alert(err.message);
     }
   }
 
