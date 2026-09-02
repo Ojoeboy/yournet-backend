@@ -50,18 +50,49 @@
     padding:14px 16px;margin-bottom:20px;
   }
   .batches-panel .sub{font-size:12px;color:var(--yn-muted);margin-bottom:12px}
-  .batches-grid{display:grid;grid-template-columns:repeat(auto-fill, 200px);gap:10px}
+
+  /* ---------- batch panel header row: select-all + bulk toolbar ---------- */
+  .batches-toolrow{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  .select-all-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--yn-muted);font-weight:700;user-select:none;cursor:pointer}
+  .select-all-row input[type=checkbox]{margin:0}
+
+  .bulk-toolbar{
+    display:none;align-items:center;gap:10px;flex-wrap:wrap;background:rgba(46,196,182,.08);
+    border:1px solid rgba(46,196,182,.35);border-radius:10px;padding:9px 12px;
+    animation:bulkIn .18s ease-out;flex:1 1 auto;
+  }
+  .bulk-toolbar.show{display:flex}
+  @keyframes bulkIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+  .bulk-toolbar .bulk-count{font-size:12.5px;font-weight:800;color:var(--yn-teal);white-space:nowrap}
+  .bulk-toolbar .bulk-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+  .bulk-toolbar .btn.sm,.bulk-toolbar .btn.ghost.sm{padding:7px 12px;font-size:12px}
+  .bulk-toolbar .btn.danger{background:rgba(255,107,107,.14);color:var(--yn-danger);border:1px solid rgba(255,107,107,.35)}
+  .bulk-toolbar .btn.danger:hover{background:rgba(255,107,107,.22)}
+
+  .batches-grid{display:grid;grid-template-columns:repeat(auto-fill, 208px);gap:10px}
   .batches-empty{font-size:12.5px;color:var(--yn-muted);padding:8px 0}
   .batch-tile{
-    background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:10px;
-    padding:11px 12px;cursor:pointer;transition:border-color .15s;
+    position:relative;background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:12px;
+    padding:12px 13px;cursor:pointer;transition:border-color .15s,transform .12s,box-shadow .15s;
   }
-  .batch-tile:hover{border-color:var(--yn-teal)}
-  .batch-tile.selected{border-color:var(--yn-teal);box-shadow:0 0 0 1px var(--yn-teal) inset}
+  .batch-tile:hover{border-color:var(--yn-teal);transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.22)}
+  .batch-tile.viewing{border-color:var(--yn-gold);box-shadow:0 0 0 1px var(--yn-gold) inset}
+  .batch-tile.checked{border-color:var(--yn-teal);box-shadow:0 0 0 1.5px var(--yn-teal) inset;background:rgba(46,196,182,.06)}
+
+  .batch-tile .batch-top{display:flex;align-items:flex-start;gap:8px}
+  .batch-tile .batch-check{
+    flex-shrink:0;margin-top:2px;width:16px;height:16px;cursor:pointer;accent-color:var(--yn-teal);
+  }
+  .batch-tile .batch-titles{min-width:0;flex:1}
   .batch-tile .batch-name{font-weight:800;font-size:13px;color:var(--yn-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .batch-tile .batch-site{font-size:10.5px;color:var(--yn-muted);margin-top:1px}
-  .batch-tile .batch-counts{font-size:11.5px;color:var(--yn-teal);margin-top:6px}
-  .batch-tile .batch-actions{display:flex;gap:6px;margin-top:9px}
+  .batch-tile .batch-site{font-size:10.5px;color:var(--yn-muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .batch-progress{height:5px;border-radius:4px;background:rgba(255,255,255,.07);margin-top:10px;overflow:hidden}
+  .batch-progress-fill{height:100%;background:linear-gradient(90deg,var(--yn-teal),#5fe0d1);border-radius:4px;transition:width .3s ease}
+  .batch-tile .batch-counts{font-size:11px;color:var(--yn-muted);margin-top:6px;display:flex;justify-content:space-between}
+  .batch-tile .batch-counts b{color:var(--yn-teal);font-weight:800}
+
+  .batch-tile .batch-actions{display:flex;gap:6px;margin-top:10px}
   .batch-tile .btn.sm,.batch-tile .btn.ghost.sm{padding:6px 9px;font-size:11px}
 
   .search-result{
@@ -248,7 +279,22 @@
 </div>
 
 <div class="batches-panel" id="batchesPanel" style="display:none">
-  <div class="sub">Tap a batch to view it below, or print its unused vouchers directly.</div>
+  <div class="sub">Tap a batch to view it below, or check one or more to act on them together.</div>
+  <div class="batches-toolrow">
+    <label class="select-all-row">
+      <input type="checkbox" id="selectAllBatches" onchange="toggleSelectAll(this.checked)">
+      Select all
+    </label>
+    <div class="bulk-toolbar" id="bulkToolbar">
+      <span class="bulk-count" id="bulkCount">0 selected</span>
+      <div class="bulk-actions">
+        <button type="button" class="btn ghost sm" onclick="bulkPrintSelected()">🖨️ Print Selected</button>
+        <button type="button" class="btn ghost sm" onclick="bulkExportSelected()">⬇ Export CSV</button>
+        <button type="button" class="btn danger sm" onclick="bulkDeleteSelected()">🗑 Delete Selected</button>
+        <button type="button" class="btn ghost sm" onclick="clearSelection()">Clear</button>
+      </div>
+    </div>
+  </div>
   <div class="batches-grid" id="batchesGrid"></div>
 </div>
 
@@ -420,6 +466,13 @@
 
   const UNGROUPED_LABEL = '(no batch)';
   let batchesLoaded = false;
+  let batchRows = []; // raw /batches API rows, kept around so selection lookups don't need another fetch
+
+  // Selection state for the bulk toolbar. Keyed by "siteId::batch" (batch
+  // normalized to '__none__' for the ungrouped tile) so two same-named
+  // batches on different sites are never conflated into one selection.
+  const selected = new Map();
+  const keyFor = (b) => `${b.site_id}::${b.batch || '__none__'}`;
 
   function toggleBatches() {
     const panel = document.getElementById('batchesPanel');
@@ -428,47 +481,70 @@
     if (willShow && !batchesLoaded) loadBatches();
   }
 
-  async function loadBatches() {
+  async function loadBatches(force) {
+    if (force) batchesLoaded = false;
     const gridEl = document.getElementById('batchesGrid');
     gridEl.innerHTML = '<div class="batches-empty">Loading&hellip;</div>';
     try {
       const res = await fetch('/api/vouchers/batches', { headers: { Authorization: 'Bearer ' + token } });
       if (!res.ok) throw new Error('load failed');
       const batches = await res.json();
+      batchRows = batches;
       batchesLoaded = true;
+      // Drop any selections whose batch no longer exists (e.g. just deleted).
+      const liveKeys = new Set(batches.map(keyFor));
+      Array.from(selected.keys()).forEach(k => { if (!liveKeys.has(k)) selected.delete(k); });
+
       if (!batches.length) {
         gridEl.innerHTML = '<div class="batches-empty">No vouchers generated yet.</div>';
+        updateBulkToolbar();
         return;
       }
       gridEl.innerHTML = '';
       batches.forEach(b => {
         const label = b.batch || UNGROUPED_LABEL;
+        const key = keyFor(b);
+        const used = b.total - b.unused;
+        const pct = b.total ? Math.round((used / b.total) * 100) : 0;
         const tile = document.createElement('div');
-        tile.className = 'batch-tile';
+        tile.className = 'batch-tile' + (selected.has(key) ? ' checked' : '');
         tile.dataset.batch = label;
+        tile.dataset.key = key;
         tile.innerHTML = `
-          <div class="batch-name">${label}</div>
-          <div class="batch-site">${b.site_name || ''}</div>
-          <div class="batch-counts">${b.unused} unused &middot; ${b.total} total</div>
+          <div class="batch-top">
+            <input type="checkbox" class="batch-check" ${selected.has(key) ? 'checked' : ''}>
+            <div class="batch-titles">
+              <div class="batch-name">${label}</div>
+              <div class="batch-site">${b.site_name || ''}</div>
+            </div>
+          </div>
+          <div class="batch-progress"><div class="batch-progress-fill" style="width:${pct}%"></div></div>
+          <div class="batch-counts"><span>${used}/${b.total} used</span><b>${b.unused} left</b></div>
           <div class="batch-actions">
             <button type="button" class="btn ghost sm">View</button>
             <button type="button" class="btn sm">Print unused</button>
           </div>
         `;
-        const [viewBtn, printBtn] = tile.querySelectorAll('button');
+        const checkbox = tile.querySelector('.batch-check');
+        const [viewBtn, printBtn] = tile.querySelectorAll('.batch-actions button');
+
+        checkbox.onclick = (e) => e.stopPropagation();
+        checkbox.onchange = () => toggleBatchSelection(b, tile, checkbox.checked);
         viewBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); viewBatch(); };
         printBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); printBatchUnused(); };
         tile.onclick = () => { selectBatchTile(tile, label); viewBatch(); };
         gridEl.appendChild(tile);
       });
+      syncSelectAllCheckbox();
+      updateBulkToolbar();
     } catch (err) {
       gridEl.innerHTML = '<div class="batches-empty">Could not load batches.</div>';
     }
   }
 
   function selectBatchTile(tile, label) {
-    document.querySelectorAll('.batch-tile').forEach(t => t.classList.remove('selected'));
-    tile.classList.add('selected');
+    document.querySelectorAll('.batch-tile').forEach(t => t.classList.remove('viewing'));
+    tile.classList.add('viewing');
     document.getElementById('batchFilter').value = label;
   }
 
@@ -487,6 +563,135 @@
     document.getElementById('statusFilter').value = 'unused';
     await load();
     window.print();
+  }
+
+  // ---------- multi-select / bulk actions ----------
+  function toggleBatchSelection(b, tile, isChecked) {
+    const key = keyFor(b);
+    if (isChecked) selected.set(key, b); else selected.delete(key);
+    tile.classList.toggle('checked', isChecked);
+    syncSelectAllCheckbox();
+    updateBulkToolbar();
+  }
+
+  function toggleSelectAll(checkAll) {
+    document.querySelectorAll('.batch-tile').forEach(tile => {
+      const b = batchRows.find(r => keyFor(r) === tile.dataset.key);
+      if (!b) return;
+      const checkbox = tile.querySelector('.batch-check');
+      checkbox.checked = checkAll;
+      toggleBatchSelection(b, tile, checkAll);
+    });
+  }
+
+  function syncSelectAllCheckbox() {
+    const box = document.getElementById('selectAllBatches');
+    if (!box) return;
+    box.checked = batchRows.length > 0 && selected.size === batchRows.length;
+    box.indeterminate = selected.size > 0 && selected.size < batchRows.length;
+  }
+
+  function clearSelection() {
+    selected.clear();
+    document.querySelectorAll('.batch-tile').forEach(t => {
+      t.classList.remove('checked');
+      const cb = t.querySelector('.batch-check');
+      if (cb) cb.checked = false;
+    });
+    syncSelectAllCheckbox();
+    updateBulkToolbar();
+  }
+
+  function updateBulkToolbar() {
+    const bar = document.getElementById('bulkToolbar');
+    const count = document.getElementById('bulkCount');
+    if (selected.size > 0) {
+      bar.classList.add('show');
+      const totalUnused = Array.from(selected.values()).reduce((sum, b) => sum + b.unused, 0);
+      count.textContent = `${selected.size} batch${selected.size === 1 ? '' : 'es'} selected · ${totalUnused} unused voucher${totalUnused === 1 ? '' : 's'}`;
+    } else {
+      bar.classList.remove('show');
+    }
+  }
+
+  function selectedBatchPayload() {
+    return Array.from(selected.values()).map(b => ({ batch: b.batch || '__none__', siteId: b.site_id }));
+  }
+
+  // Pulls unused vouchers from every checked batch (each fetched with an
+  // explicit siteId so two same-named batches on different sites are never
+  // merged into one another's stack) and prints them as a single combined
+  // job - the whole point of a bulk print being "one trip to the printer,"
+  // not one print dialog per batch.
+  async function bulkPrintSelected() {
+    if (!selected.size) return;
+    document.getElementById('statusFilter').value = 'unused';
+    document.getElementById('status').textContent = 'Gathering selected batches\u2026';
+    try {
+      const lists = await Promise.all(Array.from(selected.values()).map(async (b) => {
+        const params = new URLSearchParams({ status: 'unused', siteId: b.site_id });
+        params.set('batch', b.batch || '__none__');
+        const res = await fetch('/api/vouchers?' + params.toString(), { headers: { Authorization: 'Bearer ' + token } });
+        return res.ok ? res.json() : [];
+      }));
+      const combined = lists.flat();
+      await renderVouchers(combined);
+      window.print();
+    } catch (err) {
+      document.getElementById('status').textContent = 'Could not gather the selected batches.';
+    }
+  }
+
+  async function bulkDeleteSelected() {
+    if (!selected.size) return;
+    const totalUnused = Array.from(selected.values()).reduce((sum, b) => sum + b.unused, 0);
+    const ok = confirm(
+      `Delete ${selected.size} batch${selected.size === 1 ? '' : 'es'}? ` +
+      `Vouchers with a live session are always kept, but everything else (about ${totalUnused} unused, plus any already-expired) will be permanently removed.`
+    );
+    if (!ok) return;
+
+    try {
+      const res = await fetch('/api/vouchers/batches/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ batches: selectedBatchPayload() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Could not delete the selected batches.'); return; }
+      const deleted = data.results.reduce((s, r) => s + r.deleted, 0);
+      const kept = data.results.reduce((s, r) => s + r.kept, 0);
+      document.getElementById('status').textContent =
+        `Deleted ${deleted} voucher${deleted === 1 ? '' : 's'}` + (kept ? ` · kept ${kept} in use` : '');
+      clearSelection();
+      await loadBatches(true);
+      await load();
+    } catch (err) {
+      alert('Network error - could not delete the selected batches.');
+    }
+  }
+
+  async function bulkExportSelected() {
+    if (!selected.size) return;
+    try {
+      const res = await fetch('/api/vouchers/batches/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ batches: selectedBatchPayload() }),
+      });
+      if (!res.ok) { alert('Could not export the selected batches.'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vouchers-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Network error - could not export the selected batches.');
+    }
   }
 
   async function loadBranding() {
@@ -528,6 +733,14 @@
     if (batch) params.set('batch', batch);
     const res = await fetch('/api/vouchers?' + params.toString(), { headers: { Authorization: 'Bearer ' + token } });
     const vouchers = await res.json();
+    await renderVouchers(vouchers);
+  }
+
+  // Shared by the normal single-filter load() above and bulkPrintSelected()
+  // below - both end up with a flat list of voucher rows to paint into the
+  // on-screen grid the same way, they just differ in how that list was
+  // gathered (one filtered fetch vs. several concatenated together).
+  async function renderVouchers(vouchers) {
     loadedVouchers = vouchers;
     document.getElementById('status').textContent = `${vouchers.length} voucher${vouchers.length === 1 ? '' : 's'}`;
     document.getElementById('empty').style.display = vouchers.length ? 'none' : 'block';

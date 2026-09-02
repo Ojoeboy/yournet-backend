@@ -120,8 +120,112 @@ router.get('/batches', asyncHandler(async (req, res) => {
   res.json(rows);
 }));
 
+// Bulk delete across several batch groups at once (the "Delete Selected"
+// action for the batch tiles' checkboxes). Applies the exact same
+// per-voucher safety rule as the single DELETE /:id route below -
+// 'redeeming' and live 'active' sessions are never touched - just fanned
+// out across every batch in the request instead of one voucher at a
+// time. Reports back what actually happened per batch (deleted vs. kept
+// because in use) rather than a single opaque success/fail, since a
+// batch that's "mostly redeemed" is a very different outcome from one
+// that's "fully cleared" and the admin should be able to tell which.
+router.post('/batches/bulk-delete', asyncHandler(async (req, res) => {
+  const { batches } = req.body;
+  if (!Array.isArray(batches) || !batches.length) {
+    return res.status(400).json({ error: 'No batches specified.' });
+  }
+  if (batches.length > 100) {
+    return res.status(400).json({ error: 'Too many batches in one request (max 100).' });
+  }
+
+  const results = [];
+  for (const b of batches) {
+    const siteId = b && b.siteId;
+    if (!siteId) { results.push({ batch: b?.batch ?? null, siteId: null, deleted: 0, kept: 0, error: 'Missing siteId' }); continue; }
+    const batchVal = b.batch === '__none__' || b.batch == null ? null : b.batch;
+    const batchClause = batchVal === null ? 'v.batch IS NULL' : 'v.batch=$3';
+    const baseParams = batchVal === null ? [req.tenantId, siteId] : [req.tenantId, siteId, batchVal];
+
+    const { rows: totalRows } = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM vouchers v WHERE v.tenant_id=$1 AND v.site_id=$2 AND ${batchClause}`,
+      baseParams
+    );
+    const { rows: deletedRows } = await pool.query(
+      `DELETE FROM vouchers v
+       WHERE v.tenant_id=$1 AND v.site_id=$2 AND ${batchClause}
+         AND v.status != 'redeeming'
+         AND NOT (v.status='active' AND (v.expires_at IS NULL OR v.expires_at > NOW()))
+       RETURNING v.id`,
+      baseParams
+    );
+    results.push({
+      batch: batchVal,
+      siteId,
+      deleted: deletedRows.length,
+      kept: totalRows[0].total - deletedRows.length,
+    });
+  }
+
+  res.json({ results });
+}));
+
+// CSV export for one or more selected batch groups - same voucher rows
+// print.html would render, flattened to a spreadsheet-friendly format
+// instead of cards. Kept simple/universal (no vendor-specific columns)
+// since this is meant to open cleanly in Excel/Sheets/Numbers alike.
+router.post('/batches/export', asyncHandler(async (req, res) => {
+  const { batches } = req.body;
+  if (!Array.isArray(batches) || !batches.length) {
+    return res.status(400).json({ error: 'No batches specified.' });
+  }
+
+  const orClauses = [];
+  const params = [req.tenantId];
+  batches.forEach((b) => {
+    const siteId = b && b.siteId;
+    if (!siteId) return;
+    const batchVal = b.batch === '__none__' || b.batch == null ? null : b.batch;
+    if (batchVal === null) {
+      params.push(siteId);
+      orClauses.push(`(v.site_id=$${params.length} AND v.batch IS NULL)`);
+    } else {
+      params.push(siteId, batchVal);
+      orClauses.push(`(v.site_id=$${params.length - 1} AND v.batch=$${params.length})`);
+    }
+  });
+  if (!orClauses.length) return res.status(400).json({ error: 'No valid batches specified.' });
+
+  const { rows } = await pool.query(
+    `SELECT v.code, v.batch, v.status, v.created_at, v.redeemed_at, v.expires_at,
+            p.label AS package_label, p.price AS package_price, s.name AS site_name
+     FROM vouchers v
+     JOIN packages p ON p.id = v.package_id
+     JOIN sites s ON s.id = v.site_id
+     WHERE v.tenant_id=$1 AND (${orClauses.join(' OR ')})
+     ORDER BY v.batch, v.created_at DESC
+     LIMIT 5000`,
+    params
+  );
+
+  const escape = (val) => {
+    if (val === null || val === undefined) return '';
+    const str = String(val);
+    return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  };
+  const header = ['Code', 'Batch', 'Site', 'Package', 'Price', 'Status', 'Created', 'Redeemed', 'Expires'];
+  const lines = [header.join(',')];
+  rows.forEach((v) => {
+    lines.push([
+      v.code, v.batch || '(no batch)', v.site_name, v.package_label, v.package_price,
+      v.status, v.created_at?.toISOString() || '', v.redeemed_at?.toISOString() || '', v.expires_at?.toISOString() || '',
+    ].map(escape).join(','));
+  });
+
+  res.type('text/csv').attachment('vouchers-export.csv').send(lines.join('\n'));
+}));
+
 router.get('/', asyncHandler(async (req, res) => {
-  const { status, batch, agentId } = req.query;
+  const { status, batch, agentId, siteId } = req.query;
   const clauses = ['v.tenant_id=$1'];
   const params = [req.tenantId];
   if (status) { params.push(status); clauses.push(`v.status=$${params.length}`); }
@@ -131,6 +235,11 @@ router.get('/', asyncHandler(async (req, res) => {
   // any string, so this keeps "no batch" unambiguous from "no filter".
   if (batch === '__none__') { clauses.push('v.batch IS NULL'); }
   else if (batch) { params.push(batch); clauses.push(`v.batch=$${params.length}`); }
+  // Optional - needed when the caller is disambiguating two same-named
+  // batches on different sites (see the comment on /batches above the
+  // one that generates this label pairing). Omitted, this just filters
+  // by batch name alone like it always has.
+  if (siteId) { params.push(siteId); clauses.push(`v.site_id=$${params.length}`); }
   if (agentId === 'none') {
     clauses.push('v.agent_id IS NULL');
   } else if (agentId) {
