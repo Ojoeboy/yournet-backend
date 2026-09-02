@@ -103,6 +103,14 @@
     <div class="msg" id="login-msg"></div>
   </div>
 
+  <div class="card hidden" id="business-select-panel">
+    <label>Which business?</label>
+    <div class="sub">This email is registered with more than one business - pick which one you're logging into.</div>
+    <div id="business-select-list"></div>
+    <button onclick="cancelBusinessSelect()" style="margin-top:8px;background:transparent;color:inherit;">Back</button>
+    <div class="msg" id="business-select-msg"></div>
+  </div>
+
   <div class="card hidden" id="register-panel">
     <label>Invite code</label>
     <input id="regCode" placeholder="e.g. INST-AB3D-9KQF" autocomplete="off" style="text-transform:uppercase">
@@ -311,16 +319,42 @@
     document.getElementById('register-panel').classList.toggle('hidden', tab !== 'register');
   }
 
-  async function login() {
+  async function login(tenantId) {
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
     try {
-      const data = await api('/api/installers/login', 'POST', {
-        email: document.getElementById('loginEmail').value,
-        password: document.getElementById('loginPassword').value,
-      });
+      const data = await api('/api/installers/login', 'POST', { email, password, tenantId });
+      if (data.needsBusinessSelection) {
+        showBusinessSelect(data.businesses);
+        return;
+      }
       onAuthed(data);
     } catch (err) {
       showMsg('login-msg', err.message, 'err');
     }
+  }
+
+  function showBusinessSelect(businesses) {
+    document.getElementById('login-panel').classList.add('hidden');
+    document.getElementById('register-panel').classList.add('hidden');
+    document.getElementById('business-select-panel').classList.remove('hidden');
+    const list = document.getElementById('business-select-list');
+    list.innerHTML = '';
+    businesses.forEach((b) => {
+      const btn = document.createElement('button');
+      btn.textContent = b.businessName;
+      btn.style.display = 'block';
+      btn.style.width = '100%';
+      btn.style.marginBottom = '8px';
+      btn.onclick = () => login(b.tenantId);
+      list.appendChild(btn);
+    });
+  }
+
+  function cancelBusinessSelect() {
+    document.getElementById('business-select-panel').classList.add('hidden');
+    document.getElementById('login-panel').classList.remove('hidden');
+    showMsg('business-select-msg', '', '');
   }
 
   async function register() {
@@ -415,6 +449,16 @@
       document.getElementById('wUseTls').checked = !!site.mk_use_tls;
       document.getElementById('wUseRadius').checked = site.mk_auth_mode === 'radius';
       onRadiusToggle();
+      if (site.mk_auth_mode === 'radius') {
+        try {
+          const cfg = await api(`/api/installers/me/sites/${id}/radius-config`);
+          renderRadiusInstructions(cfg);
+        } catch (err) {
+          // Non-fatal - installer can still see the checkbox is on even if the
+          // reveal call fails; they just won't get the server/secret values back.
+          showMsg('basics-msg', `Could not load RADIUS config: ${err.message}`, 'err');
+        }
+      }
       document.getElementById('wizard').classList.remove('hidden');
       const step = site.install_status === 'in_progress' ? 'basics' : site.install_status === 'testing' ? 'test' : 'done';
       goToStep(step);
