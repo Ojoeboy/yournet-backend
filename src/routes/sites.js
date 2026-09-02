@@ -20,7 +20,7 @@ router.post('/', asyncHandler(async (req, res) => {
   const { name, type, mikrotik: mk, omada: om, unifi: uf, meraki: mr } = req.body;
   const missingError = validate.required(req.body, ['name', 'type']);
   if (missingError) return res.status(400).json({ error: missingError });
-  if (!['mikrotik', 'omada', 'unifi', 'meraki'].includes(type)) return res.status(400).json({ error: "type must be 'mikrotik', 'omada', 'unifi', or 'meraki'" });
+  if (!['mikrotik', 'omada', 'unifi', 'meraki', 'ruijie'].includes(type)) return res.status(400).json({ error: "type must be 'mikrotik', 'omada', 'unifi', 'meraki', or 'ruijie'" });
   if (uf?.authMode && !['classic', 'unifios'].includes(uf.authMode)) {
     return res.status(400).json({ error: "unifi.authMode must be 'classic' or 'unifios'" });
   }
@@ -180,7 +180,18 @@ router.post('/:id/test', asyncHandler(async (req, res) => {
 
   try {
     let result;
-    if (site.type === 'mikrotik') {
+    if (site.type === 'ruijie') {
+      // No API driver exists for Ruijie (see the RADIUS section comment
+      // below) - there is nothing to reach out and ping. The only real
+      // signal that a Ruijie gateway is working is a RADIUS Access-Request
+      // actually arriving, which is visible in the RADIUS config panel /
+      // server logs, not something this endpoint can check on demand.
+      return res.json({
+        online: null,
+        notApplicable: true,
+        message: 'Ruijie sites use RADIUS only - there is no live connection test. Verify by connecting the gateway and checking that logins are being accepted.',
+      });
+    } else if (site.type === 'mikrotik') {
       result = await mikrotik.ping({ ...site, mk_password_decrypted: decrypt(site.mk_password_encrypted) });
     } else if (site.type === 'unifi') {
       result = await unifi.ping({
@@ -628,8 +639,11 @@ router.post('/:id/revoke-client', asyncHandler(async (req, res) => {
 
 // --- RADIUS mode (CGNAT-safe voucher redemption) ---------------------------
 // See integrations/radius.js's header comment for the full "why". This is
-// mikrotik-only - Omada/UniFi/Meraki are cloud-controller-driven and don't
-// have the RouterOS-API-unreachable-behind-CGNAT problem this solves.
+// mikrotik/ruijie-only - Omada/UniFi/Meraki are cloud-controller-driven and
+// don't have the RouterOS-API-unreachable-behind-CGNAT problem this solves.
+// Ruijie has no direct API driver at all (no integrations/ruijie.js exists -
+// their Cloud API isn't confirmed enough to build against yet), so for
+// ruijie sites RADIUS isn't an alternative mode, it's the ONLY mode.
 
 router.get('/:id/radius-config', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
@@ -638,7 +652,7 @@ router.get('/:id/radius-config', asyncHandler(async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: 'Site not found.' });
   const site = rows[0];
-  if (site.type !== 'mikrotik') return res.status(400).json({ error: 'RADIUS mode is only available for Mikrotik sites.' });
+  if (!['mikrotik', 'ruijie'].includes(site.type)) return res.status(400).json({ error: 'RADIUS mode is only available for Mikrotik or Ruijie sites.' });
 
   res.json({
     mode: site.mk_auth_mode,
@@ -669,7 +683,7 @@ router.post('/:id/radius-mode', asyncHandler(async (req, res) => {
   ]);
   if (!rows.length) return res.status(404).json({ error: 'Site not found.' });
   const site = rows[0];
-  if (site.type !== 'mikrotik') return res.status(400).json({ error: 'RADIUS mode is only available for Mikrotik sites.' });
+  if (!['mikrotik', 'ruijie'].includes(site.type)) return res.status(400).json({ error: 'RADIUS mode is only available for Mikrotik or Ruijie sites.' });
 
   if (!enable) {
     // Secret + NAS-Identifier are cleared, not just left in place with the

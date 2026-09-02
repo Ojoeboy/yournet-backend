@@ -204,6 +204,7 @@
     <option value="omada">TP-Link Omada</option>
     <option value="unifi">Ubiquiti UniFi (self-hosted controller)</option>
     <option value="meraki">Cisco Meraki (cloud dashboard)</option>
+    <option value="ruijie">Ruijie / Reyee (RADIUS only)</option>
   </select>
 
   <div id="siteFields-mikrotik" class="site-fields">
@@ -337,6 +338,16 @@
     </div>
     <label>Network ID</label>
     <input id="mrNetworkId" placeholder="e.g. N_1234567890">
+  </div>
+
+  <div id="siteFields-ruijie" class="site-fields hidden">
+    <p style="font-size:12px;color:#6b8a91">
+      Ruijie/Reyee sites connect over RADIUS only - there's no separate API integration
+      for direct control, so there's nothing to fill in here. Saving this site immediately
+      sets up RADIUS and gives you the server address, secret, and NAS-Identifier to enter
+      on your Ruijie/Reyee gateway's RADIUS client settings. Only gateway models with RADIUS
+      support (check your model's spec sheet) can use this - not every Reyee device does.
+    </p>
   </div>
 
   <button onclick="addSite()" data-i18n="saveSiteBtn">Save site</button>
@@ -1098,7 +1109,7 @@
     // exist - mikrotik-in-RADIUS-mode has none to test yet (that's the
     // whole point), so re-evaluate rather than always showing it.
     document.getElementById('testConnectionBtn').classList.toggle(
-      'hidden', type === 'mikrotik' && document.getElementById('mkUseRadius').checked
+      'hidden', (type === 'mikrotik' && document.getElementById('mkUseRadius').checked) || type === 'ruijie'
     );
   }
 
@@ -1171,12 +1182,13 @@
   }
 
   async function addSite() {
-    const isMkRadius = document.getElementById('siteType').value === 'mikrotik' && document.getElementById('mkUseRadius').checked;
+    const type = document.getElementById('siteType').value;
+    const isRadiusOnly = (type === 'mikrotik' && document.getElementById('mkUseRadius').checked) || type === 'ruijie';
     try {
       const created = await api('/api/sites', 'POST', buildSitePayload());
       loadSitesAndPackages();
 
-      if (!isMkRadius) {
+      if (!isRadiusOnly) {
         showMsg('site-msg', 'Site saved. Click "Test connection" to verify.', 'ok');
         return;
       }

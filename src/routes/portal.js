@@ -92,7 +92,7 @@ router.post('/:siteId/redeem', asyncHandler(async (req, res) => {
   // for. Deliberately NOT claiming/marking the voucher here - that only
   // happens on the real RADIUS Access-Request, so a customer who checks a
   // code but doesn't proceed hasn't burned it.
-  if (type === 'mikrotik' && authMode === 'radius') {
+  if ((type === 'mikrotik' || type === 'ruijie') && authMode === 'radius') {
     const { rows: voucherRows } = await pool.query(
       `SELECT status FROM vouchers WHERE tenant_id=$1 AND site_id=$2 AND code=$3`,
       [tenantId, siteId, code.trim().toUpperCase()]

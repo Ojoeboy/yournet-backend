@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS sites (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('mikrotik', 'omada', 'unifi', 'meraki')),
+  type TEXT NOT NULL CHECK (type IN ('mikrotik', 'omada', 'unifi', 'meraki', 'ruijie')),
 
   mk_host TEXT,
   mk_api_port INTEGER DEFAULT 8728,
@@ -221,8 +221,11 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_use_rotating_backgrounds BOOLE
 --            outbound connection (Access-Request) to us when a customer
 --            logs in. Outbound-only, so it works from behind CGNAT/
 --            Starlink with no port-forwarding or tunnel needed.
--- Only meaningful for type='mikrotik' - Omada/UniFi/Meraki keep using
--- their own cloud-controller flow regardless of this value.
+-- Only meaningful for type='mikrotik' or type='ruijie' - Omada/UniFi/Meraki
+-- keep using their own cloud-controller flow regardless of this value.
+-- Ruijie has no direct API driver (see integrations/ - there is no
+-- ruijie.js), so a ruijie site's mk_auth_mode is always 'radius'; 'api'
+-- mode exists as a column value but is never valid for this type.
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS mk_auth_mode TEXT NOT NULL DEFAULT 'api';
 DO $$
 BEGIN
@@ -343,7 +346,7 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS unifi_username TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS unifi_password_encrypted TEXT;
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS unifi_site TEXT DEFAULT 'default';
 ALTER TABLE sites DROP CONSTRAINT IF EXISTS sites_type_check;
-ALTER TABLE sites ADD CONSTRAINT sites_type_check CHECK (type IN ('mikrotik', 'omada', 'unifi', 'meraki'));
+ALTER TABLE sites ADD CONSTRAINT sites_type_check CHECK (type IN ('mikrotik', 'omada', 'unifi', 'meraki', 'ruijie'));
 
 -- Safe to re-run: adds UniFi OS Console (API-key) auth mode support to a
 -- sites table that predates it. Existing rows default to 'classic' so

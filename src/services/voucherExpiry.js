@@ -27,6 +27,13 @@
 //              connected - that status/reality mismatch is exactly what
 //              this job exists to close for the types it CAN enforce, so
 //              it's not being reintroduced here for the types it can't.
+//   ruijie   - same DB-only treatment as mikrotik+radius, and for the same
+//              reason (no reachable API - see routes/sites.js's RADIUS
+//              section comment). There is no integrations/ruijie.js at
+//              all, so unlike omada/meraki this isn't "no revoke primitive
+//              yet" - RADIUS mode itself is the only mode this type has,
+//              so it always takes the DB-only branch, never the "no
+//              coverage, skip entirely" one.
 const pool = require('../db/pool');
 const mikrotik = require('../integrations/mikrotik');
 const unifi = require('../integrations/unifi');
@@ -71,6 +78,10 @@ async function runVoucherExpirySweep() {
     try {
       if (siteRow.type === 'mikrotik') {
         site = { ...siteRow, mk_password_decrypted: decrypt(siteRow.mk_password_encrypted) };
+      } else if (siteRow.type === 'ruijie') {
+        // No credentials to decrypt - ruijie has no API driver, only the
+        // RADIUS branch below ever applies to it.
+        site = siteRow;
       } else if (siteRow.type === 'unifi') {
         site = {
           ...siteRow,
@@ -89,7 +100,7 @@ async function runVoucherExpirySweep() {
 
     for (const voucher of siteVouchers) {
       try {
-        if (siteRow.type === 'mikrotik' && siteRow.mk_auth_mode === 'radius') {
+        if ((siteRow.type === 'mikrotik' && siteRow.mk_auth_mode === 'radius') || siteRow.type === 'ruijie') {
           // Can't reach this router's API to kick the session - that's the
           // whole reason it's in radius-mode (CGNAT/no public IP). The
           // wall-clock promise still has to be kept in the DB on schedule
