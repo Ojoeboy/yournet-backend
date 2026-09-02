@@ -63,22 +63,45 @@ router.post('/register', installerRegisterLimiter, asyncHandler(async (req, res)
   }
 }));
 
-// PUBLIC - installer self-service login. Same ambiguous-email fail-closed
-// behavior as routes/agents.js POST /login, for the same reason (email is
-// only unique PER TENANT).
+// PUBLIC - installer self-service login. Email is only unique PER TENANT
+// (see idx_tenant_users_tenant_email), so the same installer can legitimately
+// hold accounts under several businesses with the same email/password pair.
+// Rather than failing closed on that ambiguity, we resolve it: check the
+// password against every matching row first (so business names are never
+// revealed to someone who doesn't actually know the password), and if more
+// than one business matches, ask the caller to pick one via `tenantId`
+// before issuing a token.
 router.post('/login', installerLoginLimiter, asyncHandler(async (req, res) => {
-  const { email, password } = req.body || {};
+  const { email, password, tenantId } = req.body || {};
   const missingError = validate.required(req.body || {}, ['email', 'password']);
   if (missingError) return res.status(400).json({ error: missingError });
 
   const { rows } = await pool.query(`SELECT * FROM tenant_users WHERE email=$1 AND role='installer'`, [email]);
   if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
-  if (rows.length > 1) {
-    return res.status(401).json({ error: 'This email is registered with more than one business - ask your manager for a login link instead.' });
+
+  const validRows = [];
+  for (const row of rows) {
+    if (await bcrypt.compare(password, row.password_hash)) validRows.push(row);
   }
-  const installer = rows[0];
-  const valid = await bcrypt.compare(password, installer.password_hash);
-  if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+  if (!validRows.length) return res.status(401).json({ error: 'Invalid credentials' });
+
+  let installer;
+  if (validRows.length === 1) {
+    installer = validRows[0];
+  } else if (tenantId) {
+    installer = validRows.find((r) => r.tenant_id === tenantId);
+    if (!installer) return res.status(401).json({ error: 'Invalid credentials' });
+  } else {
+    const tenantIds = validRows.map((r) => r.tenant_id);
+    const { rows: tenants } = await pool.query(
+      `SELECT id, business_name FROM tenants WHERE id = ANY($1)`,
+      [tenantIds]
+    );
+    return res.status(200).json({
+      needsBusinessSelection: true,
+      businesses: tenants.map((t) => ({ tenantId: t.id, businessName: t.business_name })),
+    });
+  }
 
   const { rows: tenantRows } = await pool.query('SELECT plan_expires_at FROM tenants WHERE id=$1', [installer.tenant_id]);
   const { locked, error: lockError } = checkLicenseLockout(tenantRows[0] || {});
@@ -121,6 +144,22 @@ async function loadAssignedSite(req) {
 
 function decryptedMk(site) {
   return { ...site, mk_password_decrypted: decrypt(site.mk_password_encrypted) };
+}
+
+// Writes to installer_activity_log (see schema.sql) - one row per
+// config-changing action an installer takes on an assigned site, so an
+// owner has a record of it even though (per the earlier design decision)
+// an installer's edit access to their assigned site is never time-limited.
+// Never store credential VALUES in detail - field names only - since this
+// log is readable from the admin panel and isn't itself encrypted.
+async function logInstallerActivity(req, site, type, detail) {
+  const { rows } = await pool.query('SELECT name FROM tenant_users WHERE id=$1', [req.userId]);
+  await pool.query(
+    `INSERT INTO installer_activity_log
+       (tenant_id, installer_id, installer_name_snapshot, site_id, site_name_snapshot, type, detail)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [req.tenantId, req.userId, rows[0]?.name || null, site.id, site.name, type, detail ? JSON.stringify(detail) : null]
+  );
 }
 
 router.get('/me', asyncHandler(async (req, res) => {
@@ -210,6 +249,17 @@ router.patch('/me/sites/:id', asyncHandler(async (req, res) => {
     [name, host, port, username, password ? encrypt(password) : null, hotspotProfile,
       typeof useTls === 'boolean' ? useTls : null, site.id, credentialsChanged]
   );
+
+  // Field NAMES only, never values - see logInstallerActivity comment above.
+  const changedFields = [
+    name != null && 'name', host != null && 'host', port != null && 'port',
+    username != null && 'username', password != null && 'password',
+    hotspotProfile != null && 'hotspotProfile', typeof useTls === 'boolean' && 'useTls',
+  ].filter(Boolean);
+  if (changedFields.length) {
+    await logInstallerActivity(req, rows[0], 'site_edit', { fields: changedFields });
+  }
+
   res.json(rows[0]);
 }));
 
@@ -304,6 +354,7 @@ router.post('/me/sites/:id/radius-mode', asyncHandler(async (req, res) => {
       `UPDATE sites SET mk_auth_mode='api', radius_secret_encrypted=NULL, radius_nas_identifier=NULL WHERE id=$1`,
       [site.id]
     );
+    await logInstallerActivity(req, site, 'radius_mode_disabled');
     return res.json({ ok: true, mode: 'api' });
   }
 
@@ -313,6 +364,8 @@ router.post('/me/sites/:id/radius-mode', asyncHandler(async (req, res) => {
     `UPDATE sites SET mk_auth_mode='radius', radius_secret_encrypted=$1, radius_nas_identifier=$2 WHERE id=$3`,
     [encrypt(secret), nasIdentifier, site.id]
   );
+  // NAS identifier only - never the secret itself, see logInstallerActivity comment above.
+  await logInstallerActivity(req, site, 'radius_mode_enabled', { nasIdentifier });
   res.json({
     ok: true,
     mode: 'radius',
@@ -334,7 +387,11 @@ router.post('/me/sites/:id/status', asyncHandler(async (req, res) => {
   if (!['in_progress', 'testing', 'live'].includes(status)) {
     return res.status(400).json({ error: "status must be 'in_progress', 'testing', or 'live'." });
   }
+  const fromStatus = site.install_status;
   await pool.query(`UPDATE site_installers SET status=$1, updated_at=now() WHERE site_id=$2`, [status, site.id]);
+  if (status !== fromStatus) {
+    await logInstallerActivity(req, site, 'status_change', { from: fromStatus, to: status });
+  }
   res.json({ ok: true, status });
 }));
 

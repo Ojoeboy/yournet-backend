@@ -834,4 +834,27 @@ router.patch('/site-installers/:siteId', asyncHandler(async (req, res) => {
   res.json(rows[0]);
 }));
 
+// Admin-facing activity feed: every config-changing action an installer
+// has taken on an assigned site (edits, RADIUS mode toggles, status
+// changes), across all installers (or one, via ?installerId=, or one
+// site, via ?siteId=) - same pattern as GET /api/agents/activity, and
+// powers the "Installer Activity" list on the Installers tab of
+// public/agents.html.
+router.get('/installer-activity', asyncHandler(async (req, res) => {
+  const { installerId, siteId, limit } = req.query;
+  const clauses = ['tenant_id=$1'];
+  const params = [req.tenantId];
+  if (installerId) { params.push(installerId); clauses.push(`installer_id=$${params.length}`); }
+  if (siteId) { params.push(siteId); clauses.push(`site_id=$${params.length}`); }
+  params.push(Math.min(Number(limit) || 100, 300));
+
+  const { rows } = await pool.query(
+    `SELECT id, installer_id, installer_name_snapshot, site_id, site_name_snapshot, type, detail, created_at
+     FROM installer_activity_log WHERE ${clauses.join(' AND ')}
+     ORDER BY created_at DESC LIMIT $${params.length}`,
+    params
+  );
+  res.json(rows);
+}));
+
 module.exports = router;

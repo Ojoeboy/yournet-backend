@@ -126,6 +126,17 @@
   <div id="installersList"></div>
 </div>
 
+<!-- Every config-changing action an installer has taken on an assigned
+     site - installers keep edit access indefinitely (there's no
+     time-based expiry), so this is the visibility into that access. -->
+<div class="card hidden" id="installer-activity-card">
+  <h2>Installer Activity</h2>
+  <div style="font-size:12px;color:var(--yn-muted);margin-bottom:8px">
+    Every site edit, RADIUS mode toggle, and install-status change made by an installer, most recent first.
+  </div>
+  <div id="installerActivityList"></div>
+</div>
+
   </main>
 </div>
 
@@ -152,7 +163,7 @@
     return data;
   }
 
-  const AGENTS_TAB_CARDS = { overview: 'overview-card', activity: 'activity-card', installers: ['installers-card', 'installer-list-card'] };
+  const AGENTS_TAB_CARDS = { overview: 'overview-card', activity: 'activity-card', installers: ['installers-card', 'installer-list-card', 'installer-activity-card'] };
 
   function switchAgentsTab(key) {
     Object.keys(AGENTS_TAB_CARDS).forEach(function (k) {
@@ -161,7 +172,7 @@
       document.getElementById('tab-' + k).classList.toggle('active', k === key);
     });
     if (key === 'activity') loadAgentActivity();
-    if (key === 'installers') { loadInvites(); loadInstallers(); }
+    if (key === 'installers') { loadInvites(); loadInstallers(); loadInstallerActivity(); }
   }
 
   async function loadAgents() {
@@ -362,6 +373,47 @@
       await loadInstallers();
     } catch (err) {
       alert(err.message);
+    }
+  }
+
+  const INSTALLER_ACTIVITY_LABELS = {
+    site_edit: { label: 'Edited site', color: '#e8c777' },
+    radius_mode_enabled: { label: 'Turned on RADIUS mode', color: '#6bd68a' },
+    radius_mode_disabled: { label: 'Turned off RADIUS mode', color: '#9fb6bc' },
+    status_change: { label: 'Changed install status', color: '#6bd68a' },
+  };
+
+  async function loadInstallerActivity() {
+    const list = document.getElementById('installerActivityList');
+    list.innerHTML = '<div style="color:var(--yn-muted);font-size:13px">Loading&hellip;</div>';
+    try {
+      const entries = await api('/api/sites/installer-activity');
+      if (!entries.length) {
+        list.innerHTML = '<div style="color:var(--yn-muted);font-size:13px">No installer activity yet.</div>';
+        return;
+      }
+      list.innerHTML = entries.map(e => {
+        const meta = INSTALLER_ACTIVITY_LABELS[e.type] || { label: e.type, color: '#9fb6bc' };
+        const when = new Date(e.created_at).toLocaleString();
+        const who = e.installer_name_snapshot || 'Unknown installer';
+        let detailText = '';
+        if (e.type === 'site_edit' && e.detail) {
+          detailText = (e.detail.fields || []).join(', ');
+        } else if (e.type === 'status_change' && e.detail) {
+          detailText = `${INSTALL_STATUS_LABEL[e.detail.from] || e.detail.from} &rarr; ${INSTALL_STATUS_LABEL[e.detail.to] || e.detail.to}`;
+        } else if (e.type === 'radius_mode_enabled' && e.detail) {
+          detailText = `NAS ID ${e.detail.nasIdentifier}`;
+        }
+        return `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:13px">
+          <div>
+            <span style="color:${meta.color};font-weight:700">${meta.label}</span>
+            <div style="color:#9fb6bc;font-size:12px">${who} &middot; ${e.site_name_snapshot || 'Unknown site'}${detailText ? ' &middot; ' + detailText : ''}</div>
+          </div>
+          <div style="color:var(--yn-muted);font-size:11px;white-space:nowrap">${when}</div>
+        </div>`;
+      }).join('');
+    } catch (err) {
+      list.innerHTML = `<div class="msg show err">${err.message}</div>`;
     }
   }
 

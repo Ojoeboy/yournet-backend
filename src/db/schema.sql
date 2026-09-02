@@ -837,3 +837,28 @@ CREATE TABLE IF NOT EXISTS site_installers (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_site_installers_installer ON site_installers(installer_id);
+
+-- Feed for the owner's "Installer Activity" view (public/agents.html,
+-- Installers tab) - same reasoning as agent_activity_log above: an
+-- installer keeps full, indefinite edit rights on their assigned site
+-- (see the site_installers comment - this isn't an access gate), and
+-- there was previously zero record of what they did with that access.
+-- One row per config-changing action - site credential/setting edits,
+-- RADIUS mode toggles, and install-status changes - written from
+-- routes/installers.js. installer_name_snapshot and site_name_snapshot
+-- are kept alongside their _id columns (which go NULL if the installer
+-- or site is ever deleted) so the log stays readable/historical either
+-- way, matching the agent_activity_log pattern.
+CREATE TABLE IF NOT EXISTS installer_activity_log (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  installer_id UUID REFERENCES tenant_users(id) ON DELETE SET NULL,
+  installer_name_snapshot TEXT,
+  site_id UUID REFERENCES sites(id) ON DELETE SET NULL,
+  site_name_snapshot TEXT,
+  type TEXT NOT NULL, -- 'site_edit' | 'radius_mode_enabled' | 'radius_mode_disabled' | 'status_change'
+  detail JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_installer_activity_tenant_created ON installer_activity_log(tenant_id, created_at DESC);
