@@ -223,19 +223,24 @@ ALTER TABLE sites ADD COLUMN IF NOT EXISTS portal_use_rotating_backgrounds BOOLE
 --            Starlink with no port-forwarding or tunnel needed.
 -- Only meaningful for type='mikrotik' or type='ruijie' - Omada/UniFi/Meraki
 -- keep using their own cloud-controller flow regardless of this value.
--- Ruijie has no direct API driver (see integrations/ - there is no
--- ruijie.js), so a ruijie site's mk_auth_mode is always 'radius'; 'api'
--- mode exists as a column value but is never valid for this type.
+-- 'api' mode is never valid for type='ruijie' (there is no push-model
+-- driver for it - see integrations/ruijie.js's header for why). A ruijie
+-- site instead picks between:
+--   'radius'       - EG-series gateways with a native RADIUS client. Same
+--                     CGNAT-safe path as mikrotik's radius mode, unchanged.
+--   'ruijie_cloud'  - Reyee/cloud-only gateways without RADIUS support,
+--                     via Ruijie Cloud's own "Cloud Auth" HTTP callback -
+--                     see routes/ruijieCloudAuth.js.
 ALTER TABLE sites ADD COLUMN IF NOT EXISTS mk_auth_mode TEXT NOT NULL DEFAULT 'api';
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'sites_mk_auth_mode_check'
-  ) THEN
-    ALTER TABLE sites ADD CONSTRAINT sites_mk_auth_mode_check
-      CHECK (mk_auth_mode IN ('api', 'radius'));
-  END IF;
-END $$;
+-- 'ruijie_cloud' added below once ruijie's Cloud Auth HTTP callback path
+-- existed - a CHECK constraint has to be dropped and recreated to widen it,
+-- ADD COLUMN IF NOT EXISTS alone can't do it. Unconditional drop+add
+-- (not the old IF NOT EXISTS-guarded version) so an already-deployed DB
+-- actually picks up the new allowed value instead of silently keeping the
+-- old constraint forever - same bug class as sites_type_check above.
+ALTER TABLE sites DROP CONSTRAINT IF EXISTS sites_mk_auth_mode_check;
+ALTER TABLE sites ADD CONSTRAINT sites_mk_auth_mode_check
+  CHECK (mk_auth_mode IN ('api', 'radius', 'ruijie_cloud'));
 
 -- Per-site RADIUS shared secret (AES-256-GCM encrypted, same scheme as
 -- mk_password_encrypted etc. - see utils/credentialCrypto.js). Generated
@@ -285,6 +290,49 @@ CREATE TABLE IF NOT EXISTS radius_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_radius_sessions_site_status ON radius_sessions(site_id, status);
 CREATE INDEX IF NOT EXISTS idx_radius_sessions_voucher ON radius_sessions(voucher_id);
+
+-- Ruijie Cloud "Cloud Auth" HTTP callback mode (mk_auth_mode='ruijie_cloud')
+-- - see routes/ruijieCloudAuth.js and integrations/ruijie.js's header.
+--
+-- ruijie_account/ruijie_account_password_encrypted: the CUSTOMER's own
+-- Ruijie Cloud login, used only by the lower-priority integrations/ruijie.js
+-- REST sync (site listing, online-client counts) - NOT used by the auth
+-- callback itself, which needs no login at all (Ruijie Cloud calls US).
+-- ruijie_callback_token_encrypted: random per-site secret appended as a
+-- query param to the Auth/Accounting Server URLs configured in Ruijie
+-- Cloud's dashboard - see routes/ruijieCloudAuth.js's verifyCallbackToken.
+-- Encrypted (not just hashed) so it can be re-shown to the tenant the same
+-- way radius_secret_encrypted is, since they legitimately need to see it
+-- again to configure/reconfigure Ruijie Cloud's dashboard.
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS ruijie_account TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS ruijie_account_password_encrypted TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS ruijie_tenant_id TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS ruijie_group_id TEXT;
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS ruijie_callback_token_encrypted TEXT;
+
+-- One row per online client on a ruijie_cloud-mode site, upserted on the
+-- Auth callback (session start) and the Accounting callback (heartbeat /
+-- stop). Mirrors radius_sessions' purpose (backs "live clients" + usage
+-- visibility for a site type our backend can't reach out and poll
+-- directly) but keyed on client_mac rather than an acct_session_id - the
+-- reconstructed Ruijie wire format this is built against doesn't confirm
+-- a session-id equivalent, so client_mac (scoped per-site) is the most
+-- honest identifier available; see integrations/ruijie.js's HONEST LIMITS.
+CREATE TABLE IF NOT EXISTS ruijie_cloud_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  site_id UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  voucher_id UUID REFERENCES vouchers(id),
+  client_mac TEXT NOT NULL,
+  gw_sn TEXT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'stopped')),
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  stopped_at TIMESTAMPTZ,
+  UNIQUE(site_id, client_mac)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ruijie_cloud_sessions_site_status ON ruijie_cloud_sessions(site_id, status);
+CREATE INDEX IF NOT EXISTS idx_ruijie_cloud_sessions_voucher ON ruijie_cloud_sessions(voucher_id);
 
 -- Safe to re-run: lets a Mikrotik site connect over API-SSL (port 8729,
 -- encrypted) instead of the plaintext API (port 8728). Defaults to false so

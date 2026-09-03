@@ -18,6 +18,7 @@ const ownerRoutes = require('./routes/owner');
 const paymentGatewayRoutes = require('./routes/paymentGateways');
 const portalRoutes = require('./routes/portal');
 const pppoeRoutes = require('./routes/pppoe');
+const ruijieCloudAuthRoutes = require('./routes/ruijieCloudAuth');
 
 const app = express();
 // Render puts this app behind exactly one reverse-proxy hop, which sets
@@ -164,6 +165,11 @@ app.use('/license', apiLimiter, licenseRoutes);
 app.use('/owner', ownerLoginLimiter, ownerRoutes);
 app.use('/billing', apiLimiter, billingRoutes);
 app.use('/portal', portalLimiter, portalRoutes);
+// No apiLimiter/portalLimiter here deliberately - this is Ruijie Cloud's own
+// infrastructure calling us (potentially many gateways/devices), not a
+// logged-in tenant or a single customer's browser. It has its own
+// purpose-tuned rate limit inside routes/ruijieCloudAuth.js instead.
+app.use('/api/ruijie', ruijieCloudAuthRoutes);
 
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));

@@ -7,6 +7,7 @@ const mikrotik = require('../integrations/mikrotik');
 const omada = require('../integrations/omada');
 const unifi = require('../integrations/unifi');
 const meraki = require('../integrations/meraki');
+const ruijie = require('../integrations/ruijie');
 const { encrypt, decrypt } = require('../utils/credentialCrypto');
 const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
@@ -17,7 +18,7 @@ const router = express.Router();
 router.use(requireAuth, requireNotAgent);
 
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, type, mikrotik: mk, omada: om, unifi: uf, meraki: mr } = req.body;
+  const { name, type, mikrotik: mk, omada: om, unifi: uf, meraki: mr, ruijie: rj } = req.body;
   const missingError = validate.required(req.body, ['name', 'type']);
   if (missingError) return res.status(400).json({ error: missingError });
   if (!['mikrotik', 'omada', 'unifi', 'meraki', 'ruijie'].includes(type)) return res.status(400).json({ error: "type must be 'mikrotik', 'omada', 'unifi', 'meraki', or 'ruijie'" });
@@ -31,8 +32,9 @@ router.post('/', asyncHandler(async (req, res) => {
        omada_client_secret_encrypted, omada_omadac_id, omada_site_id,
        unifi_base_url, unifi_username, unifi_password_encrypted, unifi_site,
        unifi_auth_mode, unifi_api_key_encrypted,
-       meraki_dashboard_api_key_encrypted, meraki_network_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING id, name, type, status`,
+       meraki_dashboard_api_key_encrypted, meraki_network_id,
+       ruijie_account, ruijie_account_password_encrypted)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING id, name, type, status`,
     [
       req.tenantId, name, type,
       mk?.host, mk?.port || (mk?.useTls ? 8729 : 8728), mk?.username, encrypt(mk?.password), mk?.hotspotProfile,
@@ -41,6 +43,10 @@ router.post('/', asyncHandler(async (req, res) => {
       uf?.baseUrl, uf?.username, encrypt(uf?.password), uf?.site || 'default',
       uf?.authMode || 'classic', encrypt(uf?.apiKey),
       encrypt(mr?.dashboardApiKey), mr?.networkId,
+      // Optional even for type='ruijie' - only needed for the nice-to-have
+      // Ruijie Cloud REST sync (integrations/ruijie.js), never for the
+      // load-bearing radius/ruijie_cloud access paths.
+      rj?.account, encrypt(rj?.accountPassword),
     ]
   );
   res.json(rows[0]);
@@ -68,7 +74,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   ]);
   if (!existing.length) return res.status(404).json({ error: 'Site not found' });
 
-  const { name, active, mikrotik: mk, omada: om, unifi: uf, meraki: mr } = req.body;
+  const { name, active, mikrotik: mk, omada: om, unifi: uf, meraki: mr, ruijie: rj } = req.body;
   if (uf?.authMode && !['classic', 'unifios'].includes(uf.authMode)) {
     return res.status(400).json({ error: "unifi.authMode must be 'classic' or 'unifios'" });
   }
@@ -76,7 +82,7 @@ router.patch('/:id', asyncHandler(async (req, res) => {
   // Only force a re-test (status -> 'unconfigured') when router/controller
   // credentials actually changed. A pure active/inactive toggle (the
   // deactivate button) shouldn't wipe a site's verified connection status.
-  const credentialsChanged = !!(mk || om || uf || mr);
+  const credentialsChanged = !!(mk || om || uf || mr || rj);
 
   const { rows } = await pool.query(
     `UPDATE sites SET
@@ -100,6 +106,8 @@ router.patch('/:id', asyncHandler(async (req, res) => {
        unifi_api_key_encrypted = COALESCE($18, unifi_api_key_encrypted),
        meraki_dashboard_api_key_encrypted = COALESCE($19, meraki_dashboard_api_key_encrypted),
        meraki_network_id = COALESCE($20, meraki_network_id),
+       ruijie_account = COALESCE($25, ruijie_account),
+       ruijie_account_password_encrypted = COALESCE($26, ruijie_account_password_encrypted),
        active = COALESCE($21, active),
        status = CASE WHEN $24 THEN 'unconfigured' ELSE status END
      WHERE id=$22 AND tenant_id=$23
@@ -112,7 +120,8 @@ router.patch('/:id', asyncHandler(async (req, res) => {
       uf?.authMode, encrypt(uf?.apiKey),
       encrypt(mr?.dashboardApiKey), mr?.networkId,
       typeof active === 'boolean' ? active : null,
-      req.params.id, req.tenantId, credentialsChanged,
+      req.params.id, req.tenantId, credentialsChanged || !!rj,
+      rj?.account, encrypt(rj?.accountPassword),
     ]
   );
   res.json(rows[0]);
@@ -181,16 +190,33 @@ router.post('/:id/test', asyncHandler(async (req, res) => {
   try {
     let result;
     if (site.type === 'ruijie') {
-      // No API driver exists for Ruijie (see the RADIUS section comment
-      // below) - there is nothing to reach out and ping. The only real
-      // signal that a Ruijie gateway is working is a RADIUS Access-Request
-      // actually arriving, which is visible in the RADIUS config panel /
-      // server logs, not something this endpoint can check on demand.
-      return res.json({
-        online: null,
-        notApplicable: true,
-        message: 'Ruijie sites use RADIUS only - there is no live connection test. Verify by connecting the gateway and checking that logins are being accepted.',
-      });
+      if (site.mk_auth_mode === 'ruijie_cloud' && site.ruijie_account) {
+        // A real check IS possible here - unlike the RADIUS-only case
+        // below, integrations/ruijie.js's login() can actually confirm the
+        // stored Ruijie Cloud account/password work. It does NOT confirm
+        // the Auth/Accounting callback itself is reachable or correctly
+        // configured in Ruijie Cloud's dashboard - only that these
+        // credentials authenticate.
+        result = await ruijie.ping({
+          ...site,
+          ruijie_account_password_decrypted: decrypt(site.ruijie_account_password_encrypted),
+        });
+      } else {
+        // Either plain RADIUS mode, or ruijie_cloud mode with no Ruijie
+        // Cloud account/password on file yet (that's optional - only
+        // needed for the nice-to-have REST sync, not for the auth callback
+        // itself). Either way there's nothing to reach out and ping for
+        // the load-bearing path - the only real signal it's working is a
+        // RADIUS Access-Request or a Cloud Auth callback actually
+        // arriving, visible in server logs, not something checkable here.
+        return res.json({
+          online: null,
+          notApplicable: true,
+          message: site.mk_auth_mode === 'radius'
+            ? 'Ruijie sites in RADIUS mode have no live connection test. Verify by connecting the gateway and checking that logins are being accepted.'
+            : 'Add this site\'s Ruijie Cloud account/password to test connectivity, or verify by checking that Cloud Auth callbacks are arriving in the server logs.',
+        });
+      }
     } else if (site.type === 'mikrotik') {
       result = await mikrotik.ping({ ...site, mk_password_decrypted: decrypt(site.mk_password_encrypted) });
     } else if (site.type === 'unifi') {
@@ -641,9 +667,11 @@ router.post('/:id/revoke-client', asyncHandler(async (req, res) => {
 // See integrations/radius.js's header comment for the full "why". This is
 // mikrotik/ruijie-only - Omada/UniFi/Meraki are cloud-controller-driven and
 // don't have the RouterOS-API-unreachable-behind-CGNAT problem this solves.
-// Ruijie has no direct API driver at all (no integrations/ruijie.js exists -
-// their Cloud API isn't confirmed enough to build against yet), so for
-// ruijie sites RADIUS isn't an alternative mode, it's the ONLY mode.
+// For a ruijie site specifically, RADIUS is only ONE of two alternative
+// modes now - see the ruijie-cloud-mode endpoint further down for the other
+// (Ruijie Cloud's own "Cloud Auth" HTTP callback, for Reyee/cloud-only
+// gateways that don't support a native RADIUS client at all). Enabling one
+// mode on a ruijie site clears the other's fields - see both endpoints.
 
 router.get('/:id/radius-config', asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
@@ -714,8 +742,15 @@ router.post('/:id/radius-mode', asyncHandler(async (req, res) => {
   );
   const activeCount = existingActive[0].n;
 
+  // ruijie_cloud and radius are mutually exclusive on a ruijie site (a
+  // gateway is either RADIUS-capable or it isn't) - clear the other mode's
+  // callback token when switching, same reasoning as clearing radius
+  // fields on disable above: a stale, unused secret sitting encrypted at
+  // rest with no purpose is worth cleaning up, not preserving "just in
+  // case". Harmless no-op for mikrotik sites, which never have this set.
   await pool.query(
-    `UPDATE sites SET mk_auth_mode='radius', radius_secret_encrypted=$1, radius_nas_identifier=$2 WHERE id=$3`,
+    `UPDATE sites SET mk_auth_mode='radius', radius_secret_encrypted=$1, radius_nas_identifier=$2,
+       ruijie_callback_token_encrypted=NULL WHERE id=$3`,
     [encrypt(secret), nasIdentifier, req.params.id]
   );
 
@@ -735,6 +770,85 @@ router.post('/:id/radius-mode', asyncHandler(async (req, res) => {
     // the router is reconfigured for RADIUS - see routes/portal.js.
     warning: activeCount > 0
       ? `This site has ${activeCount} voucher(s) with an active session right now - those are unaffected. New redemptions won't work until the router is reconfigured for RADIUS (see the setup instructions).`
+      : null,
+  });
+}));
+
+// --- Ruijie Cloud "Cloud Auth" mode (HTTP callback, no RADIUS needed) -----
+// Alternative to radius mode above, for Reyee/cloud-only gateways with no
+// native RADIUS client - see routes/ruijieCloudAuth.js and
+// integrations/ruijie.js's header for the full picture.
+
+router.get('/:id/ruijie-cloud-config', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT type, mk_auth_mode, ruijie_callback_token_encrypted FROM sites WHERE id=$1 AND tenant_id=$2`,
+    [req.params.id, req.tenantId]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Site not found.' });
+  const site = rows[0];
+  if (site.type !== 'ruijie') return res.status(400).json({ error: 'Cloud Auth mode is only available for Ruijie sites.' });
+
+  const enabled = site.mk_auth_mode === 'ruijie_cloud';
+  const base = process.env.PUBLIC_BASE_URL || null;
+  const token = enabled ? decrypt(site.ruijie_callback_token_encrypted) : null;
+
+  res.json({
+    mode: site.mk_auth_mode,
+    // Re-decrypted and re-shown, same reasoning as the RADIUS secret above -
+    // the tenant legitimately needs to see this again to (re)configure
+    // Ruijie Cloud's dashboard, and hiding it after the first view would
+    // just force a disable/re-enable for no security benefit.
+    token,
+    authUrl: base && token ? `${base}/api/ruijie/${req.params.id}/auth?t=${token}` : null,
+    accountingUrl: base && token ? `${base}/api/ruijie/${req.params.id}/accounting?t=${token}` : null,
+  });
+}));
+
+router.post('/:id/ruijie-cloud-mode', asyncHandler(async (req, res) => {
+  const { enable } = req.body;
+  if (typeof enable !== 'boolean') return res.status(400).json({ error: 'enable (boolean) is required.' });
+
+  const { rows } = await pool.query(`SELECT type, mk_auth_mode FROM sites WHERE id=$1 AND tenant_id=$2`, [
+    req.params.id, req.tenantId,
+  ]);
+  if (!rows.length) return res.status(404).json({ error: 'Site not found.' });
+  const site = rows[0];
+  if (site.type !== 'ruijie') return res.status(400).json({ error: 'Cloud Auth mode is only available for Ruijie sites.' });
+
+  if (!enable) {
+    await pool.query(`UPDATE sites SET mk_auth_mode='radius', ruijie_callback_token_encrypted=NULL WHERE id=$1`, [
+      req.params.id,
+    ]);
+    return res.json({ ok: true, mode: 'radius' });
+  }
+
+  // 32 random bytes -> 43-char base64url token, appended as the `t` query
+  // param on the Auth/Accounting URLs - see ruijieCloudAuth.js's
+  // verifyCallbackToken. Mutually exclusive with radius mode's NAS secret,
+  // same reasoning as clearing it there.
+  const token = crypto.randomBytes(32).toString('base64url');
+
+  const { rows: existingActive } = await pool.query(
+    `SELECT count(*)::int AS n FROM vouchers WHERE site_id=$1 AND status='active' AND (expires_at IS NULL OR expires_at > now())`,
+    [req.params.id]
+  );
+  const activeCount = existingActive[0].n;
+
+  await pool.query(
+    `UPDATE sites SET mk_auth_mode='ruijie_cloud', ruijie_callback_token_encrypted=$1,
+       radius_secret_encrypted=NULL, radius_nas_identifier=NULL WHERE id=$2`,
+    [encrypt(token), req.params.id]
+  );
+
+  const base = process.env.PUBLIC_BASE_URL || null;
+  res.json({
+    ok: true,
+    mode: 'ruijie_cloud',
+    token,
+    authUrl: base ? `${base}/api/ruijie/${req.params.id}/auth?t=${token}` : null,
+    accountingUrl: base ? `${base}/api/ruijie/${req.params.id}/accounting?t=${token}` : null,
+    warning: activeCount > 0
+      ? `This site has ${activeCount} voucher(s) with an active session right now - those are unaffected. New redemptions won't work until Ruijie Cloud's Auth/Accounting Server URLs are set to the values above.`
       : null,
   });
 }));

@@ -378,7 +378,7 @@ router.get('/sites/:id/live', asyncHandler(async (req, res) => {
   const site = rows[0];
 
   try {
-    if (site.type === 'mikrotik' && site.mk_auth_mode === 'radius') {
+    if ((site.type === 'mikrotik' || site.type === 'ruijie') && site.mk_auth_mode === 'radius') {
       // Can't reach this router's API directly (that's the CGNAT problem
       // radius-mode exists to solve) - the router talks to US instead, via
       // RADIUS accounting, so radius_sessions is the live-client source of
@@ -399,6 +399,33 @@ router.get('/sites/:id/live', asyncHandler(async (req, res) => {
         uptime: s.session_time_seconds != null ? String(s.session_time_seconds) : null,
         bytesIn: s.bytes_in != null ? String(s.bytes_in) : null,
         bytesOut: s.bytes_out != null ? String(s.bytes_out) : null,
+      }));
+      return res.json({ clients, count: clients.length });
+    }
+
+    if (site.type === 'ruijie' && site.mk_auth_mode === 'ruijie_cloud') {
+      // Same reasoning as the RADIUS branch above - can't reach a
+      // Reyee/cloud-only gateway directly, so ruijie_cloud_sessions (kept
+      // current by routes/ruijieCloudAuth.js's Auth/Accounting callbacks)
+      // is the live-client source of truth here. No byte counters: the
+      // reconstructed Cloud Auth wire format this is built against doesn't
+      // confirm a usage-accounting equivalent to RADIUS's Acct-Input/
+      // Output-Octets - see integrations/ruijie.js's HONEST LIMITS.
+      const { rows: sessions } = await pool.query(
+        `SELECT rcs.client_mac, rcs.gw_sn, rcs.started_at, rcs.last_seen_at, v.code
+         FROM ruijie_cloud_sessions rcs
+         LEFT JOIN vouchers v ON v.id = rcs.voucher_id
+         WHERE rcs.site_id = $1 AND rcs.status = 'active'
+         ORDER BY rcs.started_at DESC`,
+        [site.id]
+      );
+      const clients = sessions.map((s) => ({
+        user: s.code || null,
+        address: null,
+        macAddress: s.client_mac || null,
+        uptime: s.started_at ? String(Math.floor((Date.now() - new Date(s.started_at).getTime()) / 1000)) : null,
+        bytesIn: null,
+        bytesOut: null,
       }));
       return res.json({ clients, count: clients.length });
     }
@@ -464,6 +491,13 @@ router.get('/sites/:id/live', asyncHandler(async (req, res) => {
         bytesOut: c.usage?.sent != null ? String(c.usage.sent) : null,
       }));
       return res.json({ clients, count: clients.length });
+    }
+
+    if (site.type === 'ruijie') {
+      // Reachable if mk_auth_mode is still 'api' (not a real mode for
+      // ruijie - see schema.sql) i.e. the site was created but neither
+      // RADIUS nor Cloud Auth mode has been enabled yet.
+      return res.status(400).json({ error: 'This Ruijie site has no access mode configured yet - enable RADIUS or Cloud Auth mode first.' });
     }
 
     return res.status(400).json({ error: `Unknown site type "${site.type}".` });

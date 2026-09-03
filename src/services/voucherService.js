@@ -7,6 +7,7 @@ const unifi = require('../integrations/unifi');
 const meraki = require('../integrations/meraki');
 const sms = require('../integrations/smsService');
 const { decrypt } = require('../utils/credentialCrypto');
+const logger = require('../utils/logger');
 
 // CSPRNG (crypto.randomInt), not Math.random() - Math.random() isn't
 // designed to resist prediction, and while a guessed voucher code is a
@@ -324,6 +325,108 @@ async function redeemVoucherByRadius(nasIdentifier, code, { clientMac } = {}) {
 }
 
 /**
+ * Redeem a voucher via Ruijie Cloud's "Cloud Auth / External Portal" HTTP
+ * callback (see integrations/ruijie.js's header and routes/ruijieCloudAuth.js)
+ * instead of the RADIUS Access-Request path above. Called from that public
+ * route once it has already verified the site's callback token, so siteId
+ * here is trusted - unlike redeemVoucherByRadius, there's no NAS-Identifier
+ * lookup step because the callback URL itself already encodes which site
+ * this is for.
+ *
+ * Mirrors redeemVoucherByRadius's re-authentication behaviour: Ruijie's own
+ * portal can re-call the Auth Server URL for a device that's still mid-
+ * session (Wi-Fi blip, phone sleep, browser reopened), and that has to
+ * succeed with the voucher's REMAINING time, not silently fail or hand out
+ * a fresh full duration.
+ */
+async function redeemVoucherByRuijieCloudAuth(siteId, code, { clientMac, gwSn } = {}) {
+  const { rows: siteRows } = await pool.query(
+    `SELECT id, tenant_id FROM sites WHERE id = $1 AND type = 'ruijie' AND mk_auth_mode = 'ruijie_cloud' AND active = true`,
+    [siteId]
+  );
+  if (!siteRows.length) return { ok: false, reason: 'unknown_site' };
+  const { tenant_id: tenantId } = siteRows[0];
+
+  const claim = await pool.query(
+    `UPDATE vouchers SET status='redeeming' WHERE tenant_id=$1 AND site_id=$2 AND code=$3 AND status='unused' RETURNING id`,
+    [tenantId, siteId, code]
+  );
+
+  let voucherId;
+  let expiresAt;
+  let durationMinutes;
+
+  if (!claim.rows.length) {
+    const { rows: existing } = await pool.query(
+      `SELECT id, status, expires_at FROM vouchers WHERE tenant_id=$1 AND site_id=$2 AND code=$3`,
+      [tenantId, siteId, code]
+    );
+    if (!existing.length) return { ok: false, reason: 'not_found' };
+    const v = existing[0];
+
+    if (v.status === 'active' && v.expires_at && new Date(v.expires_at) > new Date()) {
+      voucherId = v.id;
+      expiresAt = v.expires_at;
+      durationMinutes = Math.max(1, Math.ceil((new Date(v.expires_at).getTime() - Date.now()) / 60000));
+      if (clientMac) {
+        await pool.query(`UPDATE vouchers SET client_mac=$1 WHERE id=$2`, [clientMac, v.id]);
+      }
+    } else {
+      return { ok: false, reason: 'already_used', status: v.status === 'redeeming' ? 'unused' : v.status };
+    }
+  } else {
+    voucherId = claim.rows[0].id;
+    const { rows } = await pool.query(
+      `SELECT p.duration_minutes FROM vouchers v JOIN packages p ON p.id = v.package_id WHERE v.id = $1`,
+      [voucherId]
+    );
+    durationMinutes = rows[0].duration_minutes;
+    expiresAt = new Date(Date.now() + durationMinutes * 60000);
+
+    const finalize = await pool.query(
+      `UPDATE vouchers SET status='active', redeemed_at=now(), expires_at=$1, client_mac=$2, provider_ref='ruijie_cloud'
+       WHERE id=$3 AND status='redeeming' RETURNING id`,
+      [expiresAt, clientMac || null, voucherId]
+    );
+    if (!finalize.rows.length) return { ok: false, reason: 'redemption_conflict' };
+  }
+
+  // Session telemetry, best-effort - powers "live clients" for ruijie_cloud
+  // sites the same way radius_sessions does for radius-mode ones. Never
+  // lets a telemetry failure block the actual access grant above, which has
+  // already been committed by this point.
+  if (clientMac) {
+    try {
+      await pool.query(
+        `INSERT INTO ruijie_cloud_sessions (site_id, voucher_id, client_mac, gw_sn, status, started_at, last_seen_at)
+         VALUES ($1, $2, $3, $4, 'active', now(), now())
+         ON CONFLICT (site_id, client_mac) DO UPDATE SET
+           voucher_id = $2, status = 'active', gw_sn = COALESCE($4, ruijie_cloud_sessions.gw_sn), last_seen_at = now()`,
+        [siteId, voucherId, clientMac, gwSn || null]
+      );
+    } catch (err) {
+      logger.warn('ruijie_cloud: session telemetry insert failed (access still granted)', { message: err.message, siteId });
+    }
+  }
+
+  return { ok: true, expiresAt, durationMinutes };
+}
+
+/**
+ * Ends a ruijie_cloud session - called on the Accounting URL's logout/stop
+ * signal (routes/ruijieCloudAuth.js). Marks the telemetry row stopped; does
+ * NOT touch the voucher's own status/expiry, since that's still governed by
+ * expires_at and voucherExpiry.js's sweep, exactly like the RADIUS path.
+ */
+async function endRuijieCloudSession(siteId, clientMac) {
+  if (!clientMac) return;
+  await pool.query(
+    `UPDATE ruijie_cloud_sessions SET status='stopped', stopped_at=now() WHERE site_id=$1 AND client_mac=$2 AND status='active'`,
+    [siteId, clientMac]
+  );
+}
+
+/**
  * Shared fulfillment for any paid voucher_orders row, regardless of how it
  * got confirmed - a gateway webhook/callback (automatic), or an owner
  * manually approving a MoMo-to-personal-number claim (routes/vouchers.js).
@@ -396,4 +499,8 @@ async function fulfillOrder(order) {
   }
 }
 
-module.exports = { generateVouchers, redeemVoucher, redeemVoucherByRadius, randomCode, fulfillOrder };
+module.exports = {
+  generateVouchers, redeemVoucher, redeemVoucherByRadius,
+  redeemVoucherByRuijieCloudAuth, endRuijieCloudSession,
+  randomCode, fulfillOrder,
+};
