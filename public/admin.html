@@ -374,6 +374,22 @@
     <div class="msg" id="radius-panel-msg"></div>
     <button class="secondary" style="margin-top:10px" onclick="closeRadiusPanel()">Close</button>
   </div>
+
+  <!-- Ruijie Cloud Auth panel - hidden until "Cloud Auth mode" is clicked
+       for a ruijie site. Same show/hide pattern as the RADIUS panel above,
+       for the same reason (no modal component on this page). -->
+  <div id="ruijieCloudPanel" class="hidden" style="margin-top:16px;padding:14px;border:1px solid #234;border-radius:8px;background:#0f1e22">
+    <h3 style="margin:0 0 8px;font-size:14px;color:#9fb6bc">Ruijie Cloud Auth <span style="font-weight:normal;color:#6b8a91">- for Reyee/cloud-only gateways with no RADIUS client</span></h3>
+    <p style="font-size:12px;color:#6b8a91;margin-bottom:10px">
+      This site's Ruijie gateway has no local RADIUS client, so it can't call out the normal way.
+      Cloud Auth flips the direction instead: Ruijie Cloud's own External Portal calls a URL on
+      this backend whenever someone connects. Switching this on generates that URL - paste it into
+      Ruijie Cloud's portal settings, or logins won't work.
+    </p>
+    <div id="ruijieCloudPanelBody">Loading...</div>
+    <div class="msg" id="ruijie-cloud-panel-msg"></div>
+    <button class="secondary" style="margin-top:10px" onclick="closeRuijieCloudPanel()">Close</button>
+  </div>
 </div>
 
 <!-- STEP 2.5: Portal branding -->
@@ -1376,6 +1392,7 @@
             <td>${s.active ? 'Active' : 'Inactive'}</td>
             <td style="white-space:nowrap">
               ${s.type === 'mikrotik' ? `<button class="secondary" style="padding:6px 10px;font-size:12px" onclick="openRadiusPanel('${s.id}')">${s.mk_auth_mode === 'radius' ? 'RADIUS mode' : 'CGNAT? Use RADIUS'}</button>` : ''}
+              ${s.type === 'ruijie' ? `<button class="secondary" style="padding:6px 10px;font-size:12px" onclick="openRuijieCloudPanel('${s.id}')">${s.mk_auth_mode === 'ruijie_cloud' ? 'Cloud Auth mode' : 'No RADIUS client? Use Cloud Auth'}</button>` : ''}
               <button class="secondary" style="padding:6px 10px;font-size:12px" onclick="toggleSiteActive('${s.id}', ${!s.active})">${s.active ? 'Deactivate' : 'Activate'}</button>
               <button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" onclick="deleteSite('${s.id}')">Delete</button>
             </td>
@@ -1489,6 +1506,92 @@
       loadSiteManageList();
     } catch (err) {
       showMsg('radius-panel-msg', err.message, 'err');
+    }
+  }
+
+  // ---------- Ruijie Cloud Auth mode (5th site type, cloud-only gateways) ----------
+  let ruijieCloudPanelSiteId = null;
+
+  async function openRuijieCloudPanel(siteId) {
+    ruijieCloudPanelSiteId = siteId;
+    document.getElementById('ruijieCloudPanel').classList.remove('hidden');
+    document.getElementById('ruijieCloudPanelBody').innerHTML = 'Loading...';
+    document.getElementById('ruijieCloudPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    try {
+      const cfg = await api(`/api/sites/${siteId}/ruijie-cloud-config`, 'GET');
+      renderRuijieCloudPanel(cfg);
+    } catch (err) {
+      document.getElementById('ruijieCloudPanelBody').innerHTML = `<p style="color:#ff6b6b;font-size:13px">${escapeHtmlAdmin(err.message)}</p>`;
+    }
+  }
+
+  function closeRuijieCloudPanel() {
+    document.getElementById('ruijieCloudPanel').classList.add('hidden');
+    ruijieCloudPanelSiteId = null;
+  }
+
+  function renderRuijieCloudPanel(cfg) {
+    const body = document.getElementById('ruijieCloudPanelBody');
+    if (cfg.mode !== 'ruijie_cloud') {
+      body.innerHTML = `
+        <p style="font-size:13px;color:#e8f0f1">This site is using RADIUS mode (or is not yet configured).</p>
+        <button onclick="turnOnRuijieCloud()">Turn on Cloud Auth mode</button>
+      `;
+      return;
+    }
+
+    const authLine = cfg.authUrl
+      ? `<code id="ruijieAuthUrl" style="word-break:break-all">${escapeHtmlAdmin(cfg.authUrl)}</code>`
+      : `<span style="color:#ff6b6b">not available - PUBLIC_BASE_URL isn't configured on this deployment yet</span>`;
+    const acctLine = cfg.accountingUrl
+      ? `<code id="ruijieAcctUrl" style="word-break:break-all">${escapeHtmlAdmin(cfg.accountingUrl)}</code>`
+      : `<span style="color:#ff6b6b">not available - PUBLIC_BASE_URL isn't configured on this deployment yet</span>`;
+
+    body.innerHTML = `
+      <p style="font-size:13px;color:#e8f0f1">Cloud Auth mode is on. Paste these into Ruijie Cloud's External Portal settings for this site's network
+      (<button class="secondary" style="padding:2px 8px;font-size:11px" onclick="copyRuijieField('ruijieAuthUrl')">copy auth URL</button>
+      <button class="secondary" style="padding:2px 8px;font-size:11px" onclick="copyRuijieField('ruijieAcctUrl')">copy accounting URL</button>
+      buttons below each field):</p>
+      <table style="width:100%;font-size:13px;margin-top:8px">
+        <tr><td style="color:#6b8a91;padding:4px 8px 4px 0">Auth callback URL</td><td>${authLine}</td></tr>
+        <tr><td style="color:#6b8a91;padding:4px 8px 4px 0">Accounting callback URL</td><td>${acctLine}</td></tr>
+      </table>
+      <p style="font-size:12px;color:#6b8a91;margin-top:10px">In Ruijie Cloud: Network &gt; Authentication &gt; External Portal, set the portal type to
+      "External Portal Server" and paste the Auth callback URL as the portal address, with the Accounting URL in the accounting/heartbeat field if offered.</p>
+      <button class="secondary" style="margin-top:10px;color:#ff6b6b" onclick="turnOffRuijieCloud()">Turn off Cloud Auth mode</button>
+    `;
+  }
+
+  function copyRuijieField(elId) {
+    const text = document.getElementById(elId).textContent;
+    navigator.clipboard.writeText(text).then(
+      () => showMsg('ruijie-cloud-panel-msg', 'Copied.', 'ok'),
+      () => showMsg('ruijie-cloud-panel-msg', 'Could not copy - select and copy manually.', 'err')
+    );
+  }
+
+  async function turnOnRuijieCloud() {
+    if (!ruijieCloudPanelSiteId) return;
+    try {
+      const result = await api(`/api/sites/${ruijieCloudPanelSiteId}/ruijie-cloud-mode`, 'POST', { enable: true });
+      if (result.warning) showMsg('ruijie-cloud-panel-msg', result.warning, 'err');
+      renderRuijieCloudPanel(result);
+      loadSiteManageList();
+    } catch (err) {
+      showMsg('ruijie-cloud-panel-msg', err.message, 'err');
+    }
+  }
+
+  async function turnOffRuijieCloud() {
+    if (!ruijieCloudPanelSiteId) return;
+    if (!confirm('Turn off Cloud Auth mode? The callback URL will stop working - turning it back on later generates a new one, and Ruijie Cloud will need reconfiguring again.')) return;
+    try {
+      await api(`/api/sites/${ruijieCloudPanelSiteId}/ruijie-cloud-mode`, 'POST', { enable: false });
+      const cfg = await api(`/api/sites/${ruijieCloudPanelSiteId}/ruijie-cloud-config`, 'GET');
+      renderRuijieCloudPanel(cfg);
+      loadSiteManageList();
+    } catch (err) {
+      showMsg('ruijie-cloud-panel-msg', err.message, 'err');
     }
   }
 
