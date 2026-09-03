@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Revenue - Owner Admin</title>
+<script>
+  if (!sessionStorage.getItem('yournet_owner_token')) {
+    window.location.replace('/owner-login');
+  }
+</script>
+<link rel="stylesheet" href="/shell.css">
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;margin:0}
+  h1{font-size:20px}
+  h2{font-size:15px;color:#2ec4b6;margin:24px 0 8px}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;margin-bottom:12px}
+  .card .row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;gap:12px}
+  .card .row span:first-child{color:#6b8a91;white-space:nowrap}
+  .card .row span:last-child{text-align:right;word-break:break-word}
+  .note{font-size:12px;color:#6b8a91;line-height:1.6}
+  .owner-topbar{display:flex;justify-content:flex-end;margin-bottom:4px}
+  .logout-btn{font-size:12px;color:#6b8a91;text-decoration:none;padding:6px 10px;border:1px solid rgba(255,255,255,.15);border-radius:8px;white-space:nowrap}
+  .logout-btn:hover{color:#e8f0f1;border-color:rgba(255,255,255,.3)}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .stat{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px}
+  .stat .label{font-size:11px;color:#6b8a91;text-transform:uppercase;letter-spacing:.04em}
+  .stat .value{font-size:20px;font-weight:700;margin-top:4px}
+  .chart-empty{color:#6b8a91;font-size:12.5px;padding:14px 0}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.08)}
+  th{color:#6b8a91;font-weight:600;font-size:11px;text-transform:uppercase}
+  td.num{text-align:right}
+  body.yn-glass .card,body.yn-glass .stat{background:rgba(19,34,40,.35);backdrop-filter:blur(16px) saturate(150%);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);border-color:rgba(255,255,255,.16)}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
+<script src="/bg-rotate.js"></script>
+<div style="max-width:720px;margin-inline:auto">
+<div class="owner-topbar">
+  <a href="#" class="logout-btn" onclick="sessionStorage.removeItem('yournet_owner_token');window.location.href='/owner-login';return false;">Log out</a>
+</div>
+<h1>Revenue</h1>
+
+<h2>Your earnings</h2>
+<p class="note">What YourNet itself has been paid, from tenant signup and monthly reactivation charges. Only successful payments count.</p>
+<div class="stat-grid">
+  <div class="stat"><div class="label">Total earned</div><div class="value" id="totalRevenue">-</div></div>
+  <div class="stat"><div class="label">Payments received</div><div class="value" id="totalCount">-</div></div>
+</div>
+<div class="card" style="margin-top:12px">
+  <div class="note" style="margin-bottom:6px">Monthly earnings</div>
+  <div id="chart-revenue"></div>
+</div>
+<div class="card">
+  <div class="note" style="margin-bottom:8px">By provider</div>
+  <table id="byProviderTable"><thead><tr><th>Provider</th><th class="num">Total</th><th class="num">Payments</th></tr></thead><tbody></tbody></table>
+</div>
+<div class="card">
+  <div class="note" style="margin-bottom:8px">Signup vs reactivation</div>
+  <table id="byKindTable"><thead><tr><th>Type</th><th class="num">Total</th><th class="num">Payments</th></tr></thead><tbody></tbody></table>
+</div>
+
+<h2>Tenant sales logs</h2>
+<p class="note">Not your money — this is what each tenant's own customers have paid THEM for WiFi vouchers, through the tenant's own linked gateway. Shown here for visibility only, since it never lands in the platform account.</p>
+<div class="card">
+  <div class="note" style="margin-bottom:6px">Voucher sales across all tenants, by month</div>
+  <div id="chart-tenant-sales"></div>
+</div>
+<div class="card">
+  <div class="note" style="margin-bottom:8px">By tenant</div>
+  <table id="perTenantTable"><thead><tr><th>Business</th><th class="num">Sales total</th><th class="num">Vouchers sold</th></tr></thead><tbody></tbody></table>
+</div>
+
+<script>
+  const token = sessionStorage.getItem('yournet_owner_token');
+  if (!token) window.location.replace('/owner-login');
+
+  function authedFetch(url) {
+    return fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+  }
+
+  function fmt(currency, n) {
+    return currency + ' ' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  // Same dependency-free SVG line chart used on the tenant dashboard -
+  // kept consistent rather than pulling in a charting library.
+  function renderChart(containerId, points, opts = {}) {
+    const el = document.getElementById(containerId);
+    if (!points.length) {
+      el.innerHTML = '<div class="chart-empty">Not enough data yet.</div>';
+      return;
+    }
+    const W = 640, H = 170, padL = 4, padR = 4, padT = 8, padB = 20;
+    const vals = points.map((p) => Number(p.v) || 0);
+    const maxV = Math.max(1, ...vals);
+    const x = (i) => padL + (points.length === 1 ? 0.5 : i / (points.length - 1)) * (W - padL - padR);
+    const y = (v) => H - padB - (v / maxV) * (H - padT - padB);
+
+    let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:170px;display:block">`;
+    for (let i = 0; i <= 3; i++) {
+      const gy = padT + (i / 3) * (H - padT - padB);
+      svg += `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W - padR}" y2="${gy.toFixed(1)}" stroke="rgba(255,255,255,.08)" stroke-width="1"/>`;
+    }
+    const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(Number(p.v)).toFixed(1)}`).join(' ');
+    svg += `<path d="${path}" fill="none" stroke="#e8a33d" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    points.forEach((p, i) => {
+      svg += `<circle cx="${x(i).toFixed(1)}" cy="${y(Number(p.v)).toFixed(1)}" r="2.5" fill="#e8a33d"/>`;
+    });
+    svg += '</svg>';
+
+    const labels = points.map((p) => `<span style="font-size:10.5px;color:#6b8a91">${p.month}</span>`).join('<span style="color:#6b8a91">·</span>');
+    el.innerHTML = svg + `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${labels}</div>`;
+  }
+
+  async function loadRevenue() {
+    try {
+      const res = await authedFetch('/license/admin/revenue-summary');
+      if (res.status === 401) { sessionStorage.removeItem('yournet_owner_token'); window.location.href = '/owner-login'; return; }
+      const data = await res.json();
+      document.getElementById('totalRevenue').textContent = fmt(data.currency, data.totalRevenue);
+      document.getElementById('totalCount').textContent = data.totalPayments;
+      renderChart('chart-revenue', data.byMonth.map((m) => ({ month: m.month, v: m.total })));
+
+      document.querySelector('#byProviderTable tbody').innerHTML = data.byProvider.map((p) => `
+        <tr><td>${p.provider}</td><td class="num">${fmt(data.currency, p.total)}</td><td class="num">${p.count}</td></tr>
+      `).join('') || '<tr><td colspan="3" class="note">No payments yet.</td></tr>';
+
+      document.querySelector('#byKindTable tbody').innerHTML = data.byKind.map((k) => `
+        <tr><td>${k.kind === 'initial' ? 'Signup / reactivation' : 'Monthly renewal'}</td><td class="num">${fmt(data.currency, k.total)}</td><td class="num">${k.count}</td></tr>
+      `).join('') || '<tr><td colspan="3" class="note">No payments yet.</td></tr>';
+    } catch (err) {
+      document.getElementById('chart-revenue').innerHTML = `<div class="chart-empty">${err.message}</div>`;
+    }
+  }
+
+  async function loadTenantSales() {
+    try {
+      const res = await authedFetch('/license/admin/tenant-sales');
+      if (res.status === 401) { sessionStorage.removeItem('yournet_owner_token'); window.location.href = '/owner-login'; return; }
+      const data = await res.json();
+      renderChart('chart-tenant-sales', data.byMonth.map((m) => ({ month: m.month, v: m.count })));
+
+      document.querySelector('#perTenantTable tbody').innerHTML = data.perTenant.map((t) => `
+        <tr><td>${t.businessName || t.ownerEmail}</td><td class="num">${fmt(data.currency, t.total)}</td><td class="num">${t.count}</td></tr>
+      `).join('') || '<tr><td colspan="3" class="note">No tenants yet.</td></tr>';
+    } catch (err) {
+      document.getElementById('chart-tenant-sales').innerHTML = `<div class="chart-empty">${err.message}</div>`;
+    }
+  }
+
+  if (token) { loadRevenue(); loadTenantSales(); }
+</script>
+<script src="/fontsize.js"></script>
+</div>
+  </main>
+</div>
+<script>
+  window.YOURNET_ACTIVE_NAV = 'revenue';
+  window.YOURNET_AUTH_MODE = 'owner';
+</script>
+<script src="/shell.js"></script>
+</body>
+</html>

@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Portal</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:20px;max-width:520px;margin-inline:auto}
+  h1{font-size:20px;margin-bottom:4px}
+  .sub{color:#6b8a91;font-size:13px;margin-bottom:18px}
+
+  /* Centered logo + title header - same visual treatment shell.js applies
+     automatically to every page inside the admin shell (see .page-header
+     in shell.css). This page is standalone (no shell.js - agents use it
+     outside the admin nav), so it's replicated locally rather than shared. */
+  .page-header{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;margin:0 0 22px}
+  .page-header-logo{height:40px;width:auto;margin-bottom:4px}
+  .page-header h1{
+    margin:0;font-size:19px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;
+    color:#e8f0f1;margin-bottom:4px;
+  }
+  .page-header .sub{color:#6b8a91;font-size:13px;margin-bottom:0}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:18px;margin-bottom:14px}
+  label{display:block;font-size:12px;color:#9fb6bc;margin:10px 0 4px}
+  input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#0d1a1e;color:#fff;font-size:14px}
+  button{width:100%;margin-top:14px;padding:11px;border:none;border-radius:8px;background:#e8a33d;color:#0d1a1e;
+    font-weight:700;cursor:pointer;font-size:14px}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.secondary{background:transparent;border:1px solid rgba(255,255,255,.2);color:#e8f0f1;margin-top:8px}
+  .msg{margin-top:10px;font-size:13px}
+  .msg.err{color:#ff6b6b}
+  .msg.ok{color:#6bd68a}
+  .stat-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px}
+  .stat-row .val{font-weight:700}
+  .hidden{display:none}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+  td,th{padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+  tfoot td{font-weight:700;border-top:2px solid rgba(255,255,255,.2)}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .topbar button{width:auto;padding:7px 12px;font-size:12px;margin-top:0}
+
+  /* Tab bar - a horizontal segmented control rather than a literal side
+     column, since this page is deliberately narrow/mobile-first (agents
+     are usually on a phone at a kiosk, not a desktop admin screen). */
+  .tabs{display:flex;background:#0d1a1e;border:1px solid rgba(255,255,255,.1);border-radius:10px;
+    padding:3px;gap:2px;margin-bottom:16px}
+  .tabs button{flex:1;margin:0;padding:9px 6px;font-size:12.5px;font-weight:700;border-radius:7px;
+    background:transparent;color:#9fb6bc}
+  .tabs button.active{background:#2ec4b6;color:#04211d}
+
+  .quota-bar{height:6px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden;margin:6px 0 2px}
+  .quota-bar .fill{height:100%;background:#2ec4b6}
+  .quota-label{font-size:11.5px;color:#9fb6bc}
+
+  /* Print card - same visual language as the admin print.html cards */
+  .grid{display:flex;flex-direction:column;gap:10px}
+  .vcard{background:linear-gradient(135deg,#14282e,#0d1a1e);border:1px solid rgba(255,255,255,.1);
+    border-radius:12px;padding:13px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .vcard .brand-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+  .vcard .brand-row img.logo{width:16px;height:16px;border-radius:4px;object-fit:cover}
+  .vcard .brand{font-weight:800;color:#e8a33d;font-size:12.5px}
+  .vcard .code{font-family:'SF Mono',Consolas,monospace;font-size:17px;font-weight:800;color:#2ec4b6;margin:3px 0}
+  .vcard .meta{display:flex;gap:9px;font-size:11px}
+  .vcard .price{color:#e8c777;font-weight:700}
+  .vcard .duration{color:#9fd8d0}
+  .vcard img.qr{width:56px;height:56px;background:#fff;border-radius:6px;padding:3px;flex-shrink:0}
+
+  @media print {
+    body{background:#fff;color:#000;max-width:none}
+    .topbar,.tabs,#genPanel,#recordsPanel,.print-controls,.page-header,#login-card{display:none}
+    .vcard{background:#fff;border:1px dashed #999;color:#000}
+    .vcard .brand{color:#a5670f}
+    .vcard .code{color:#0d1a1e}
+    .vcard .price{color:#8a5a00}
+  }
+
+  /* Glass mode: bg-rotate.js adds this to <body> once a rotating photo
+     background is actually showing, same pattern as owner-login.html/
+     license.html - so this standalone agent page matches the rest of the
+     app's visual identity instead of staying flat #132228 always. */
+  body.yn-glass .card,
+  body.yn-glass .vcard{
+    background:rgba(19,34,40,.35);backdrop-filter:blur(16px) saturate(150%);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);border:1px solid rgba(255,255,255,.16)
+  }
+  body.yn-glass .tabs{
+    background:rgba(13,26,30,.4);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)
+  }
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    body.yn-glass .card,
+    body.yn-glass .vcard,
+    body.yn-glass .tabs{background:#132228}
+  }
+</style>
+</head>
+<body>
+<script src="/bg-rotate.js"></script>
+<div class="page-header">
+  <img src="/img/logo-icon.png" alt="" class="page-header-logo">
+  <h1>Agent Portal</h1>
+  <div class="sub">Generate, print, and track your own vouchers.</div>
+</div>
+
+<div class="card" id="login-card">
+  <label>Email</label>
+  <input id="loginEmail" type="email" autocomplete="username">
+  <label>Password</label>
+  <input id="loginPassword" type="password" autocomplete="current-password">
+  <button onclick="login()">Log in</button>
+  <div class="msg" id="login-msg"></div>
+</div>
+
+<div class="hidden" id="dashboard">
+  <div class="topbar">
+    <div id="agentName" style="font-weight:700"></div>
+    <button class="secondary" onclick="logout()">Log out</button>
+  </div>
+
+  <div class="tabs">
+    <button data-tab="records" class="active" onclick="setTab('records')">My Records</button>
+    <button data-tab="generate" onclick="setTab('generate')">Generate</button>
+    <button data-tab="print" onclick="setTab('print')">Print</button>
+  </div>
+
+  <!-- ============ My Records tab ============ -->
+  <div id="recordsPanel">
+    <div class="card">
+      <div style="font-size:13px;color:#9fb6bc;margin-bottom:6px">Lifetime</div>
+      <div class="stat-row"><span>Vouchers sold</span><span class="val" id="s-vouchersSold">-</span></div>
+      <div class="stat-row"><span>Revenue generated</span><span class="val" id="s-revenue">-</span></div>
+      <div class="stat-row"><span>Commission rate</span><span class="val" id="s-commissionPct">-</span></div>
+      <div class="stat-row"><span>Commission owed</span><span class="val" id="s-commissionOwed">-</span></div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:13px;color:#9fb6bc;margin-bottom:6px">Settlement (by date / batch)</div>
+      <label>Date</label>
+      <input id="settleDate" type="date">
+      <label>Batch (optional)</label>
+      <input id="settleBatch" type="text" placeholder="e.g. 2026-08-10-morning">
+      <button onclick="loadSettlement()">Load settlement</button>
+      <div id="settlement-area"></div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:13px;color:#9fb6bc;margin-bottom:6px">Change password</div>
+      <label>New password</label>
+      <input id="newPassword" type="password" autocomplete="new-password">
+      <button class="secondary" onclick="changePassword()">Update password</button>
+      <div class="msg" id="pw-msg"></div>
+    </div>
+  </div>
+
+  <!-- ============ Generate tab ============ -->
+  <div id="genPanel" class="hidden">
+    <div class="card" id="secretGateCard">
+      <div style="font-size:13px;color:#9fb6bc;margin-bottom:6px">Confirm it's you</div>
+      <div style="font-size:13px;margin-bottom:6px" id="secretQuestionText">Loading your security question&hellip;</div>
+      <input id="secretAnswer" type="text" placeholder="Your answer" autocomplete="off">
+      <button onclick="verifySecret()">Confirm</button>
+      <div class="msg" id="secret-msg"></div>
+      <div class="msg" style="color:#6b8a91;margin-top:6px">You'll only need to do this once per login.</div>
+    </div>
+
+    <div class="hidden card" id="genFormCard">
+      <div class="quota-label" id="quotaLabel">Loading today's limit&hellip;</div>
+      <div class="quota-bar"><div class="fill" id="quotaFill" style="width:0%"></div></div>
+
+      <label>Site</label>
+      <select id="genSite"></select>
+      <label>Package</label>
+      <select id="genPackage"></select>
+      <label>Quantity</label>
+      <input id="genQty" type="number" min="1" value="10">
+      <label>Batch label (optional)</label>
+      <input id="genBatch" type="text" placeholder="Auto-generated if left blank">
+      <button onclick="generateVouchers()" id="genBtn">Generate vouchers</button>
+      <div class="msg" id="gen-msg"></div>
+    </div>
+  </div>
+
+  <!-- ============ Print tab ============ -->
+  <div id="printPanel" class="hidden">
+    <div class="card print-controls">
+      <label>Show</label>
+      <select id="printStatus" onchange="loadPrintList()">
+        <option value="unused">Unused only</option>
+        <option value="">All</option>
+      </select>
+      <button onclick="window.print()">Print this list</button>
+    </div>
+    <div id="printEmpty" class="msg" style="display:none">No vouchers yet - generate a batch first.</div>
+    <div class="grid" id="printGrid"></div>
+  </div>
+</div>
+
+<script>
+  let token = localStorage.getItem('yournet_agent_token');
+  let agent = JSON.parse(localStorage.getItem('yournet_agent') || 'null');
+  let branding = { businessName: 'WiFi Vouchers', logoUrl: null };
+
+  const WIFI_SVG = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 8.5C8 3 16 3 22 8.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M5.5 12.5C9.5 9 14.5 9 18.5 12.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M9 16.5C10.9 15 13.1 15 15 16.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="12" cy="20" r="1.4" fill="currentColor"/>
+  </svg>`;
+
+  function formatDuration(minutes) {
+    const units = [['years', 525600], ['months', 43200], ['days', 1440], ['hours', 60], ['minutes', 1]];
+    for (const [name, mult] of units) {
+      if (minutes % mult === 0 && minutes / mult >= 1 && (name === 'minutes' || minutes / mult < (name === 'hours' ? 48 : name === 'days' ? 62 : 100))) {
+        const n = minutes / mult;
+        return `${n} ${name === 'minutes' && n === 1 ? 'minute' : name}`;
+      }
+    }
+    return `${minutes} minutes`;
+  }
+
+  function showMsg(id, text, cls) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = 'msg ' + (cls || '');
+  }
+
+  async function api(path, method, body) {
+    const res = await fetch(path, {
+      method: method || 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json();
+    if (!res.ok) throw Object.assign(new Error(data.error || 'Request failed'), { code: data.error });
+    return data;
+  }
+
+  async function login() {
+    try {
+      const data = await api('/api/agents/login', 'POST', {
+        email: document.getElementById('loginEmail').value,
+        password: document.getElementById('loginPassword').value,
+      });
+      token = data.token;
+      agent = data.agent;
+      localStorage.setItem('yournet_agent_token', token);
+      localStorage.setItem('yournet_agent', JSON.stringify(agent));
+      showDashboard();
+    } catch (err) {
+      showMsg('login-msg', err.message, 'err');
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem('yournet_agent_token');
+    localStorage.removeItem('yournet_agent');
+    token = null;
+    agent = null;
+    document.getElementById('dashboard').classList.add('hidden');
+    document.getElementById('login-card').classList.remove('hidden');
+  }
+
+  function setTab(tab) {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.getElementById('recordsPanel').classList.toggle('hidden', tab !== 'records');
+    document.getElementById('genPanel').classList.toggle('hidden', tab !== 'generate');
+    document.getElementById('printPanel').classList.toggle('hidden', tab !== 'print');
+    if (tab === 'generate') initGenerateTab();
+    if (tab === 'print') loadPrintList();
+  }
+
+  async function showDashboard() {
+    document.getElementById('login-card').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('agentName').textContent = agent.name;
+    try {
+      const s = await api(`/api/agents/${agent.id}/summary`);
+      document.getElementById('s-vouchersSold').textContent = s.vouchersSold;
+      document.getElementById('s-revenue').textContent = s.revenue.toFixed(2);
+      document.getElementById('s-commissionPct').textContent = s.commissionPct + '%';
+      document.getElementById('s-commissionOwed').textContent = s.commissionOwed.toFixed(2);
+    } catch (err) {
+      if (err.message.includes('Invalid or expired') || err.message.includes('Missing token')) logout();
+    }
+    try { branding = await api('/api/agents/me/branding'); } catch (err) { /* keep defaults */ }
+  }
+
+  async function loadSettlement() {
+    const date = document.getElementById('settleDate').value;
+    const batch = document.getElementById('settleBatch').value;
+    const params = new URLSearchParams();
+    if (date) params.set('date', date);
+    if (batch) params.set('batch', batch);
+    try {
+      const s = await api(`/api/agents/${agent.id}/settlement?${params.toString()}`);
+      const area = document.getElementById('settlement-area');
+      area.innerHTML = `
+        <table>
+          <tr><th>Package</th><th>Given</th><th>Sold</th><th>Sales</th></tr>
+          ${s.items.length ? s.items.map(i => `<tr><td>${i.label}</td><td>${i.given}</td><td>${i.sold}</td><td>${i.sales.toFixed(2)}</td></tr>`).join('') :
+            '<tr><td colspan="4" style="color:#6b8a91">No vouchers for this period</td></tr>'}
+          <tfoot><tr><td colspan="3">Total sales</td><td>${s.totalSales.toFixed(2)}</td></tr></tfoot>
+        </table>
+        <div class="stat-row"><span>Commission owed</span><span class="val">${s.commissionOwed.toFixed(2)}</span></div>
+        <div class="stat-row"><span>Cash to return</span><span class="val">${s.cashToReturn.toFixed(2)}</span></div>
+      `;
+    } catch (err) {
+      document.getElementById('settlement-area').innerHTML = `<div class="msg err">${err.message}</div>`;
+    }
+  }
+
+  async function changePassword() {
+    const newPassword = document.getElementById('newPassword').value;
+    try {
+      await api(`/api/agents/${agent.id}/reset-password`, 'POST', { newPassword });
+      showMsg('pw-msg', 'Password updated.', 'ok');
+      document.getElementById('newPassword').value = '';
+    } catch (err) {
+      showMsg('pw-msg', err.message, 'err');
+    }
+  }
+
+  // ---------------- Generate tab ----------------
+  // secretVerifiedThisLoad tracks whether the CURRENT page load already
+  // passed the secret question - the actual "once per session" guarantee
+  // lives server-side in the token's `sq` claim (see routes/agents.js), so
+  // this is just to avoid re-showing the gate on every tab switch within
+  // the same page load.
+  let secretVerifiedThisLoad = false;
+
+  async function initGenerateTab() {
+    if (secretVerifiedThisLoad) {
+      document.getElementById('secretGateCard').classList.add('hidden');
+      document.getElementById('genFormCard').classList.remove('hidden');
+      loadOptionsAndQuota();
+      return;
+    }
+    document.getElementById('secretGateCard').classList.remove('hidden');
+    document.getElementById('genFormCard').classList.add('hidden');
+    try {
+      const me = await api('/api/agents/me');
+      document.getElementById('secretQuestionText').textContent = me.secret_question || 'No security question is set on your account yet - ask your manager to add one.';
+    } catch (err) {
+      document.getElementById('secretQuestionText').textContent = 'Could not load your security question.';
+    }
+  }
+
+  async function verifySecret() {
+    const answer = document.getElementById('secretAnswer').value;
+    if (!answer) return showMsg('secret-msg', 'Enter your answer.', 'err');
+    try {
+      const data = await api('/api/agents/verify-secret', 'POST', { answer });
+      token = data.token;
+      localStorage.setItem('yournet_agent_token', token);
+      secretVerifiedThisLoad = true;
+      document.getElementById('secretGateCard').classList.add('hidden');
+      document.getElementById('genFormCard').classList.remove('hidden');
+      document.getElementById('secretAnswer').value = '';
+      loadOptionsAndQuota();
+    } catch (err) {
+      showMsg('secret-msg', err.message, 'err');
+    }
+  }
+
+  async function loadOptionsAndQuota() {
+    try {
+      const [opts, quota] = await Promise.all([
+        api('/api/agents/me/options'),
+        api('/api/agents/me/vouchers/quota'),
+      ]);
+      const siteSel = document.getElementById('genSite');
+      const pkgSel = document.getElementById('genPackage');
+      siteSel.innerHTML = opts.sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+      pkgSel.innerHTML = opts.packages.map(p => `<option value="${p.id}">${p.label} - ${Number(p.price).toFixed(2)} (${formatDuration(p.duration_minutes)})</option>`).join('');
+
+      const pct = Math.min(100, Math.round((quota.usedToday / quota.cap) * 100));
+      document.getElementById('quotaFill').style.width = pct + '%';
+      document.getElementById('quotaLabel').textContent = `${quota.usedToday} of ${quota.cap} generated today (${quota.remaining} left)`;
+      const qtyInput = document.getElementById('genQty');
+      qtyInput.max = quota.remaining;
+      document.getElementById('genBtn').disabled = quota.remaining <= 0;
+    } catch (err) {
+      showMsg('gen-msg', err.message, 'err');
+    }
+  }
+
+  async function generateVouchers() {
+    const siteId = document.getElementById('genSite').value;
+    const packageId = document.getElementById('genPackage').value;
+    const quantity = Number(document.getElementById('genQty').value);
+    const batch = document.getElementById('genBatch').value.trim();
+    if (!siteId || !packageId || !quantity || quantity < 1) {
+      return showMsg('gen-msg', 'Pick a site, package, and quantity.', 'err');
+    }
+    const btn = document.getElementById('genBtn');
+    btn.disabled = true;
+    try {
+      const data = await api('/api/agents/me/vouchers/generate', 'POST', { siteId, packageId, quantity, batch: batch || undefined });
+      showMsg('gen-msg', `Generated ${data.quantity} voucher(s)${data.truncated ? ' (capped by your daily limit)' : ''}. Check the Print tab.`, 'ok');
+      loadOptionsAndQuota();
+    } catch (err) {
+      if (err.code === 'secret_question_required') {
+        // Session claim didn't stick (rare - e.g. token was cleared
+        // elsewhere) - fall back to asking again rather than dead-ending.
+        secretVerifiedThisLoad = false;
+        document.getElementById('genFormCard').classList.add('hidden');
+        document.getElementById('secretGateCard').classList.remove('hidden');
+        showMsg('secret-msg', 'Please confirm your security answer again.', 'err');
+      } else {
+        showMsg('gen-msg', err.message, 'err');
+      }
+    }
+    btn.disabled = false;
+  }
+
+  // ---------------- Print tab ----------------
+  async function loadPrintList() {
+    const status = document.getElementById('printStatus').value;
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    try {
+      const vouchers = await api(`/api/agents/me/vouchers?${params.toString()}`);
+      const grid = document.getElementById('printGrid');
+      document.getElementById('printEmpty').style.display = vouchers.length ? 'none' : 'block';
+      grid.innerHTML = '';
+      for (const v of vouchers) {
+        const card = document.createElement('div');
+        card.className = 'vcard';
+        card.innerHTML = `
+          <div>
+            <div class="brand-row">
+              ${branding.logoUrl ? `<img class="logo" src="${branding.logoUrl}" alt="">` : ''}
+              <div class="brand">${branding.businessName}</div>
+              ${WIFI_SVG}
+            </div>
+            <div class="code">${v.code}</div>
+            <div class="meta">
+              <div class="price">${Number(v.package_price).toFixed(2)}</div>
+              <div class="duration">${formatDuration(v.package_duration_minutes)}</div>
+            </div>
+          </div>
+          <img class="qr" alt="QR">
+        `;
+        grid.appendChild(card);
+        fetch(`/api/agents/me/vouchers/${v.id}/qrcode`, { headers: { Authorization: 'Bearer ' + token } })
+          .then(r => r.blob())
+          .then(blob => { card.querySelector('img.qr').src = URL.createObjectURL(blob); });
+      }
+    } catch (err) {
+      document.getElementById('printGrid').innerHTML = '';
+      const empty = document.getElementById('printEmpty');
+      empty.style.display = 'block';
+      empty.className = 'msg err';
+      empty.textContent = err.message;
+    }
+  }
+
+  if (token && agent) showDashboard();
+</script>
+<script src="/fontsize.js"></script>
+</body>
+</html>

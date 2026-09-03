@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Print Vouchers</title>
+<link rel="stylesheet" href="/shell.css">
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--yn-ink);color:var(--yn-cream);margin:0}
+
+  /* ---------- on-screen toolbar: grouped controls, not a loose row ---------- */
+  .print-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+  .print-head h1{font-size:19px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;margin:0}
+  .print-head .sub{font-size:12.5px;color:var(--yn-muted);margin-top:2px}
+  #status{font-size:12.5px;color:var(--yn-muted)}
+
+  .toolbar{
+    background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:14px;
+    padding:14px 16px;margin-bottom:20px;display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;
+  }
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field label{font-size:10.5px;color:var(--yn-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+  select,input{padding:9px 11px;border-radius:8px;border:1px solid var(--yn-line);
+    background:var(--yn-ink-deep);color:var(--yn-cream);font-size:13px}
+  select:focus,input:focus{outline:2px solid var(--yn-teal);outline-offset:1px}
+
+  /* segmented control for layout density */
+  .segmented{display:flex;background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:9px;padding:3px;gap:2px}
+  .segmented button{
+    padding:7px 13px;border:none;border-radius:7px;background:transparent;color:var(--yn-muted);
+    font-size:12.5px;font-weight:700;cursor:pointer;transition:background .15s,color .15s;
+  }
+  .segmented button.active{background:var(--yn-teal);color:#04211d}
+  .segmented button:not(.active):hover{color:var(--yn-cream)}
+
+  .spacer{flex:1 1 auto}
+  .btn{padding:10px 18px;border:none;border-radius:8px;background:var(--yn-gold);color:#0d1a1e;
+    font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap}
+  .btn:hover{background:var(--yn-gold2)}
+  .btn.ghost{background:rgba(255,255,255,.06);color:var(--yn-cream);border:1px solid var(--yn-line)}
+  .btn.ghost:hover{border-color:var(--yn-teal);color:var(--yn-teal)}
+
+  .empty{background:var(--yn-panel);border:1px dashed var(--yn-line);border-radius:14px;
+    padding:40px 20px;text-align:center;color:var(--yn-muted);font-size:13.5px}
+
+  /* ---------- batches panel ---------- */
+  .batches-panel{
+    background:var(--yn-panel);border:1px solid var(--yn-line);border-radius:14px;
+    padding:14px 16px;margin-bottom:20px;
+  }
+  .batches-panel .sub{font-size:12px;color:var(--yn-muted);margin-bottom:12px}
+
+  /* ---------- batch panel header row: select-all + bulk toolbar ---------- */
+  .batches-toolrow{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  .select-all-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--yn-muted);font-weight:700;user-select:none;cursor:pointer}
+  .select-all-row input[type=checkbox]{margin:0}
+
+  .bulk-toolbar{
+    display:none;align-items:center;gap:10px;flex-wrap:wrap;background:rgba(46,196,182,.08);
+    border:1px solid rgba(46,196,182,.35);border-radius:10px;padding:9px 12px;
+    animation:bulkIn .18s ease-out;flex:1 1 auto;
+  }
+  .bulk-toolbar.show{display:flex}
+  @keyframes bulkIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+  .bulk-toolbar .bulk-count{font-size:12.5px;font-weight:800;color:var(--yn-teal);white-space:nowrap}
+  .bulk-toolbar .bulk-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+  .bulk-toolbar .btn.sm,.bulk-toolbar .btn.ghost.sm{padding:7px 12px;font-size:12px}
+  .bulk-toolbar .btn.danger{background:rgba(255,107,107,.14);color:var(--yn-danger);border:1px solid rgba(255,107,107,.35)}
+  .bulk-toolbar .btn.danger:hover{background:rgba(255,107,107,.22)}
+
+  .batches-grid{display:grid;grid-template-columns:repeat(auto-fill, 208px);gap:10px}
+  .batches-empty{font-size:12.5px;color:var(--yn-muted);padding:8px 0}
+  .batch-tile{
+    position:relative;background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:12px;
+    padding:12px 13px;cursor:pointer;transition:border-color .15s,transform .12s,box-shadow .15s;
+  }
+  .batch-tile:hover{border-color:var(--yn-teal);transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.22)}
+  .batch-tile.viewing{border-color:var(--yn-gold);box-shadow:0 0 0 1px var(--yn-gold) inset}
+  .batch-tile.checked{border-color:var(--yn-teal);box-shadow:0 0 0 1.5px var(--yn-teal) inset;background:rgba(46,196,182,.06)}
+
+  .batch-tile .batch-top{display:flex;align-items:flex-start;gap:8px}
+  .batch-tile .batch-check{
+    flex-shrink:0;margin-top:2px;width:16px;height:16px;cursor:pointer;accent-color:var(--yn-teal);
+  }
+  .batch-tile .batch-titles{min-width:0;flex:1}
+  .batch-tile .batch-name{font-weight:800;font-size:13px;color:var(--yn-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .batch-tile .batch-site{font-size:10.5px;color:var(--yn-muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .batch-progress{height:5px;border-radius:4px;background:rgba(255,255,255,.07);margin-top:10px;overflow:hidden}
+  .batch-progress-fill{height:100%;background:linear-gradient(90deg,var(--yn-teal),#5fe0d1);border-radius:4px;transition:width .3s ease}
+  .batch-tile .batch-counts{font-size:11px;color:var(--yn-muted);margin-top:6px;display:flex;justify-content:space-between}
+  .batch-tile .batch-counts b{color:var(--yn-teal);font-weight:800}
+
+  .batch-tile .batch-actions{display:flex;gap:6px;margin-top:10px}
+  .batch-tile .btn.sm,.batch-tile .btn.ghost.sm{padding:6px 9px;font-size:11px}
+
+  .search-result{
+    background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:10px;
+    padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:14px;
+  }
+  .search-result .sr-code{font-family:'SF Mono',Consolas,monospace;font-weight:800;font-size:14px;color:var(--yn-cream)}
+  .search-result .sr-meta{font-size:11.5px;color:var(--yn-muted);margin-top:2px}
+  .search-result .sr-status{font-size:11px;font-weight:700;text-transform:uppercase;padding:3px 9px;border-radius:20px;flex-shrink:0}
+  .search-result .sr-status.unused{background:rgba(255,255,255,.06);color:var(--yn-muted)}
+  .search-result .sr-status.active{background:rgba(46,196,182,.12);color:var(--yn-teal)}
+  .search-result .sr-status.expired{background:rgba(255,107,107,.12);color:var(--yn-danger)}
+  .search-result .sr-status.redeeming{background:rgba(232,163,61,.12);color:var(--yn-gold)}
+  .search-result .sr-detail{font-size:12px;color:var(--yn-cream);margin-top:8px;line-height:1.6}
+  .search-result .sr-detail .sr-live{color:var(--yn-teal);font-weight:700}
+  .search-result .sr-detail .sr-offline{color:var(--yn-muted)}
+
+  /* ---------- on-screen card grid ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill, 320px);gap:14px}
+  .card{
+    position:relative;width:325px;background:linear-gradient(135deg,#14282e,#0d1a1e);
+    border:1px solid var(--yn-line);border-radius:14px;padding:16px 34px 16px 16px;display:flex;
+    justify-content:space-between;align-items:center;color:var(--yn-cream);gap:12px;
+  }
+  .card .left{flex:1;min-width:0}
+  .card .brand-row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+  .card .brand-row img.logo{width:18px;height:18px;border-radius:4px;object-fit:cover;flex-shrink:0}
+  .card .brand{font-weight:800;color:var(--yn-gold);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .wifi-ico{flex-shrink:0}
+  .card .label{font-size:10.5px;color:var(--yn-muted);text-transform:uppercase;letter-spacing:.05em}
+  .card .code{font-family:'SF Mono',Consolas,monospace;font-size:21px;font-weight:800;color:var(--yn-teal);margin:5px 0}
+  .card .meta{display:flex;gap:10px;flex-wrap:wrap}
+  .card .price{font-size:12px;color:var(--yn-gold2);font-weight:700}
+  .card .duration{font-size:12px;color:#9fd8d0}
+  .card .limit{font-size:12px;color:#9fd8d0}
+  .card .permanent{font-size:10.5px;color:var(--yn-muted);margin-top:6px;padding-top:6px;border-top:1px solid var(--yn-line)}
+  .card .agent-badge{
+    margin-top:8px;display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
+    padding:3px 8px;border-radius:20px;background:rgba(46,196,182,.12);color:var(--yn-teal);
+  }
+  .card .agent-badge.admin{background:rgba(232,163,61,.12);color:var(--yn-gold)}
+  .card img.qr{width:88px;height:88px;background:#fff;border-radius:8px;padding:4px;flex-shrink:0}
+
+  .card .del-btn{
+    position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:50%;
+    border:1px solid var(--yn-line);background:rgba(255,255,255,.04);color:var(--yn-muted);
+    font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .card .del-btn:hover{border-color:var(--yn-danger);color:var(--yn-danger);background:rgba(255,107,107,.08)}
+  .card .del-btn:disabled{opacity:.3;cursor:not-allowed}
+  .card .del-btn:disabled:hover{border-color:var(--yn-line);color:var(--yn-muted);background:rgba(255,255,255,.04)}
+
+  /* Compact (on-screen): slim strip, no big QR, more per view */
+  .grid.compact{grid-template-columns:repeat(auto-fill, 220px)}
+  .card.compact{width:220px;padding:9px 11px}
+  .card.compact .code{font-size:15px;margin:2px 0}
+  .card.compact img.qr{width:48px;height:48px;padding:2px}
+  .card.compact .brand{font-size:12px}
+  .card.compact .agent-badge{margin-top:5px}
+  .card.compact .permanent{font-size:9px;margin-top:4px;padding-top:4px}
+
+  /* A4-sheet mode (on-screen preview mirrors the print grid below) */
+  .grid.sheet{grid-template-columns:repeat(5, 148px);gap:8px;justify-content:start}
+  .card.sheet{width:148px;padding:8px;flex-direction:column;align-items:stretch;gap:4px}
+  .card.sheet .brand-row{margin-bottom:2px}
+  .card.sheet .brand{font-size:10.5px}
+  .card.sheet .code{font-size:13px;margin:2px 0}
+  .card.sheet img.qr{width:44px;height:44px;align-self:center}
+  .card.sheet .meta{font-size:9px;gap:6px}
+  .card.sheet .price,.card.sheet .duration,.card.sheet .limit{font-size:9px}
+  .card.sheet .agent-badge{font-size:8px;padding:2px 6px;margin-top:4px;align-self:flex-start}
+  .card.sheet .permanent{font-size:8px;margin-top:3px;padding-top:3px}
+  .card.sheet .label{display:none} /* "VOUCHER CODE" was still full-size (10.5px) here - ate into the QR's space budget at this density */
+
+  /* ---------- print output ---------- */
+  @media print {
+    @page{margin:6mm}
+    body{background:#fff;color:#000}
+    .app-sidebar,.page-header,.print-head,.toolbar,.empty{display:none}
+    .batches-panel{display:none !important} /* !important so this beats the inline style toggleBatches() sets when the panel is left open */
+    #yournetLangSwitcherContainer,#app-mobile-shell{display:none !important}
+    .app-main{padding:0;max-width:none}
+    .card{border-radius:6px;break-inside:avoid;page-break-inside:avoid}
+    .card .del-btn{display:none}
+
+    .grid{grid-template-columns:repeat(2, 86mm);gap:4mm;justify-content:center}
+    .card{width:86mm;background:#fff;border:2px solid #0d7a6c;color:#000}
+    .card .brand{color:#a5670f}
+    .card .code{color:#0d1a1e}
+    .card .price{color:#8a5a00}
+    .card .duration{color:#333}
+    .card .limit{color:#333}
+    .card .permanent{color:#666;border-top:1px solid #ddd}
+    .card .agent-badge{background:#eef8f6;color:#0d7a6c}
+    .card .agent-badge.admin{background:#fbf1e2;color:#a5670f}
+
+    .grid.compact{grid-template-columns:repeat(4, 48mm);gap:2mm}
+    .card.compact{width:48mm;padding:2mm 3mm;border:1.5px solid #a5670f}
+    .card.compact img.qr{width:15mm;height:15mm}
+    .card.compact .code{font-size:12px}
+    .card.compact .brand{font-size:9px}
+    .card.compact .permanent{border-top:1px solid #ddd}
+
+    /* 5 columns x 10 rows = exactly 50 vouchers per A4 sheet. Square
+       corners (no border-radius) here, unlike card/compact mode - a
+       rounded corner is much harder to cut cleanly by hand or with a
+       paper cutter than a straight line, and at this density every
+       card is touching its neighbours on all sides, so the border IS
+       the cut guide. 0.75pt is thick enough to see and follow with
+       scissors while still reading as a clean edge, not a heavy box. */
+    .grid.sheet{grid-template-columns:repeat(5, 36.4mm);gap:1.8mm 3mm;justify-content:center}
+    .card.sheet{
+      width:36.4mm;height:26.5mm;padding:1.6mm 2mm;border:0.75pt solid #0d7a6c;border-radius:0;
+      display:flex;flex-direction:column;justify-content:space-between;gap:0;
+    }
+    .card.sheet .brand-row{gap:3px;margin-bottom:0}
+    .card.sheet .brand-row img.logo{width:9px;height:9px}
+    .card.sheet .brand{font-size:6.6px;color:#a5670f}
+    .card.sheet .wifi-ico svg{width:8px;height:8px}
+    .card.sheet .code{font-size:9.5px;margin:1mm 0;color:#0d1a1e;letter-spacing:.02em}
+    .card.sheet img.qr{width:11mm;height:11mm;align-self:center;padding:0}
+    .card.sheet .meta{font-size:6px;justify-content:space-between;color:#444}
+    .card.sheet .limit{font-size:6px}
+    .card.sheet .permanent{font-size:5.5px;margin-top:0.5mm;padding-top:0.5mm;border-top:0.5pt solid #ddd;color:#888}
+    .card.sheet .label{display:none}
+    .card.sheet .agent-badge{display:none} /* no room at this density - agent stays visible in card/compact modes */
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
+<div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
+
+<div class="page-header">
+  <img src="/img/logo-icon.png" alt="" class="page-header-logo">
+  <h1 data-i18n="printVouchersTitle">Vouchers</h1>
+</div>
+
+<div class="print-head">
+  <div>
+    <div class="sub" data-i18n="printVouchersSub">Preview a batch, filter by agent, then print.</div>
+  </div>
+  <div id="status">Loading&hellip;</div>
+</div>
+
+<div class="toolbar">
+  <div class="field">
+    <label data-i18n="status">Status</label>
+    <select id="statusFilter" onchange="load()">
+      <option value="unused">Unused only</option>
+      <option value="">All</option>
+    </select>
+  </div>
+  <div class="field">
+    <label data-i18n="agent">Agent</label>
+    <select id="agentFilter" onchange="load()">
+      <option value="">All vouchers</option>
+      <option value="none">Admin-generated (unassigned)</option>
+    </select>
+  </div>
+  <div class="field">
+    <label data-i18n="batch">Batch</label>
+    <input id="batchFilter" placeholder="Any" oninput="document.querySelectorAll('.batch-tile.selected').forEach(t=>t.classList.remove('selected'));debouncedLoad()">
+  </div>
+  <div class="field">
+    <label data-i18n="layout">Layout</label>
+    <div class="segmented" id="layoutSwitch">
+      <button data-mode="card" class="active" onclick="setMode('card')">Card</button>
+      <button data-mode="compact" onclick="setMode('compact')">Compact</button>
+      <button data-mode="sheet" onclick="setMode('sheet')">A4 &middot; 50/page</button>
+    </div>
+  </div>
+  <div class="field">
+    <label>Search code</label>
+    <input id="codeSearch" placeholder="e.g. 2J97-7F45" oninput="debouncedCodeSearch()">
+  </div>
+  <div class="spacer"></div>
+  <button class="btn ghost" onclick="toggleBatches()">Batches</button>
+  <button class="btn ghost" onclick="load()" data-i18n="refresh">Refresh</button>
+  <button class="btn" onclick="window.print()" data-i18n="print">Print</button>
+  <button class="btn ghost" id="thermalBtn" onclick="printThermal()" title="Bluetooth ESC/POS thermal printer">Print thermal</button>
+</div>
+
+<div class="batches-panel" id="batchesPanel" style="display:none">
+  <div class="sub">Tap a batch to view it below, or check one or more to act on them together.</div>
+  <div class="batches-toolrow">
+    <label class="select-all-row">
+      <input type="checkbox" id="selectAllBatches" onchange="toggleSelectAll(this.checked)">
+      Select all
+    </label>
+    <div class="bulk-toolbar" id="bulkToolbar">
+      <span class="bulk-count" id="bulkCount">0 selected</span>
+      <div class="bulk-actions">
+        <button type="button" class="btn ghost sm" onclick="bulkPrintSelected()">🖨️ Print Selected</button>
+        <button type="button" class="btn ghost sm" onclick="bulkExportSelected()">⬇ Export CSV</button>
+        <button type="button" class="btn danger sm" onclick="bulkDeleteSelected()">🗑 Delete Selected</button>
+        <button type="button" class="btn ghost sm" onclick="clearSelection()">Clear</button>
+      </div>
+    </div>
+  </div>
+  <div class="batches-grid" id="batchesGrid"></div>
+</div>
+
+<div class="batches-panel" id="searchResultsPanel" style="display:none">
+  <div class="sub">Matches for the code you typed - not what will print, just a lookup.</div>
+  <div id="searchResultsList"></div>
+</div>
+
+<div id="empty" class="empty" style="display:none">No vouchers match these filters yet. Generate a batch first, or widen the filters above.</div>
+<div class="grid" id="grid"></div>
+  </main>
+</div>
+
+<script>window.YOURNET_ACTIVE_NAV = 'vouchers';</script>
+<script src="/shell.js"></script>
+<script src="/fontsize.js"></script>
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<script>
+  const token = localStorage.getItem('yournet_token');
+  const currency = localStorage.getItem('yournet_currency') || 'GHS';
+  let mode = 'card';
+  let branding = { businessName: 'WiFi Vouchers', logoUrl: null };
+  let loadedVouchers = [];
+  let thermalDevice = null;
+  let thermalChar = null;
+
+  // Web Bluetooth doesn't work in Safari/iOS at all, and needs HTTPS
+  // everywhere else - detect up front and disable rather than let someone
+  // tap it and get a confusing browser error.
+  if (!navigator.bluetooth) {
+    const btn = document.getElementById('thermalBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.title = 'Bluetooth printing needs Chrome/Edge on Android or desktop (not Safari/iOS)';
+    }
+  }
+
+  if (!token) {
+    document.getElementById('status').textContent = 'Please log in via /login first, then come back to this page.';
+  }
+
+  // Small drawn wifi glyph (three arcs + a dot) instead of an emoji, so it
+  // renders identically on screen and on every printer/driver - emoji
+  // glyphs are notoriously inconsistent (or missing entirely) once a
+  // browser hands off to a print engine.
+  const WIFI_SVG = `<svg class="wifi-ico" viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 8.5C8 3 16 3 22 8.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M5.5 12.5C9.5 9 14.5 9 18.5 12.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <path d="M9 16.5C10.9 15 13.1 15 15 16.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="12" cy="20" r="1.4" fill="currentColor"/>
+  </svg>`;
+
+  // Same "reduce to the biggest whole unit" formatter used in admin.html's
+  // package list, so a voucher good for 2880 minutes prints as "2 days".
+  function formatDuration(minutes) {
+    const units = [['years', 525600], ['months', 43200], ['days', 1440], ['hours', 60], ['minutes', 1]];
+    for (const [name, mult] of units) {
+      if (minutes % mult === 0 && minutes / mult >= 1 && (name === 'minutes' || minutes / mult < (name === 'hours' ? 48 : name === 'days' ? 62 : 100))) {
+        const n = minutes / mult;
+        return `${n} ${name === 'minutes' && n === 1 ? 'minute' : name}`;
+      }
+    }
+    return `${minutes} minutes`;
+  }
+
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('#layoutSwitch button').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+    const grid = document.getElementById('grid');
+    grid.className = 'grid' + (m === 'card' ? '' : ' ' + m);
+    document.querySelectorAll('.card').forEach(c => {
+      c.className = 'card' + (m === 'card' ? '' : ' ' + m);
+    });
+  }
+
+  let debounceTimer;
+  function debouncedLoad() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(load, 350);
+  }
+
+  // ---------- code search/lookup ----------
+  let searchDebounceTimer;
+  function debouncedCodeSearch() {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(runCodeSearch, 350);
+  }
+
+  function fmtWhen(iso) {
+    if (!iso) return null;
+    return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
+  // "Currently online" is inferred, not exact: a RADIUS interim-update
+  // (session_last_seen_at) usually stops arriving within a few minutes of
+  // a device actually disconnecting, but the router doesn't always send a
+  // clean Stop right away - so this is treated as stale, not live, once
+  // last_seen_at is more than 5 minutes old, even if session_status still
+  // technically reads 'active'.
+  function isSessionLive(v) {
+    if (v.sessionStatus !== 'active' || !v.sessionLastSeenAt) return false;
+    return (Date.now() - new Date(v.sessionLastSeenAt).getTime()) < 5 * 60 * 1000;
+  }
+
+  function renderSearchResult(v) {
+    const el = document.createElement('div');
+    el.className = 'search-result';
+
+    let detail = '';
+    if (v.status === 'unused') {
+      detail = 'Not redeemed yet.';
+    } else if (v.status === 'redeeming') {
+      detail = 'A redemption is in progress right now (not yet confirmed).';
+    } else if (v.status === 'active' || v.status === 'expired') {
+      const parts = [];
+      if (v.redeemedAt) parts.push(`Redeemed ${fmtWhen(v.redeemedAt)}`);
+      if (v.expiresAt) parts.push(`${v.status === 'expired' ? 'expired' : 'expires'} ${fmtWhen(v.expiresAt)}`);
+      if (v.clientMac) parts.push(`MAC ${v.clientMac}`);
+      detail = parts.join(' &middot; ');
+      if (v.status === 'active') {
+        detail += isSessionLive(v)
+          ? ' &middot; <span class="sr-live">\u25cf online now</span>'
+          : v.sessionLastSeenAt
+            ? ` &middot; <span class="sr-offline">last seen ${fmtWhen(v.sessionLastSeenAt)}</span>`
+            : '';
+      }
+    }
+
+    el.innerHTML = `
+      <div>
+        <div class="sr-code">${v.code}</div>
+        <div class="sr-meta">${v.packageLabel} &middot; ${v.siteName}</div>
+        <div class="sr-detail">${detail}</div>
+      </div>
+      <div class="sr-status ${v.status}">${v.status}</div>
+    `;
+    return el;
+  }
+
+  async function runCodeSearch() {
+    const term = document.getElementById('codeSearch').value.trim();
+    const panel = document.getElementById('searchResultsPanel');
+    const listEl = document.getElementById('searchResultsList');
+
+    if (!term) {
+      panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = 'block';
+    listEl.innerHTML = '<div class="batches-empty">Searching&hellip;</div>';
+
+    try {
+      const res = await fetch(`/api/vouchers/search?code=${encodeURIComponent(term)}`, {
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      if (!res.ok) throw new Error('search failed');
+      const results = await res.json();
+      if (!results.length) {
+        listEl.innerHTML = '<div class="batches-empty">No voucher codes match that.</div>';
+        return;
+      }
+      listEl.innerHTML = '';
+      results.forEach((v) => listEl.appendChild(renderSearchResult(v)));
+    } catch (err) {
+      listEl.innerHTML = '<div class="batches-empty">Could not search right now.</div>';
+    }
+  }
+
+  const UNGROUPED_LABEL = '(no batch)';
+  let batchesLoaded = false;
+  let batchRows = []; // raw /batches API rows, kept around so selection lookups don't need another fetch
+
+  // Selection state for the bulk toolbar. Keyed by "siteId::batch" (batch
+  // normalized to '__none__' for the ungrouped tile) so two same-named
+  // batches on different sites are never conflated into one selection.
+  const selected = new Map();
+  const keyFor = (b) => `${b.site_id}::${b.batch || '__none__'}`;
+
+  function toggleBatches() {
+    const panel = document.getElementById('batchesPanel');
+    const willShow = panel.style.display === 'none';
+    panel.style.display = willShow ? 'block' : 'none';
+    if (willShow && !batchesLoaded) loadBatches();
+  }
+
+  async function loadBatches(force) {
+    if (force) batchesLoaded = false;
+    const gridEl = document.getElementById('batchesGrid');
+    gridEl.innerHTML = '<div class="batches-empty">Loading&hellip;</div>';
+    try {
+      const res = await fetch('/api/vouchers/batches', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) throw new Error('load failed');
+      const batches = await res.json();
+      batchRows = batches;
+      batchesLoaded = true;
+      // Drop any selections whose batch no longer exists (e.g. just deleted).
+      const liveKeys = new Set(batches.map(keyFor));
+      Array.from(selected.keys()).forEach(k => { if (!liveKeys.has(k)) selected.delete(k); });
+
+      if (!batches.length) {
+        gridEl.innerHTML = '<div class="batches-empty">No vouchers generated yet.</div>';
+        updateBulkToolbar();
+        return;
+      }
+      gridEl.innerHTML = '';
+      batches.forEach(b => {
+        const label = b.batch || UNGROUPED_LABEL;
+        const key = keyFor(b);
+        const used = b.total - b.unused;
+        const pct = b.total ? Math.round((used / b.total) * 100) : 0;
+        const tile = document.createElement('div');
+        tile.className = 'batch-tile' + (selected.has(key) ? ' checked' : '');
+        tile.dataset.batch = label;
+        tile.dataset.key = key;
+        tile.innerHTML = `
+          <div class="batch-top">
+            <input type="checkbox" class="batch-check" ${selected.has(key) ? 'checked' : ''}>
+            <div class="batch-titles">
+              <div class="batch-name">${label}</div>
+              <div class="batch-site">${b.site_name || ''}</div>
+            </div>
+          </div>
+          <div class="batch-progress"><div class="batch-progress-fill" style="width:${pct}%"></div></div>
+          <div class="batch-counts"><span>${used}/${b.total} used</span><b>${b.unused} left</b></div>
+          <div class="batch-actions">
+            <button type="button" class="btn ghost sm">View</button>
+            <button type="button" class="btn sm">Print unused</button>
+          </div>
+        `;
+        const checkbox = tile.querySelector('.batch-check');
+        const [viewBtn, printBtn] = tile.querySelectorAll('.batch-actions button');
+
+        checkbox.onclick = (e) => e.stopPropagation();
+        checkbox.onchange = () => toggleBatchSelection(b, tile, checkbox.checked);
+        viewBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); viewBatch(); };
+        printBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); printBatchUnused(); };
+        tile.onclick = () => { selectBatchTile(tile, label); viewBatch(); };
+        gridEl.appendChild(tile);
+      });
+      syncSelectAllCheckbox();
+      updateBulkToolbar();
+    } catch (err) {
+      gridEl.innerHTML = '<div class="batches-empty">Could not load batches.</div>';
+    }
+  }
+
+  function selectBatchTile(tile, label) {
+    document.querySelectorAll('.batch-tile').forEach(t => t.classList.remove('viewing'));
+    tile.classList.add('viewing');
+    document.getElementById('batchFilter').value = label;
+  }
+
+  // Just loads that batch into the current view so it can be checked
+  // before printing - the actual print stays a separate, explicit action.
+  async function viewBatch() {
+    await load();
+    document.getElementById('grid').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Forces status to unused (printing an already-redeemed voucher again
+  // hands out a dead code) and batch to whichever tile was clicked, so this
+  // is always exactly "the unused vouchers in this one batch" - not
+  // whatever the status filter happened to be left on.
+  async function printBatchUnused() {
+    document.getElementById('statusFilter').value = 'unused';
+    await load();
+    window.print();
+  }
+
+  // ---------- multi-select / bulk actions ----------
+  function toggleBatchSelection(b, tile, isChecked) {
+    const key = keyFor(b);
+    if (isChecked) selected.set(key, b); else selected.delete(key);
+    tile.classList.toggle('checked', isChecked);
+    syncSelectAllCheckbox();
+    updateBulkToolbar();
+  }
+
+  function toggleSelectAll(checkAll) {
+    document.querySelectorAll('.batch-tile').forEach(tile => {
+      const b = batchRows.find(r => keyFor(r) === tile.dataset.key);
+      if (!b) return;
+      const checkbox = tile.querySelector('.batch-check');
+      checkbox.checked = checkAll;
+      toggleBatchSelection(b, tile, checkAll);
+    });
+  }
+
+  function syncSelectAllCheckbox() {
+    const box = document.getElementById('selectAllBatches');
+    if (!box) return;
+    box.checked = batchRows.length > 0 && selected.size === batchRows.length;
+    box.indeterminate = selected.size > 0 && selected.size < batchRows.length;
+  }
+
+  function clearSelection() {
+    selected.clear();
+    document.querySelectorAll('.batch-tile').forEach(t => {
+      t.classList.remove('checked');
+      const cb = t.querySelector('.batch-check');
+      if (cb) cb.checked = false;
+    });
+    syncSelectAllCheckbox();
+    updateBulkToolbar();
+  }
+
+  function updateBulkToolbar() {
+    const bar = document.getElementById('bulkToolbar');
+    const count = document.getElementById('bulkCount');
+    if (selected.size > 0) {
+      bar.classList.add('show');
+      const totalUnused = Array.from(selected.values()).reduce((sum, b) => sum + b.unused, 0);
+      count.textContent = `${selected.size} batch${selected.size === 1 ? '' : 'es'} selected · ${totalUnused} unused voucher${totalUnused === 1 ? '' : 's'}`;
+    } else {
+      bar.classList.remove('show');
+    }
+  }
+
+  function selectedBatchPayload() {
+    return Array.from(selected.values()).map(b => ({ batch: b.batch || '__none__', siteId: b.site_id }));
+  }
+
+  // Pulls unused vouchers from every checked batch (each fetched with an
+  // explicit siteId so two same-named batches on different sites are never
+  // merged into one another's stack) and prints them as a single combined
+  // job - the whole point of a bulk print being "one trip to the printer,"
+  // not one print dialog per batch.
+  async function bulkPrintSelected() {
+    if (!selected.size) return;
+    document.getElementById('statusFilter').value = 'unused';
+    document.getElementById('status').textContent = 'Gathering selected batches\u2026';
+    try {
+      const lists = await Promise.all(Array.from(selected.values()).map(async (b) => {
+        const params = new URLSearchParams({ status: 'unused', siteId: b.site_id });
+        params.set('batch', b.batch || '__none__');
+        const res = await fetch('/api/vouchers?' + params.toString(), { headers: { Authorization: 'Bearer ' + token } });
+        return res.ok ? res.json() : [];
+      }));
+      const combined = lists.flat();
+      await renderVouchers(combined);
+      window.print();
+    } catch (err) {
+      document.getElementById('status').textContent = 'Could not gather the selected batches.';
+    }
+  }
+
+  async function bulkDeleteSelected() {
+    if (!selected.size) return;
+    const totalUnused = Array.from(selected.values()).reduce((sum, b) => sum + b.unused, 0);
+    const ok = confirm(
+      `Delete ${selected.size} batch${selected.size === 1 ? '' : 'es'}? ` +
+      `Vouchers with a live session are always kept, but everything else (about ${totalUnused} unused, plus any already-expired) will be permanently removed.`
+    );
+    if (!ok) return;
+
+    try {
+      const res = await fetch('/api/vouchers/batches/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ batches: selectedBatchPayload() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Could not delete the selected batches.'); return; }
+      const deleted = data.results.reduce((s, r) => s + r.deleted, 0);
+      const kept = data.results.reduce((s, r) => s + r.kept, 0);
+      document.getElementById('status').textContent =
+        `Deleted ${deleted} voucher${deleted === 1 ? '' : 's'}` + (kept ? ` · kept ${kept} in use` : '');
+      clearSelection();
+      await loadBatches(true);
+      await load();
+    } catch (err) {
+      alert('Network error - could not delete the selected batches.');
+    }
+  }
+
+  async function bulkExportSelected() {
+    if (!selected.size) return;
+    try {
+      const res = await fetch('/api/vouchers/batches/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ batches: selectedBatchPayload() }),
+      });
+      if (!res.ok) { alert('Could not export the selected batches.'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vouchers-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Network error - could not export the selected batches.');
+    }
+  }
+
+  async function loadBranding() {
+    try {
+      const res = await fetch('/api/vouchers/print-branding', { headers: { Authorization: 'Bearer ' + token } });
+      if (res.ok) branding = await res.json();
+    } catch (err) { /* falls back to defaults - never block the page over branding */ }
+  }
+
+  async function loadAgentFilter() {
+    try {
+      const res = await fetch('/api/agents', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) return;
+      const agents = await res.json();
+      const sel = document.getElementById('agentFilter');
+      const current = sel.value;
+      agents.forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.name;
+        sel.appendChild(opt);
+      });
+      sel.value = current;
+    } catch (err) { /* agent filter just stays at the two default options */ }
+  }
+
+  async function load() {
+    const status = document.getElementById('statusFilter').value;
+    const agentId = document.getElementById('agentFilter').value;
+    let batch = document.getElementById('batchFilter').value.trim();
+    // The "(no batch)" tile fills the input with this exact label so it's
+    // readable on screen; translate it back to the server's NULL-batch
+    // sentinel here rather than leaking '__none__' into the visible field.
+    if (batch === UNGROUPED_LABEL) batch = '__none__';
+
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (agentId) params.set('agentId', agentId);
+    if (batch) params.set('batch', batch);
+    const res = await fetch('/api/vouchers?' + params.toString(), { headers: { Authorization: 'Bearer ' + token } });
+    const vouchers = await res.json();
+    await renderVouchers(vouchers);
+  }
+
+  // Shared by the normal single-filter load() above and bulkPrintSelected()
+  // below - both end up with a flat list of voucher rows to paint into the
+  // on-screen grid the same way, they just differ in how that list was
+  // gathered (one filtered fetch vs. several concatenated together).
+  async function renderVouchers(vouchers) {
+    loadedVouchers = vouchers;
+    document.getElementById('status').textContent = `${vouchers.length} voucher${vouchers.length === 1 ? '' : 's'}`;
+    document.getElementById('empty').style.display = vouchers.length ? 'none' : 'block';
+
+    const grid = document.getElementById('grid');
+    grid.className = 'grid' + (mode === 'card' ? '' : ' ' + mode);
+    grid.innerHTML = '';
+
+    // Collected so load() can await every QR image actually finishing
+    // before it resolves - without this, printBatchUnused() (and a plain
+    // Print click right after Refresh) can fire window.print() while the
+    // QR <img> tags are still empty, since the fetch below was previously
+    // fire-and-forget and not part of what load() waited on.
+    const qrLoads = [];
+
+    for (const v of vouchers) {
+      const card = document.createElement('div');
+      card.className = 'card' + (mode === 'card' ? '' : ' ' + mode);
+      const agentBadge = v.agent_name
+        ? `<div class="agent-badge">${v.agent_name}</div>`
+        : `<div class="agent-badge admin">Admin</div>`;
+
+      // Mirrors the backend rule in routes/vouchers.js DELETE /:id: a live
+      // session (status 'active' with expires_at still ahead) can't be
+      // deleted from here - this just disables the button up front with a
+      // reason, rather than letting someone click it and hit a 409.
+      const isLiveSession = v.status === 'active' && v.expires_at && new Date(v.expires_at) > new Date();
+      const isRedeeming = v.status === 'redeeming';
+      const deleteBlockedReason = isLiveSession
+        ? 'Has an active session - can\u2019t delete while in use'
+        : isRedeeming
+          ? 'Redemption in progress - try again shortly'
+          : '';
+
+      card.innerHTML = `
+        <button class="del-btn" title="${deleteBlockedReason || 'Delete voucher'}" ${deleteBlockedReason ? 'disabled' : ''} onclick="deleteVoucher('${v.id}', this)">&times;</button>
+        <div class="left">
+          <div class="brand-row">
+            ${branding.logoUrl ? `<img class="logo" src="${branding.logoUrl}" alt="">` : ''}
+            <div class="brand">${branding.businessName}</div>
+            ${WIFI_SVG}
+          </div>
+          <div class="label">Voucher Code</div>
+          <div class="code">${v.code}</div>
+          <div class="meta">
+            <div class="price">${currency} ${Number(v.package_price).toFixed(2)}</div>
+            <div class="duration">${formatDuration(v.package_duration_minutes)}</div>
+            <div class="limit">Limit: 1</div>
+          </div>
+          ${agentBadge}
+          <div class="permanent">Permanent &ndash; no pre-redemption expiry</div>
+        </div>
+        <img class="qr" alt="QR">
+      `;
+      grid.appendChild(card);
+
+      // QR endpoint requires auth, so fetch it as an image blob instead of
+      // a plain <img src> (which can't send an Authorization header).
+      // Pushed onto qrLoads (not left fire-and-forget) so load() can await
+      // it - see the comment above the qrLoads declaration.
+      qrLoads.push(
+        fetch(`/api/vouchers/${v.id}/qrcode`, { headers: { Authorization: 'Bearer ' + token } })
+          .then(r => r.blob())
+          .then(blob => { card.querySelector('img.qr').src = URL.createObjectURL(blob); })
+          .catch(() => { /* one bad QR shouldn't block the rest of the batch from printing */ })
+      );
+    }
+
+    await Promise.all(qrLoads);
+  }
+
+  // Targets the "generic BLE ESC/POS thermal printer" profile used by most
+  // cheap 58mm/80mm Bluetooth receipt printers sold for this exact use
+  // case (voucher/ticket printing). Service 0xFF00 / write characteristic
+  // 0xFF02 is the common pairing for these boards, but printer firmware
+  // varies - if connect succeeds but nothing prints, check your specific
+  // printer's documented UUIDs and swap them in below.
+  const THERMAL_SERVICE_UUID = 0x18f0;
+  const THERMAL_CHAR_UUID = 0x2af1;
+  const ESC = 0x1b;
+
+  async function connectThermalPrinter() {
+    thermalDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [THERMAL_SERVICE_UUID] }],
+    });
+    const server = await thermalDevice.gatt.connect();
+    const service = await server.getPrimaryService(THERMAL_SERVICE_UUID);
+    thermalChar = await service.getCharacteristic(THERMAL_CHAR_UUID);
+  }
+
+  function buildReceiptBytes(v) {
+    const enc = new TextEncoder();
+    const lines = [];
+    lines.push(new Uint8Array([ESC, 0x40])); // init
+    lines.push(new Uint8Array([ESC, 0x61, 0x01])); // center align
+    lines.push(enc.encode(branding.businessName + '\n'));
+    lines.push(enc.encode('--------------------------\n'));
+    lines.push(new Uint8Array([ESC, 0x21, 0x30])); // double-size text
+    lines.push(enc.encode(v.code + '\n'));
+    lines.push(new Uint8Array([ESC, 0x21, 0x00])); // normal text
+    lines.push(enc.encode(`${currency} ${Number(v.package_price).toFixed(2)}  -  ${formatDuration(v.package_duration_minutes)}\n`));
+    lines.push(enc.encode('--------------------------\n'));
+    lines.push(enc.encode('\n\n\n'));
+    lines.push(new Uint8Array([0x1d, 0x56, 0x00])); // full cut
+    return lines;
+  }
+
+  async function printThermal() {
+    if (!loadedVouchers.length) {
+      document.getElementById('status').textContent = 'Load some vouchers first.';
+      return;
+    }
+    try {
+      if (!thermalChar) await connectThermalPrinter();
+      for (const v of loadedVouchers) {
+        for (const chunk of buildReceiptBytes(v)) {
+          await thermalChar.writeValueWithoutResponse(chunk);
+        }
+      }
+    } catch (err) {
+      // User cancelling the device picker throws too - don't show that as
+      // an error, it's an expected outcome of "changed their mind".
+      if (err.name !== 'NotFoundError') {
+        document.getElementById('status').textContent = 'Thermal printer error: ' + err.message;
+      }
+    }
+  }
+
+  async function deleteVoucher(id, btn) {
+    if (!confirm('Delete this voucher? This can\u2019t be undone.')) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(`/api/vouchers/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Could not delete this voucher.');
+        btn.disabled = false;
+        return;
+      }
+      btn.closest('.card').remove();
+    } catch (err) {
+      alert('Network error - could not delete this voucher.');
+      btn.disabled = false;
+    }
+  }
+
+  if (token) {
+    loadBranding();
+    loadAgentFilter();
+    load();
+  }
+</script>
+</body>
+</html>

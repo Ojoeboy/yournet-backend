@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Get set up</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:20px;max-width:560px;margin-inline:auto}
+  h1{font-size:20px}
+  .sub{color:#6b8a91;font-size:13px;margin-bottom:20px;line-height:1.5}
+  .steps{display:flex;gap:6px;margin-bottom:18px}
+  .steps .dot{flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.1)}
+  .steps .dot.done{background:#2ec4b6}
+  .steps .dot.active{background:#e8a33d}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px;margin-bottom:14px;display:none}
+  .card.active{display:block}
+  .card h2{font-size:15px;margin:0 0 4px;color:#2ec4b6}
+  .card .desc{font-size:12px;color:#6b8a91;margin-bottom:12px;line-height:1.5}
+  label{display:block;font-size:11px;color:#6b8a91;text-transform:uppercase;margin:10px 0 4px}
+  input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);
+    background:#0d1a1e;color:#fff;font-size:14px}
+  .radio-row{display:flex;gap:10px;margin-top:6px;flex-wrap:wrap}
+  .radio-row label{display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;color:#e8f0f1;margin:0}
+  button{margin-top:14px;padding:11px 16px;border:none;border-radius:8px;background:#e8a33d;
+    color:#0d1a1e;font-weight:700;cursor:pointer;font-size:14px}
+  button.secondary{background:#1a363e;color:#e8f0f1}
+  button.skip{background:none;color:#6b8a91;text-decoration:underline;padding:8px 0}
+  .row{display:flex;gap:8px}
+  .row > *{flex:1}
+  .msg{margin-top:10px;font-size:13px;padding:10px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
+  .msg.ok{background:rgba(46,196,182,.12);color:#2ec4b6}
+  .voucher-list{margin-top:12px;font-size:13px}
+  .voucher-list .code{font-family:monospace;background:#0d1a1e;padding:4px 8px;border-radius:6px;display:inline-block;margin:3px 0}
+</style>
+</head>
+<body>
+<h1>Get set up</h1>
+<div class="sub">Six quick steps from a new account to your first printable vouchers. You can leave any step's optional fields blank and adjust them later in the full admin panel.</div>
+<div class="steps">
+  <div class="dot" data-step="1"></div><div class="dot" data-step="2"></div><div class="dot" data-step="3"></div>
+  <div class="dot" data-step="4"></div><div class="dot" data-step="5"></div><div class="dot" data-step="6"></div>
+</div>
+
+<!-- STEP 1: add site -->
+<div class="card" id="step-1">
+  <h2>1. Add your first site</h2>
+  <div class="desc">A "site" is one router/location. You can add more later.</div>
+  <label>Site name</label>
+  <input id="siteName" placeholder="e.g. Main Branch">
+  <label>Router type</label>
+  <select id="siteType">
+    <option value="mikrotik">MikroTik</option>
+    <option value="omada">TP-Link Omada</option>
+    <option value="unifi">UniFi</option>
+    <option value="meraki">Meraki</option>
+  </select>
+  <div id="mikrotikFields">
+    <div class="row">
+      <div><label>Router IP</label><input id="mkHost" placeholder="e.g. 192.168.1.1"></div>
+      <div><label>API port</label><input id="mkPort" placeholder="8728"></div>
+    </div>
+    <div class="row">
+      <div><label>API username</label><input id="mkUsername"></div>
+      <div><label>API password</label><input id="mkPassword" type="password"></div>
+    </div>
+  </div>
+  <button onclick="createSite()">Save site & test connection</button>
+  <div class="msg" id="msg-1"></div>
+</div>
+
+<!-- STEP 2: router config -->
+<div class="card" id="step-2">
+  <h2>2. Router configuration</h2>
+  <div class="desc">If your MikroTik router isn't configured for this yet, generate a ready-to-import config file. Already configured? Skip this.</div>
+  <button onclick="goToWizard()">Open the router config wizard</button>
+  <br><button class="skip" onclick="nextStep()">Skip — my router is already configured</button>
+</div>
+
+<!-- STEP 3: portal branding -->
+<div class="card" id="step-3">
+  <h2>3. Branding your customers see</h2>
+  <div class="desc">Shown on the WiFi login page and printed vouchers. You can fine-tune this later in Admin → Portal.</div>
+  <label>Business name</label>
+  <input id="portalBusinessName" placeholder="e.g. Main Branch WiFi">
+  <button onclick="savePortal()">Save & continue</button>
+  <button class="skip" onclick="nextStep()">Skip for now</button>
+  <div class="msg" id="msg-3"></div>
+</div>
+
+<!-- STEP 4: first package -->
+<div class="card" id="step-4">
+  <h2>4. Create a package</h2>
+  <div class="desc">A price + duration combo customers buy. Start with one — add more later in Admin → Packages.</div>
+  <div class="row">
+    <div><label>Label</label><input id="pkgLabel" value="1 Day"></div>
+    <div><label>Price</label><input id="pkgPrice" value="5"></div>
+  </div>
+  <label>Duration (minutes)</label>
+  <input id="pkgDuration" value="1440">
+  <button onclick="createPackage()">Save package</button>
+  <div class="msg" id="msg-4"></div>
+</div>
+
+<!-- STEP 5: generate vouchers -->
+<div class="card" id="step-5">
+  <h2>5. Generate your first vouchers</h2>
+  <label>How many?</label>
+  <input id="voucherQty" value="5">
+  <button onclick="generateFirstVouchers()">Generate</button>
+  <div class="voucher-list" id="voucherList"></div>
+  <div class="msg" id="msg-5"></div>
+</div>
+
+<!-- STEP 6: done -->
+<div class="card" id="step-6">
+  <h2>6. You're set up</h2>
+  <div class="desc">Your site, portal branding, first package, and vouchers are all live. From here, everything is managed from the full admin panel.</div>
+  <button onclick="window.location.href='/print.html'">Print my vouchers</button>
+  <button class="secondary" onclick="window.location.href='/admin.html'">Go to admin panel</button>
+</div>
+
+<script>
+  const token = localStorage.getItem('yournet_token');
+  if (!token) window.location.href = '/login.html';
+
+  let currentStep = 1;
+  let createdSiteId = null;
+
+  function showMsg(id, text, type) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = `msg show ${type}`;
+  }
+
+  function goToStep(n) {
+    currentStep = n;
+    document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+    document.getElementById(`step-${n}`).classList.add('active');
+    document.querySelectorAll('.steps .dot').forEach(d => {
+      const s = Number(d.dataset.step);
+      d.classList.toggle('done', s < n);
+      d.classList.toggle('active', s === n);
+    });
+  }
+  function nextStep() { goToStep(currentStep + 1); }
+
+  async function api(path, method, body) {
+    const res = await fetch(path, {
+      method: method || 'GET',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  }
+
+  document.getElementById('siteType').addEventListener('change', (e) => {
+    document.getElementById('mikrotikFields').style.display = e.target.value === 'mikrotik' ? 'block' : 'none';
+  });
+
+  async function createSite() {
+    const name = document.getElementById('siteName').value.trim();
+    const type = document.getElementById('siteType').value;
+    if (!name) return showMsg('msg-1', 'Site name is required.', 'err');
+    try {
+      const body = { name, type };
+      if (type === 'mikrotik') {
+        body.mikrotik = {
+          host: document.getElementById('mkHost').value.trim(),
+          port: Number(document.getElementById('mkPort').value) || undefined,
+          username: document.getElementById('mkUsername').value.trim(),
+          password: document.getElementById('mkPassword').value,
+        };
+      }
+      const site = await api('/api/sites', 'POST', body);
+      createdSiteId = site.id;
+      showMsg('msg-1', 'Site saved. Testing connection...', 'ok');
+      try {
+        await api(`/api/sites/${site.id}/test`, 'POST');
+        showMsg('msg-1', 'Site saved and connection verified.', 'ok');
+      } catch (testErr) {
+        // Don't block onboarding on this - a router that isn't configured
+        // yet (the very next step) will fail this test by definition.
+        showMsg('msg-1', `Site saved. Connection test: ${testErr.message} — that's expected if your router isn't configured yet (next step).`, 'ok');
+      }
+      setTimeout(() => nextStep(), 800);
+    } catch (err) {
+      showMsg('msg-1', err.message, 'err');
+    }
+  }
+
+  function goToWizard() {
+    window.location.href = `/rsc-wizard.html?siteId=${createdSiteId}`;
+  }
+
+  async function savePortal() {
+    const businessName = document.getElementById('portalBusinessName').value.trim();
+    if (!businessName) return nextStep();
+    try {
+      await api(`/api/sites/${createdSiteId}/portal`, 'PATCH', { businessName });
+      showMsg('msg-3', 'Saved.', 'ok');
+      setTimeout(() => nextStep(), 500);
+    } catch (err) {
+      showMsg('msg-3', err.message, 'err');
+    }
+  }
+
+  let createdPackageId = null;
+  async function createPackage() {
+    const label = document.getElementById('pkgLabel').value.trim();
+    const price = Number(document.getElementById('pkgPrice').value);
+    const durationMinutes = Number(document.getElementById('pkgDuration').value);
+    try {
+      const pkg = await api('/api/packages', 'POST', { label, price, durationMinutes });
+      createdPackageId = pkg.id;
+      showMsg('msg-4', 'Package saved.', 'ok');
+      setTimeout(() => nextStep(), 500);
+    } catch (err) {
+      showMsg('msg-4', err.message, 'err');
+    }
+  }
+
+  async function generateFirstVouchers() {
+    const quantity = Number(document.getElementById('voucherQty').value) || 1;
+    try {
+      const data = await api('/api/vouchers/generate', 'POST', {
+        packageId: createdPackageId, siteId: createdSiteId, quantity,
+      });
+      document.getElementById('voucherList').innerHTML =
+        data.vouchers.map(v => `<div class="code">${v.code}</div>`).join('');
+      showMsg('msg-5', `Generated ${data.count} vouchers.`, 'ok');
+      setTimeout(() => nextStep(), 800);
+    } catch (err) {
+      showMsg('msg-5', err.message, 'err');
+    }
+  }
+
+  goToStep(1);
+</script>
+<script src="/fontsize.js"></script>
+</body>
+</html>

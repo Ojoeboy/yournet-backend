@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Get YourNet Control</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:20px;max-width:480px;margin-inline:auto}
+  h1{font-size:22px}
+  .price{font-size:30px;font-weight:800;color:#ffc55a;margin:8px 0 20px}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px;margin-bottom:16px}
+  .card h2{margin:0 0 8px;font-size:15px;color:#2ec4b6}
+  input,select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#0d1a1e;color:#fff;margin-bottom:10px;box-sizing:border-box;font-size:14px}
+  button{width:100%;padding:12px;border:none;border-radius:8px;background:#e8a33d;color:#0d1a1e;
+    font-weight:700;cursor:pointer;font-size:14px}
+  button:disabled{opacity:.6;cursor:default}
+  .msg{margin-top:10px;font-size:13px;padding:10px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
+  .note{font-size:12px;color:#6b8a91;line-height:1.6}
+  .hidden{display:none}
+  .momoTarget{background:#0d1a1e;border:1px solid rgba(255,197,90,.4);border-radius:10px;
+    padding:12px;margin-bottom:14px;text-align:center}
+  .momoTarget .num{font-family:monospace;font-size:20px;font-weight:800;color:#ffc55a}
+  .momoTarget .name{font-size:12px;color:#6b8a91;margin-top:2px}
+  /* Glass mode: bg-rotate.js adds this to <body> once a rotating photo
+     background is actually showing, so the card goes see-through only then. */
+  body.yn-glass .card{background:rgba(19,34,40,.35);backdrop-filter:blur(16px) saturate(150%);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);border-color:rgba(255,255,255,.16)}
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    body.yn-glass .card{background:#132228}
+  }
+</style>
+</head>
+<body>
+<div id="yournetLangSwitcherContainer" style="display:flex;justify-content:flex-end;margin-bottom:10px"></div>
+<h1 data-i18n="ownIt">Get YourNet Control</h1>
+<div class="price">GHS <span id="priceDisplay">150</span> <span data-i18n="oneTime">to activate</span></div>
+<p class="note" style="margin:-14px 0 18px">Then GHS 50/month, billed automatically.</p>
+
+<div class="card" id="gatewayCard">
+  <h2 style="margin:0 0 8px;font-size:15px;color:#2ec4b6">Pay online (instant)</h2>
+  <select id="provider"></select>
+  <input id="email" type="email" data-i18n-placeholder="email" placeholder="Your email (for your activation key)">
+  <input id="phone" data-i18n-placeholder="phone" placeholder="Phone number" style="display:none">
+  <button id="payBtn" onclick="startCheckout()" data-i18n="payNowBtn">Pay now</button>
+  <div class="msg" id="payMsg"></div>
+  <p class="note" data-i18n="autoKeyNote">Your activation key is generated automatically the moment payment is confirmed.</p>
+</div>
+
+<!-- A permanent second option, not just a stopgap for when no gateway is
+     configured - some buyers prefer sending MoMo directly over a
+     third-party checkout page, and it has no gateway fees. The tradeoff
+     is speed: nothing here is verified automatically, the owner checks
+     the MoMo reference against their own phone before approving, so this
+     can take hours instead of being instant. See renderManualMomoTarget
+     below for the copy shown depending on whether a gateway also exists. -->
+<div class="card hidden" id="manualCard">
+  <h2 id="manualCardTitle" style="margin:0 0 8px;font-size:15px;color:#2ec4b6">Pay by Mobile Money</h2>
+  <p class="note" id="manualCardNote" style="margin-top:0"></p>
+  <div id="manualMomoTarget"></div>
+  <input id="manualEmail" type="email" placeholder="Your email (for your activation key)">
+  <input id="manualPhone" placeholder="Your phone number (optional)">
+  <input id="manualRef" placeholder="MoMo transaction ID / reference">
+  <input id="manualNotes" placeholder="Anything else worth knowing? (optional)">
+  <button id="manualSubmitBtn" onclick="submitManualClaim()">I've sent the payment</button>
+  <div class="msg" id="manualMsg"></div>
+</div>
+
+<script src="/bg-rotate.js"></script>
+<script src="/i18n/translations.js"></script>
+<script src="/i18n/i18n-loader.js"></script>
+<script>
+  const t = window.yournetI18n.t;
+  let providers = [];
+
+  async function loadProviders() {
+    const select = document.getElementById('provider');
+    const payBtn = document.getElementById('payBtn');
+    const gatewayCard = document.getElementById('gatewayCard');
+    const manualCard = document.getElementById('manualCard');
+    const manualNote = document.getElementById('manualCardNote');
+    try {
+      const res = await fetch('/license/purchase/providers');
+      const data = await res.json();
+      providers = data.providers || [];
+      // Manual pay is always shown now, not just as a fallback - only the
+      // wording changes depending on whether an automated option also
+      // exists, so buyers who care about speed know to pick that instead.
+      manualCard.classList.remove('hidden');
+      manualNote.textContent = providers.length
+        ? "Prefer to send MoMo directly instead of the checkout above? You can, but it isn't instant - the owner reviews and confirms it by hand."
+        : "Automated card/MoMo checkout isn't set up yet. You can still pay directly and get your key once it's confirmed - this usually isn't instant.";
+      renderManualMomoTarget(data.manualMomo);
+
+      if (!providers.length) {
+        gatewayCard.classList.add('hidden');
+        return;
+      }
+      select.innerHTML = providers.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
+      togglePhoneField();
+    } catch (err) {
+      gatewayCard.classList.add('hidden');
+      manualCard.classList.remove('hidden');
+      manualNote.textContent = "Automated card/MoMo checkout isn't set up yet. You can still pay directly and get your key once it's confirmed - this usually isn't instant.";
+      renderManualMomoTarget(null);
+    }
+  }
+
+  function renderManualMomoTarget(manualMomo) {
+    const target = document.getElementById('manualMomoTarget');
+    const submitBtn = document.getElementById('manualSubmitBtn');
+    if (!manualMomo) {
+      // OWNER_MOMO_NUMBER isn't set, so there's genuinely nowhere to tell
+      // the buyer to send money on THIS card - but if a gateway exists,
+      // that's still a real option, so only hide the manual card entirely
+      // rather than showing a confusing "no payment method" message.
+      if (providers.length) {
+        document.getElementById('manualCard').classList.add('hidden');
+      } else {
+        target.innerHTML = '<p class="note" style="margin:0">No payment method is available right now. Please check back shortly.</p>';
+        submitBtn.disabled = true;
+      }
+      return;
+    }
+    target.innerHTML =
+      '<div class="momoTarget">' +
+      '<div class="num">' + manualMomo.number + '</div>' +
+      (manualMomo.name ? '<div class="name">' + manualMomo.name + '</div>' : '') +
+      '</div>';
+  }
+
+  async function submitManualClaim() {
+    const msgEl = document.getElementById('manualMsg');
+    const email = document.getElementById('manualEmail').value.trim();
+    const phone = document.getElementById('manualPhone').value.trim();
+    const momoReference = document.getElementById('manualRef').value.trim();
+    const notes = document.getElementById('manualNotes').value.trim();
+    if (!email || !momoReference) {
+      msgEl.textContent = 'Enter your email and the MoMo transaction reference.';
+      msgEl.className = 'msg show err';
+      return;
+    }
+    try {
+      const res = await fetch('/license/purchase/claim-manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ buyerEmail: email, buyerPhone: phone || undefined, momoReference, notes: notes || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not submit your payment.');
+      document.getElementById('manualCard').innerHTML =
+        '<h2>Payment submitted</h2><p class="note" style="margin-top:0">' +
+        "We'll check this against our records and email your activation key to " +
+        email + " once it's confirmed.</p>";
+    } catch (err) {
+      msgEl.textContent = err.message;
+      msgEl.className = 'msg show err';
+    }
+  }
+
+  function togglePhoneField() {
+    const provider = document.getElementById('provider').value;
+    // Hubtel requires a phone number to initiate checkout; the others don't.
+    document.getElementById('phone').style.display = provider === 'hubtel' ? 'block' : 'none';
+  }
+
+  async function startCheckout() {
+    const msg = document.getElementById('payMsg');
+    const provider = document.getElementById('provider').value;
+    const email = document.getElementById('email').value;
+    const phone = document.getElementById('phone').value;
+
+    if (!email) {
+      msg.textContent = t('email') + ' ' + t('submit');
+      msg.className = 'msg show err';
+      return;
+    }
+    if (provider === 'hubtel' && !phone) {
+      msg.textContent = t('phone') + ' ' + t('submit');
+      msg.className = 'msg show err';
+      return;
+    }
+
+    try {
+      const res = await fetch('/license/purchase/initialize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, email, phone: phone || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not start payment');
+      window.location.href = data.checkoutUrl;
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
+  }
+
+  document.getElementById('provider').addEventListener('change', togglePhoneField);
+  loadProviders();
+</script>
+<script src="/fontsize.js"></script>
+</body>
+</html>

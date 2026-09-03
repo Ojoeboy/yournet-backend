@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YourNet Owner - Log in</title>
+<!-- PWA: owner-branded manifest (name "YourNet Owner", starts at
+     /license-admin) - kept distinct from the tenant app's manifest.json so
+     an installed shortcut is correctly labeled and lands on the owner
+     dashboard, not the tenant one. Registered directly here since this
+     page runs before shell.js (no token yet); the four other owner pages
+     (license-admin/owner-revenue/owner-tenants/owner-media) pick up the
+     same manifest via shell.js's ensurePwaMeta(), which switches on
+     YOURNET_AUTH_MODE. -->
+<link rel="manifest" href="/manifest-owner.json">
+<meta name="theme-color" content="#0d1a1e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="/icons/icon-owner-192.png">
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;
+    margin:0;padding:40px 20px;max-width:400px;margin-inline:auto}
+  .brand-logo{display:block;width:130px;height:auto;margin:0 auto 14px;border-radius:14px;
+    box-shadow:0 10px 28px rgba(0,0,0,.4)}
+  h1{font-size:22px;margin:0 0 4px;text-align:center}
+  .sub{color:#6b8a91;font-size:13px;margin-bottom:22px;text-align:center}
+  label{display:block;font-size:11px;color:#6b8a91;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 4px}
+  input{width:100%;padding:12px 13px;border-radius:10px;border:1px solid rgba(255,255,255,.15);
+    background:#132228;color:#fff;font-size:14px}
+  input:focus{outline:none;border-color:rgba(232,163,61,.5)}
+  .pwd-wrap{position:relative}
+  .pwd-wrap input{padding-right:40px}
+  .pwd-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;
+    border:none;cursor:pointer;font-size:16px;padding:4px 6px;margin:0;color:#6b8a91;line-height:1}
+  button.primary{width:100%;padding:13px;border:none;border-radius:10px;
+    background:linear-gradient(135deg,#e8a33d,#c97f1f);color:#0d1a1e;
+    font-weight:700;cursor:pointer;font-size:14.5px;margin-top:18px}
+  button.primary:hover{filter:brightness(1.05)}
+  .msg{margin-top:12px;font-size:13px;padding:10px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
+  .card{border-radius:20px;padding:28px 24px;
+    background:linear-gradient(180deg,rgba(20,40,46,0.92),rgba(13,26,30,0.85));
+    border:1px solid rgba(255,255,255,.1);box-shadow:0 20px 50px rgba(0,0,0,.5)}
+  /* Glass mode: bg-rotate.js adds this to <body> once a rotating photo
+     background is actually showing, so the card goes see-through only then. */
+  body.yn-glass .card{background:rgba(19,34,40,.35);backdrop-filter:blur(18px) saturate(150%);
+    -webkit-backdrop-filter:blur(18px) saturate(150%);border-color:rgba(255,255,255,.18)}
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    body.yn-glass .card{background:linear-gradient(180deg,rgba(20,40,46,0.92),rgba(13,26,30,0.85))}
+  }
+  .install-btn{width:100%;padding:12px;border:1px solid rgba(255,255,255,.14);border-radius:10px;
+    background:#1a363e;color:#e8f0f1;font-weight:600;font-size:13.5px;cursor:pointer;margin-top:12px}
+</style>
+</head>
+<body>
+<script src="/bg-rotate.js"></script>
+<div class="card">
+  <img class="brand-logo" src="/img/logo-owner.png" alt="YourNet Owner">
+  <h1>YourNet Owner</h1>
+  <div class="sub">Sign in to manage licenses, tenants &amp; revenue</div>
+
+  <label>Username</label>
+  <input id="username" placeholder="Username" autocomplete="username">
+  <label>Password</label>
+  <div class="pwd-wrap">
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+    <button type="button" class="pwd-toggle" onclick="togglePwd('password')" aria-label="Show password">👁</button>
+  </div>
+  <button class="primary" onclick="login()">Log in</button>
+  <div class="msg" id="msg"></div>
+  <button type="button" id="ownerInstallBtn" class="install-btn" style="display:none">📲 Install app</button>
+</div>
+
+<script>
+  function togglePwd(id) {
+    const input = document.getElementById(id);
+    const btn = input.nextElementSibling;
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = '🙈';
+      btn.setAttribute('aria-label', 'Hide password');
+    } else {
+      input.type = 'password';
+      btn.textContent = '👁';
+      btn.setAttribute('aria-label', 'Show password');
+    }
+  }
+
+  async function login() {
+    const msg = document.getElementById('msg');
+    try {
+      const res = await fetch('/owner/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('username').value,
+          password: document.getElementById('password').value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Login failed');
+      sessionStorage.setItem('yournet_owner_token', data.token);
+      window.location.href = '/license-admin';
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
+  }
+
+  document.getElementById('password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') login();
+  });
+
+  // PWA install - same beforeinstallprompt pattern as shell.js's
+  // wireInstallPrompt/install-app-btn, kept local since this page loads
+  // before any token exists and doesn't include shell.js. Chrome/Android/
+  // Edge fire beforeinstallprompt when eligible (manifest + sw + https);
+  // Safari/iOS never fires it, so the button just stays hidden there and
+  // Add to Home Screen remains the manual Share-sheet action, same as the
+  // rest of the app.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+  let deferredInstallPrompt = null;
+  const installBtn = document.getElementById('ownerInstallBtn');
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    installBtn.style.display = 'block';
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    installBtn.style.display = 'none';
+  });
+  installBtn.addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    installBtn.style.display = 'none';
+  });
+</script>
+<script src="/fontsize.js"></script>
+</body>
+</html>

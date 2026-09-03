@@ -1,0 +1,37 @@
+{
+  "name": "yournet-backend",
+  "version": "0.1.0",
+  "description": "Multi-tenant backend for YourNet Control - WiFi voucher & hotspot management for Mikrotik and TP-Link Omada",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/db/migrate.js && node src/server.js",
+    "dev": "nodemon src/server.js",
+    "migrate": "node src/db/migrate.js",
+    "migrate:logos": "node src/db/migrate-logos-to-r2.js",
+    "wipe:tenants": "node src/db/wipe-tenants.js",
+    "test": "node --test test/",
+    "test:radius": "node test/radius.smoketest.js && node test/radius-acct.smoketest.js && node test/radius-integration.test.js",
+    "radius:diagnose": "node scripts/radius-diagnostic.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.637.0",
+    "express": "^4.19.2",
+    "pg": "^8.12.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "dotenv": "^16.4.5",
+    "axios": "^1.15.1",
+    "node-routeros": "^1.6.7",
+    "nodemailer": "^6.9.14",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.3.1",
+    "uuid": "^9.0.1",
+    "qrcode": "^1.5.3",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>License Keys - Owner Admin</title>
+<script>
+  // Same fix as admin.html: runs before anything below is parsed or
+  // painted, so an unauthenticated visitor never sees a flash of the
+  // license key list before being sent to /owner-login.
+  if (!sessionStorage.getItem('yournet_owner_token')) {
+    window.location.replace('/owner-login');
+  }
+</script>
+<link rel="stylesheet" href="/shell.css">
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#0d1a1e;color:#e8f0f1;margin:0}
+  h1{font-size:20px}
+  h2{font-size:15px;color:#2ec4b6;margin:24px 0 8px}
+  .card{background:#132228;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:16px;margin-bottom:12px}
+  .card .row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;gap:12px}
+  .card .row span:first-child{color:#6b8a91;white-space:nowrap}
+  .card .row span:last-child{text-align:right;word-break:break-word}
+  input{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);
+    background:#132228;color:#fff;margin-bottom:10px;box-sizing:border-box}
+  button{padding:11px 14px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px}
+  .primary{background:#e8a33d;color:#0d1a1e;width:100%}
+  .pill{font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(255,255,255,.08)}
+  .pill.unused{background:rgba(255,193,7,.15);color:#ffc107}
+  .pill.activated{background:rgba(46,196,182,.15);color:#2ec4b6}
+  .keyBox{font-family:monospace;color:#ffc55a;font-weight:700;margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .copyBtn{background:rgba(255,255,255,.1);color:#e8f0f1;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600}
+  .msg{margin-top:10px;font-size:13px;padding:10px;border-radius:8px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:rgba(255,107,107,.12);color:#ff6b6b}
+  .msg.ok{background:rgba(46,196,182,.12);color:#2ec4b6}
+  .note{font-size:12px;color:#6b8a91;line-height:1.6}
+  .owner-topbar{display:flex;justify-content:flex-end;margin-bottom:4px}
+  .logout-btn{font-size:12px;color:#6b8a91;text-decoration:none;padding:6px 10px;border:1px solid rgba(255,255,255,.15);border-radius:8px;white-space:nowrap}
+  .logout-btn:hover{color:#e8f0f1;border-color:rgba(255,255,255,.3)}
+  /* Glass mode: bg-rotate.js adds this to <body> once a rotating photo
+     background is actually showing, so cards go see-through only then. */
+  body.yn-glass .card{background:rgba(19,34,40,.35);backdrop-filter:blur(16px) saturate(150%);
+    -webkit-backdrop-filter:blur(16px) saturate(150%);border-color:rgba(255,255,255,.16)}
+  @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    body.yn-glass .card{background:#132228}
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <div id="app-sidebar"></div>
+  <main class="app-main">
+<script src="/bg-rotate.js"></script>
+<div style="max-width:640px;margin-inline:auto">
+<div class="owner-topbar">
+  <a href="#" class="logout-btn" onclick="sessionStorage.removeItem('yournet_owner_token');window.location.href='/owner-login';return false;">Log out</a>
+</div>
+<h1>License Keys</h1>
+<p class="note">Keys purchased through Paystack, Flutterwave, or Hubtel on <code>/license</code> are issued automatically and appear below. Use the form to issue one manually for a sale made outside those gateways.</p>
+
+<h2>Issue a key manually</h2>
+<div class="card">
+  <select id="mKeyType" style="width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:#132228;color:#fff;margin-bottom:10px;box-sizing:border-box">
+    <option value="signup">New signup key (creates a brand-new account)</option>
+    <option value="reactivation">Monthly reactivation key (renews an existing account)</option>
+  </select>
+  <input id="mEmail" type="email" placeholder="Buyer email">
+  <input id="mPhone" placeholder="Buyer phone (optional - enables SMS delivery)">
+  <input id="mNotes" placeholder="Notes (optional)">
+  <button class="primary" onclick="issueManual()">Issue key</button>
+  <div class="msg" id="manualMsg"></div>
+  <p class="note">If you enter an email, the key is sent to it automatically via Brevo. A reactivation key only works for an email that already has an account - the tenant redeems it from the login page, not /signup.</p>
+</div>
+
+<h2>Resend a key by email</h2>
+<div class="card">
+  <input id="rKey" placeholder="License key (e.g. YNET-XXXX-XXXX-XXXX)">
+  <input id="rEmail" type="email" placeholder="Send to this email">
+  <button class="primary" onclick="resendEmail()">Send</button>
+  <div class="msg" id="resendMsg"></div>
+</div>
+
+<h2>Pending manual payment claims</h2>
+<p class="note">From buyers on <code>/license</code> when no gateway is configured. Nothing here is verified automatically - check the reference against your own MoMo message before approving.</p>
+<div id="claimsList"></div>
+
+<h2>Issued keys</h2>
+<div id="list"></div>
+
+<script>
+  // Safety net - the guard at the very top of <head> is what actually
+  // prevents the flash of content; this just makes sure `token` is set
+  // for the rest of this script.
+  const token = sessionStorage.getItem('yournet_owner_token');
+  if (!token) {
+    window.location.replace('/owner-login');
+  }
+
+  function authedFetch(url, opts = {}) {
+    return fetch(url, { ...opts, headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + token } });
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  async function loadKeys() {
+    const res = await authedFetch('/license/admin/list');
+    if (res.status === 401) {
+      sessionStorage.removeItem('yournet_owner_token');
+      window.location.href = '/owner-login';
+      return;
+    }
+    const keys = await res.json();
+    const list = document.getElementById('list');
+    if (!keys.length) {
+      list.innerHTML = '<p class="note">No keys issued yet.</p>';
+      return;
+    }
+    list.innerHTML = keys.map(k => `
+      <div class="card">
+        <div class="row"><span>Status</span><span class="pill ${k.status}">${k.status}</span></div>
+        <div class="row"><span>Type</span><span class="pill">${k.key_type === 'reactivation' ? 'Reactivation' : 'Signup'}</span></div>
+        <div class="row"><span>Buyer</span><span>${escapeHtml(k.buyer_email) || '-'}</span></div>
+        <div class="row"><span>Phone</span><span>${escapeHtml(k.buyer_phone) || '-'}</span></div>
+        <div class="row"><span>Payment method</span><span>${escapeHtml(k.payment_method) || '-'}</span></div>
+        <div class="row"><span>Amount</span><span>${escapeHtml(k.currency)} ${k.amount ?? '-'}</span></div>
+        <div class="row"><span>Issued</span><span>${new Date(k.created_at).toLocaleString()}</span></div>
+        ${k.notes ? `<div class="row"><span>Notes</span><span>${escapeHtml(k.notes)}</span></div>` : ''}
+        <div class="keyBox">
+          <span>${escapeHtml(k.key_code)}</span>
+          <button class="copyBtn" data-key="${escapeHtml(k.key_code)}" onclick="copyKey(this.dataset.key, this)">Copy</button>
+          ${k.buyer_email ? `<button class="copyBtn" data-key="${escapeHtml(k.key_code)}" data-email="${escapeHtml(k.buyer_email)}" onclick="quickEmail(this.dataset.key, this.dataset.email, this)">Email to ${escapeHtml(k.buyer_email)}</button>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function loadClaims() {
+    const res = await authedFetch('/license/admin/manual-claims');
+    if (res.status === 401) {
+      sessionStorage.removeItem('yournet_owner_token');
+      window.location.href = '/owner-login';
+      return;
+    }
+    const claims = await res.json();
+    const list = document.getElementById('claimsList');
+    if (!claims.length) {
+      list.innerHTML = '<p class="note">No manual payment claims yet.</p>';
+      return;
+    }
+    list.innerHTML = claims.map(c => `
+      <div class="card">
+        <div class="row"><span>Status</span><span class="pill ${c.status === 'pending' ? 'unused' : c.status === 'approved' ? 'activated' : ''}">${c.status}</span></div>
+        <div class="row"><span>Type</span><span class="pill">${c.purpose === 'reactivate' ? 'Reactivation' : 'Signup'}</span></div>
+        <div class="row"><span>Buyer</span><span>${escapeHtml(c.buyer_email)}</span></div>
+        <div class="row"><span>Phone</span><span>${escapeHtml(c.buyer_phone) || '-'}</span></div>
+        <div class="row"><span>MoMo reference</span><span>${escapeHtml(c.momo_reference)}</span></div>
+        <div class="row"><span>Submitted</span><span>${new Date(c.created_at).toLocaleString()}</span></div>
+        ${c.notes ? `<div class="row"><span>Notes</span><span>${escapeHtml(c.notes)}</span></div>` : ''}
+        ${c.status === 'pending' ? `
+          <div class="keyBox">
+            <button class="copyBtn" style="background:rgba(46,196,182,.2);color:#2ec4b6" onclick="approveClaim('${c.id}', this)">Approve &amp; issue key</button>
+            <button class="copyBtn" style="background:rgba(255,107,107,.15);color:#ff6b6b" onclick="rejectClaim('${c.id}', this)">Reject</button>
+          </div>
+        ` : ''}
+      </div>
+    `).join('');
+  }
+
+  async function approveClaim(id, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Approving...';
+    try {
+      const res = await authedFetch(`/license/admin/manual-claims/${id}/approve`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not approve this claim.');
+      loadClaims();
+      loadKeys();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+      btn.textContent = 'Approve & issue key';
+    }
+  }
+
+  async function rejectClaim(id, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Rejecting...';
+    try {
+      const res = await authedFetch(`/license/admin/manual-claims/${id}/reject`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not reject this claim.');
+      loadClaims();
+    } catch (err) {
+      alert(err.message);
+      btn.disabled = false;
+      btn.textContent = 'Reject';
+    }
+  }
+
+  function copyKey(code, btn) {
+    navigator.clipboard.writeText(code).then(() => {
+      const original = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    });
+  }
+
+  async function issueManual() {
+    const msg = document.getElementById('manualMsg');
+    const buyerEmail = document.getElementById('mEmail').value;
+    if (!buyerEmail) {
+      msg.textContent = 'Buyer email is required.';
+      msg.className = 'msg show err';
+      return;
+    }
+    try {
+      const res = await authedFetch('/license/admin/issue-manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          buyerEmail,
+          buyerPhone: document.getElementById('mPhone').value,
+          notes: document.getElementById('mNotes').value,
+          keyType: document.getElementById('mKeyType').value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not issue key');
+      msg.textContent = data.email && data.email.sent
+        ? `Key issued and emailed to ${buyerEmail}: ${data.key_code}`
+        : `Key issued: ${data.key_code} - but the email did not send (${(data.email && data.email.reason) || 'unknown reason'}). Copy it manually below.`;
+      msg.className = 'msg show ' + (data.email && data.email.sent ? 'ok' : 'err');
+      document.getElementById('mEmail').value = '';
+      document.getElementById('mPhone').value = '';
+      document.getElementById('mNotes').value = '';
+      loadKeys();
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
+  }
+
+  async function resendEmail() {
+    const msg = document.getElementById('resendMsg');
+    const keyCode = document.getElementById('rKey').value;
+    const email = document.getElementById('rEmail').value;
+    if (!keyCode || !email) {
+      msg.textContent = 'Both the key and an email address are required.';
+      msg.className = 'msg show err';
+      return;
+    }
+    try {
+      const res = await authedFetch('/license/admin/resend-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyCode, email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not send email');
+      msg.textContent = `Sent to ${email}.`;
+      msg.className = 'msg show ok';
+      document.getElementById('rKey').value = '';
+      document.getElementById('rEmail').value = '';
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
+  }
+
+  async function quickEmail(keyCode, email, btn) {
+    const original = btn.textContent;
+    btn.textContent = 'Sending...';
+    btn.disabled = true;
+    try {
+      const res = await authedFetch('/license/admin/resend-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyCode, email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      btn.textContent = 'Sent!';
+    } catch (err) {
+      btn.textContent = 'Failed - retry';
+    }
+    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2000);
+  }
+
+  if (token) { loadKeys(); loadClaims(); }
+</script>
+<script src="/fontsize.js"></script>
+</div>
+  </main>
+</div>
+<script>
+  window.YOURNET_ACTIVE_NAV = 'license';
+  window.YOURNET_AUTH_MODE = 'owner';
+</script>
+<script src="/shell.js"></script>
+</body>
+</html>

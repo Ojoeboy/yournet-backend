@@ -1,0 +1,13 @@
+{
+  "name": "YourNet Owner",
+  "short_name": "YN Owner",
+  "start_url": "/license-admin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d1a1e",
+  "theme_color": "#0d1a1e",
+  "icons": [
+    { "src": "/icons/icon-owner-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-owner-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
