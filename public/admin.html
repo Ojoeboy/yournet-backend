@@ -557,6 +557,7 @@
     <option value="paystack">Paystack</option>
     <option value="hubtel">Hubtel</option>
     <option value="flutterwave" id="gwProviderFlutterwaveOpt" style="display:none">Flutterwave</option>
+    <option value="stripe">Stripe (international cards)</option>
   </select>
 
   <div id="gwFields-paystack" class="gw-fields">
@@ -613,6 +614,43 @@
     </div>
     <label>Public key</label>
     <input id="gwFlutterwavePublic" placeholder="FLWPUBK-...">
+  </div>
+
+  <div id="gwFields-stripe" class="gw-fields hidden">
+    <label>Secret key</label>
+    <div class="pwd-wrap">
+      <input id="gwStripeSecret" type="password" placeholder="sk_live_...">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('gwStripeSecret')" aria-label="Show password">👁</button>
+    </div>
+    <label>Publishable key</label>
+    <input id="gwStripePublic" placeholder="pk_live_...">
+
+    <div style="margin-top:14px;padding:12px;border-radius:10px;background:#1a363e;border:1px solid rgba(232,163,61,.35)">
+      <p style="margin:0 0 8px;font-size:12.5px;color:#e8a33d;font-weight:600">
+        ⚠ One more step in your Stripe dashboard
+      </p>
+      <p style="margin:0 0 10px;font-size:12.5px;color:#c9dade;line-height:1.5">
+        Same reason as Paystack's webhook above - it catches a paid customer who closes the
+        page before the redirect back to your site fires. <strong>Every business on this
+        platform uses this same URL</strong> - it works out which account each payment
+        belongs to on its own.
+      </p>
+      <div class="pwd-wrap" style="margin-bottom:8px">
+        <input id="gwStripeWebhookUrl" readonly style="color:#9fb8bd;cursor:text">
+        <button type="button" class="pwd-toggle" onclick="copyStripeWebhookUrl()" aria-label="Copy webhook URL" title="Copy">📋</button>
+      </div>
+      <p style="margin:0 0 10px;font-size:11.5px;color:#6b8a91;line-height:1.5">
+        In your Stripe dashboard: <strong>Developers → Webhooks → Add endpoint</strong> →
+        paste the link above → select event <strong>checkout.session.completed</strong> →
+        Add endpoint. Stripe will then show you a <strong>Signing secret</strong> - paste
+        that below.
+      </p>
+      <label>Webhook signing secret</label>
+      <div class="pwd-wrap">
+        <input id="gwStripeWebhookSecret" type="password" placeholder="whsec_...">
+        <button type="button" class="pwd-toggle" onclick="togglePwd('gwStripeWebhookSecret')" aria-label="Show password">👁</button>
+      </div>
+    </div>
   </div>
 
   <label>Contact email</label>
@@ -1905,6 +1943,12 @@
     if (el) el.value = window.location.origin + '/portal/gateway-webhook/paystack';
   })();
 
+  // Same reasoning as Paystack's webhook URL above.
+  (function initStripeWebhookUrl() {
+    const el = document.getElementById('gwStripeWebhookUrl');
+    if (el) el.value = window.location.origin + '/portal/gateway-webhook/stripe';
+  })();
+
   function copyPaystackWebhookUrl() {
     const input = document.getElementById('gwPaystackWebhookUrl');
     input.select();
@@ -1913,6 +1957,30 @@
       try { document.execCommand('copy'); return true; } catch (e) { return false; }
     };
     const done = () => showMsg('gateway-msg', 'Webhook URL copied - paste it into Paystack now.', 'ok');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(input.value).then(done).catch(() => {
+        if (fallbackCopy()) done();
+        else showMsg('gateway-msg', 'Could not copy automatically - select and copy the URL manually.', 'err');
+      });
+    } else if (fallbackCopy()) {
+      done();
+    } else {
+      showMsg('gateway-msg', 'Could not copy automatically - select and copy the URL manually.', 'err');
+    }
+  }
+
+  // Same copy behavior as Paystack's, pointed at the Stripe webhook route
+  // and message instead - kept as its own function rather than
+  // parameterizing copyPaystackWebhookUrl, matching how this file already
+  // keeps each provider's UI logic separate rather than shared/generic.
+  function copyStripeWebhookUrl() {
+    const input = document.getElementById('gwStripeWebhookUrl');
+    input.select();
+    input.setSelectionRange(0, 99999);
+    const fallbackCopy = () => {
+      try { document.execCommand('copy'); return true; } catch (e) { return false; }
+    };
+    const done = () => showMsg('gateway-msg', 'Webhook URL copied - paste it into Stripe now.', 'ok');
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(input.value).then(done).catch(() => {
         if (fallbackCopy()) done();
@@ -1938,6 +2006,10 @@
     } else if (provider === 'flutterwave') {
       body.flutterwaveSecretKey = document.getElementById('gwFlutterwaveSecret').value;
       body.flutterwavePublicKey = document.getElementById('gwFlutterwavePublic').value;
+    } else if (provider === 'stripe') {
+      body.stripeSecretKey = document.getElementById('gwStripeSecret').value;
+      body.stripePublishableKey = document.getElementById('gwStripePublic').value;
+      body.stripeWebhookSecret = document.getElementById('gwStripeWebhookSecret').value;
     }
     try {
       await api('/api/payment-gateways', 'POST', body);

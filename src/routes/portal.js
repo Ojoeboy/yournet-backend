@@ -5,6 +5,7 @@ const voucherService = require('../services/voucherService');
 const gatewayService = require('../services/paymentGatewayService');
 const paystackGateway = require('../integrations/gateways/paystackGateway');
 const hubtelGateway = require('../integrations/gateways/hubtelGateway');
+const stripeGateway = require('../integrations/gateways/stripeGateway');
 const freeStockPhotos = require('../integrations/freeStockPhotos');
 const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
@@ -167,6 +168,14 @@ router.post('/:siteId/buy-voucher', asyncHandler(async (req, res) => {
   const callbackUrl = activeGateway.provider === 'hubtel'
     ? `${base}/portal/gateway-webhook/hubtel?wt=${hubtelToken.raw}`
     : `${base}/portal/gateway-callback/${activeGateway.provider}`;
+  // Stripe redirects the browser back with its own session_id ({CHECKOUT_SESSION_ID}
+  // is a Stripe-specific template string it substitutes itself - see
+  // docs.stripe.com/payments/checkout/custom-success-page) rather than the
+  // reference/tx_ref query params Paystack/Flutterwave use, so it needs its
+  // own success URL through the SAME gateway-callback route those two share,
+  // with our reference appended manually since Stripe won't echo it back on
+  // its own template.
+  const stripeSuccessUrl = `${base}/portal/gateway-callback/stripe?reference=${reference}&session_id={CHECKOUT_SESSION_ID}`;
 
   try {
     const checkout = await gatewayService.initializeCheckout(tenantId, {
@@ -176,7 +185,14 @@ router.post('/:siteId/buy-voucher', asyncHandler(async (req, res) => {
       phone,
       reference,
       callbackUrl,
-      returnUrl: `${base}/portal/${siteId}/order-status?ref=${reference}`,
+      // Stripe uses its own success/cancel URLs rather than one shared
+      // callbackUrl (see paymentGatewayService.initializeCheckout's stripe
+      // branch, which passes this through as both successUrl and
+      // cancelUrl) - everyone else still gets the existing order-status
+      // page unchanged.
+      returnUrl: activeGateway.provider === 'stripe'
+        ? stripeSuccessUrl
+        : `${base}/portal/${siteId}/order-status?ref=${reference}`,
       description: `${pkg.label} - YourNet WiFi`,
     });
 
@@ -232,6 +248,7 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
   const { provider } = req.params;
   const reference = req.query.reference || req.query.tx_ref || req.query.trxref;
   const transactionId = req.query.transaction_id; // Flutterwave-specific
+  const stripeSessionId = req.query.session_id; // Stripe-specific
 
   const { rows } = await pool.query(
     `SELECT vo.*, p.price AS package_price
@@ -248,7 +265,9 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
 
   try {
     const result = await gatewayService.verifyCheckout(
-      order.tenant_id, provider, provider === 'flutterwave' ? transactionId : reference
+      order.tenant_id,
+      provider,
+      provider === 'flutterwave' ? transactionId : provider === 'stripe' ? stripeSessionId : reference
     );
     if (!result.success) {
       await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
@@ -275,6 +294,22 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
         return res.send(orderConfirmationPage('Payment could not be verified', 'This transaction does not match this order.'));
       }
       if (Math.round(Number(result.amountGHS) * 100) < Math.round(Number(order.package_price) * 100)) {
+        await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
+        return res.send(orderConfirmationPage('Payment could not be verified', 'The amount paid does not match this order.'));
+      }
+    }
+
+    // Same reasoning as the Flutterwave check above: `session_id` is a
+    // client-supplied query param, so re-fetching the session from Stripe
+    // and checking that ITS OWN metadata.reference matches this order
+    // (not just trusting the query string) closes the same
+    // pay-for-cheap-package/reuse-session-id-on-expensive-order gap.
+    if (provider === 'stripe') {
+      if (result.reference !== order.provider_reference) {
+        await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
+        return res.send(orderConfirmationPage('Payment could not be verified', 'This transaction does not match this order.'));
+      }
+      if (Math.round(Number(result.amount) * 100) < Math.round(Number(order.package_price) * 100)) {
         await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
         return res.send(orderConfirmationPage('Payment could not be verified', 'The amount paid does not match this order.'));
       }
@@ -420,6 +455,61 @@ router.post('/gateway-webhook/hubtel', asyncHandler(async (req, res) => {
   }
 
   res.json({ ok: true });
+}));
+
+// PUBLIC: Stripe's server-to-server webhook - same reason this exists
+// alongside the redirect-based /gateway-callback/stripe above as
+// Paystack's pairing does (a customer can pay and close the tab before
+// the redirect fires).
+//
+// SIGNATURE HANDLING: unlike Paystack (one webhook URL, looked up by
+// order reference BEFORE the signature check - see the long comment on
+// that route above for why that ordering is safe), Stripe's signed
+// payload doesn't carry anything we can use to find the order first.
+// Instead the event's own session object (inside the verified payload)
+// carries our `metadata.reference` - but signature verification needs a
+// tenant's webhook secret BEFORE we can trust anything in the body,
+// including that reference, which is the chicken-and-egg problem here.
+//
+// Resolved the same way Paystack ultimately would too: we still need to
+// find a candidate order first, then check the signature with THAT
+// order's tenant's secret. The event body is JSON-parsed only far enough
+// to read session.metadata.reference (never trusted beyond that until
+// the signature check passes), then re-fetched via fulfillOrder using the
+// order that reference points to.
+router.post('/gateway-webhook/stripe', asyncHandler(async (req, res) => {
+  const reference = req.body?.data?.object?.metadata?.reference || req.body?.data?.object?.client_reference_id;
+  if (!reference) return res.json({ received: true });
+
+  const { rows } = await pool.query(
+    `SELECT * FROM voucher_orders WHERE provider='stripe' AND provider_reference=$1`,
+    [reference]
+  );
+  if (!rows.length) return res.json({ received: true }); // not one of ours - ignore
+  const order = rows[0];
+
+  const { secretKey, webhookSecret } = await gatewayService.getStripeCredentials(order.tenant_id);
+  const validSignature = stripeGateway.verifyWebhookSignature({
+    webhookSecret,
+    rawBody: req.rawBody,
+    signatureHeader: req.headers['stripe-signature'],
+  });
+  if (!validSignature) return res.status(401).json({ error: 'Invalid signature' });
+
+  if (order.status === 'paid') return res.json({ received: true, note: 'already fulfilled' });
+
+  // Re-fetch the session's own status from Stripe rather than trusting
+  // the webhook event's payload fields - same rule every other gateway's
+  // webhook in this file follows.
+  const sessionId = req.body?.data?.object?.id;
+  const result = await stripeGateway.verifyCheckoutSession({ secretKey, sessionId });
+  if (!result.success) {
+    await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1 AND status='pending'`, [order.id]);
+    return res.json({ received: true });
+  }
+
+  await fulfillOrder(order);
+  res.json({ received: true });
 }));
 
 // redirectUrl, when given, mirrors the QR-scan path's "prefill + auto-

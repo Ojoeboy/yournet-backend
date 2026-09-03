@@ -3,6 +3,7 @@ const { encrypt, decrypt } = require('../utils/credentialCrypto');
 const paystackGateway = require('../integrations/gateways/paystackGateway');
 const hubtelGateway = require('../integrations/gateways/hubtelGateway');
 const flutterwaveGateway = require('../integrations/gateways/flutterwaveGateway');
+const stripeGateway = require('../integrations/gateways/stripeGateway');
 
 /**
  * Save (or update) a tenant's credentials for one provider. Secrets are
@@ -13,6 +14,8 @@ async function saveGatewayConfig(tenantId, provider, config) {
     paystackSecretKeyEncrypted: encrypt(config.paystackSecretKey),
     hubtelClientSecretEncrypted: encrypt(config.hubtelClientSecret),
     flutterwaveSecretKeyEncrypted: encrypt(config.flutterwaveSecretKey),
+    stripeSecretKeyEncrypted: encrypt(config.stripeSecretKey),
+    stripeWebhookSecretEncrypted: encrypt(config.stripeWebhookSecret),
   };
 
   const { rows } = await pool.query(
@@ -20,8 +23,9 @@ async function saveGatewayConfig(tenantId, provider, config) {
        tenant_id, provider,
        paystack_secret_key_encrypted, paystack_public_key,
        hubtel_client_id, hubtel_client_secret_encrypted, hubtel_merchant_account_number,
-       flutterwave_secret_key_encrypted, flutterwave_public_key, contact_email
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       flutterwave_secret_key_encrypted, flutterwave_public_key, contact_email,
+       stripe_secret_key_encrypted, stripe_publishable_key, stripe_webhook_secret_encrypted
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      ON CONFLICT (tenant_id, provider) DO UPDATE SET
        paystack_secret_key_encrypted = COALESCE(EXCLUDED.paystack_secret_key_encrypted, payment_gateways.paystack_secret_key_encrypted),
        paystack_public_key = COALESCE(EXCLUDED.paystack_public_key, payment_gateways.paystack_public_key),
@@ -31,6 +35,9 @@ async function saveGatewayConfig(tenantId, provider, config) {
        flutterwave_secret_key_encrypted = COALESCE(EXCLUDED.flutterwave_secret_key_encrypted, payment_gateways.flutterwave_secret_key_encrypted),
        flutterwave_public_key = COALESCE(EXCLUDED.flutterwave_public_key, payment_gateways.flutterwave_public_key),
        contact_email = COALESCE(EXCLUDED.contact_email, payment_gateways.contact_email),
+       stripe_secret_key_encrypted = COALESCE(EXCLUDED.stripe_secret_key_encrypted, payment_gateways.stripe_secret_key_encrypted),
+       stripe_publishable_key = COALESCE(EXCLUDED.stripe_publishable_key, payment_gateways.stripe_publishable_key),
+       stripe_webhook_secret_encrypted = COALESCE(EXCLUDED.stripe_webhook_secret_encrypted, payment_gateways.stripe_webhook_secret_encrypted),
        updated_at = now()
      RETURNING id, provider, is_active`,
     [
@@ -38,6 +45,7 @@ async function saveGatewayConfig(tenantId, provider, config) {
       encrypted.paystackSecretKeyEncrypted, config.paystackPublicKey || null,
       config.hubtelClientId || null, encrypted.hubtelClientSecretEncrypted, config.hubtelMerchantAccountNumber || null,
       encrypted.flutterwaveSecretKeyEncrypted, config.flutterwavePublicKey || null, config.contactEmail || null,
+      encrypted.stripeSecretKeyEncrypted, config.stripePublishableKey || null, encrypted.stripeWebhookSecretEncrypted,
     ]
   );
   return rows[0];
@@ -66,8 +74,9 @@ async function listGateways(tenantId) {
        (paystack_secret_key_encrypted IS NOT NULL) AS paystack_configured,
        (hubtel_client_secret_encrypted IS NOT NULL) AS hubtel_configured,
        (flutterwave_secret_key_encrypted IS NOT NULL) AS flutterwave_configured,
+       (stripe_secret_key_encrypted IS NOT NULL) AS stripe_configured,
        hubtel_client_id, hubtel_merchant_account_number,
-       paystack_public_key, flutterwave_public_key, contact_email
+       paystack_public_key, flutterwave_public_key, stripe_publishable_key, contact_email
      FROM payment_gateways WHERE tenant_id=$1`,
     [tenantId]
   );
@@ -157,6 +166,27 @@ async function initializeCheckout(tenantId, { amountGHS, currency, email, phone,
     return { ...result, provider: 'flutterwave' };
   }
 
+  if (gw.provider === 'stripe') {
+    // Stripe's Checkout Session model needs separate success/cancel URLs
+    // rather than one shared callbackUrl - callers (portal.js) pass
+    // returnUrl through as success_url here; cancel just sends the
+    // customer back to the same page with no special handling, since a
+    // cancelled Stripe session isn't a failure worth its own order state
+    // (no charge occurred, so the order simply stays 'pending' until the
+    // customer tries again or it's cleaned up like any other abandoned order).
+    const result = await stripeGateway.createCheckoutSession({
+      secretKey: decrypt(gw.stripe_secret_key_encrypted),
+      amount: amountGHS, // NOTE: still the tenant's package price in their own currency, NOT converted to/from GHS - see note on the route about currency handling
+      currency,
+      reference,
+      email,
+      successUrl: returnUrl,
+      cancelUrl: returnUrl,
+      description,
+    });
+    return { ...result, provider: 'stripe' };
+  }
+
   throw new Error(`Unsupported provider: ${gw.provider}`);
 }
 
@@ -179,6 +209,11 @@ async function verifyCheckout(tenantId, provider, reference) {
   }
   if (provider === 'flutterwave') {
     return flutterwaveGateway.verifyPayment({ secretKey: decrypt(gw.flutterwave_secret_key_encrypted), transactionId: reference });
+  }
+  if (provider === 'stripe') {
+    // `reference` here is actually the Stripe session_id - see the stripe
+    // branch in routes/portal.js's /gateway-callback/:provider handler.
+    return stripeGateway.verifyCheckoutSession({ secretKey: decrypt(gw.stripe_secret_key_encrypted), sessionId: reference });
   }
   throw new Error(`verifyCheckout not applicable for provider: ${provider}`);
 }
@@ -203,7 +238,29 @@ async function getPaystackSecretKey(tenantId) {
   return encrypted ? decrypt(encrypted) : null;
 }
 
+/**
+ * Decrypted Stripe secret + webhook signing secret for one tenant. Used by
+ * portal.js's Stripe webhook the same way getPaystackSecretKey is used for
+ * Paystack's - checking the Stripe-Signature header BEFORE trusting
+ * anything else in the request. Returns nulls if this tenant has no
+ * Stripe credentials saved (as opposed to configured-but-inactive, same
+ * reasoning as getPaystackSecretKey above).
+ */
+async function getStripeCredentials(tenantId) {
+  const { rows } = await pool.query(
+    `SELECT stripe_secret_key_encrypted, stripe_webhook_secret_encrypted FROM payment_gateways WHERE tenant_id=$1 AND provider='stripe' LIMIT 1`,
+    [tenantId]
+  );
+  const row = rows[0];
+  if (!row) return { secretKey: null, webhookSecret: null };
+  return {
+    secretKey: row.stripe_secret_key_encrypted ? decrypt(row.stripe_secret_key_encrypted) : null,
+    webhookSecret: row.stripe_webhook_secret_encrypted ? decrypt(row.stripe_webhook_secret_encrypted) : null,
+  };
+}
+
 module.exports = {
   saveGatewayConfig, setActiveGateway, deleteGatewayConfig, listGateways,
   getActiveGateway, initializeCheckout, verifyCheckout, getPaystackSecretKey,
+  getStripeCredentials,
 };

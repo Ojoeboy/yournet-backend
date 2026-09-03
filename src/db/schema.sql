@@ -604,7 +604,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_payments_provider_ref
 CREATE TABLE IF NOT EXISTS payment_gateways (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  provider TEXT NOT NULL CHECK (provider IN ('paystack','hubtel','flutterwave')),
+  provider TEXT NOT NULL CHECK (provider IN ('paystack','hubtel','flutterwave','stripe')),
   is_active BOOLEAN NOT NULL DEFAULT false,
 
   paystack_secret_key_encrypted TEXT,
@@ -621,6 +621,20 @@ CREATE TABLE IF NOT EXISTS payment_gateways (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(tenant_id, provider)
 );
+
+-- Stripe support (international card payments) - added alongside the
+-- three existing GHS-first gateways above. stripe_publishable_key is safe
+-- to expose to the browser by design (Stripe's own naming convention
+-- reflects this - it's meant for client-side use), unlike the other
+-- providers' keys which are all secret/server-side only.
+ALTER TABLE payment_gateways ADD COLUMN IF NOT EXISTS stripe_secret_key_encrypted TEXT;
+ALTER TABLE payment_gateways ADD COLUMN IF NOT EXISTS stripe_publishable_key TEXT;
+ALTER TABLE payment_gateways ADD COLUMN IF NOT EXISTS stripe_webhook_secret_encrypted TEXT;
+
+-- Existing CHECK constraint predates 'stripe' - widen it for tenants who
+-- already have rows from before this migration ran once.
+ALTER TABLE payment_gateways DROP CONSTRAINT IF EXISTS payment_gateways_provider_check;
+ALTER TABLE payment_gateways ADD CONSTRAINT payment_gateways_provider_check CHECK (provider IN ('paystack','hubtel','flutterwave','stripe'));
 
 CREATE INDEX IF NOT EXISTS idx_payment_gateways_tenant ON payment_gateways(tenant_id);
 

@@ -7,7 +7,7 @@ const gatewayService = require('../services/paymentGatewayService');
 const router = express.Router();
 router.use(requireAuth, requireNotAgent);
 
-const SUPPORTED_PROVIDERS = ['paystack', 'hubtel', 'flutterwave'];
+const SUPPORTED_PROVIDERS = ['paystack', 'hubtel', 'flutterwave', 'stripe'];
 
 // Save/update this tenant's credentials for one provider. Partial updates
 // are fine (e.g. re-saving just to fix a typo'd merchant number) - only
@@ -27,6 +27,9 @@ router.post('/', asyncHandler(async (req, res) => {
   }
   if (provider === 'flutterwave' && !validate.isNonEmptyString(req.body.flutterwaveSecretKey, 200)) {
     return res.status(400).json({ error: 'Flutterwave secret key is required.' });
+  }
+  if (provider === 'stripe' && !validate.isNonEmptyString(req.body.stripeSecretKey, 200)) {
+    return res.status(400).json({ error: 'Stripe secret key is required.' });
   }
 
   const saved = await gatewayService.saveGatewayConfig(req.tenantId, provider, req.body);
