@@ -19,6 +19,7 @@ const paymentGatewayRoutes = require('./routes/paymentGateways');
 const portalRoutes = require('./routes/portal');
 const pppoeRoutes = require('./routes/pppoe');
 const ruijieCloudAuthRoutes = require('./routes/ruijieCloudAuth');
+const equipmentRoutes = require('./routes/equipment');
 
 const app = express();
 // Render puts this app behind exactly one reverse-proxy hop, which sets
@@ -161,6 +162,7 @@ app.use('/api/installers', apiLimiter, installerRoutes);
 app.use('/api/dashboard', apiLimiter, dashboardRoutes);
 app.use('/api/payment-gateways', apiLimiter, paymentGatewayRoutes);
 app.use('/api/pppoe', apiLimiter, pppoeRoutes);
+app.use('/api/equipment', apiLimiter, equipmentRoutes);
 app.use('/license', apiLimiter, licenseRoutes);
 app.use('/owner', ownerLoginLimiter, ownerRoutes);
 app.use('/billing', apiLimiter, billingRoutes);
