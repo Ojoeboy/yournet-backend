@@ -69,31 +69,47 @@
   .bulk-toolbar .btn.danger{background:rgba(255,107,107,.14);color:var(--yn-danger);border:1px solid rgba(255,107,107,.35)}
   .bulk-toolbar .btn.danger:hover{background:rgba(255,107,107,.22)}
 
-  .batches-grid{display:grid;grid-template-columns:repeat(auto-fill, 208px);gap:10px}
+  .batches-grid{display:flex;flex-direction:column;gap:6px}
   .batches-empty{font-size:12.5px;color:var(--yn-muted);padding:8px 0}
+
+  /* ---------- batch rows (replaces the old tile grid - one row per
+     batch, site shown as its own column instead of buried in a corner,
+     so scanning many batches at once - especially in "All sites" - reads
+     like a clean list rather than a jammed wall of cards) ---------- */
   .batch-tile{
-    position:relative;background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:12px;
-    padding:12px 13px;cursor:pointer;transition:border-color .15s,transform .12s,box-shadow .15s;
+    display:grid;grid-template-columns:20px minmax(120px,1.6fr) 130px minmax(140px,1fr) auto;
+    align-items:center;gap:14px;
+    background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:10px;
+    padding:10px 14px;cursor:pointer;transition:border-color .15s,background .15s;
   }
-  .batch-tile:hover{border-color:var(--yn-teal);transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.22)}
+  .batch-tile:hover{border-color:var(--yn-teal)}
   .batch-tile.viewing{border-color:var(--yn-gold);box-shadow:0 0 0 1px var(--yn-gold) inset}
   .batch-tile.checked{border-color:var(--yn-teal);box-shadow:0 0 0 1.5px var(--yn-teal) inset;background:rgba(46,196,182,.06)}
 
-  .batch-tile .batch-top{display:flex;align-items:flex-start;gap:8px}
-  .batch-tile .batch-check{
-    flex-shrink:0;margin-top:2px;width:16px;height:16px;cursor:pointer;accent-color:var(--yn-teal);
-  }
-  .batch-tile .batch-titles{min-width:0;flex:1}
+  .batch-tile .batch-check{flex-shrink:0;width:16px;height:16px;cursor:pointer;accent-color:var(--yn-teal)}
+  .batch-tile .batch-titles{min-width:0}
   .batch-tile .batch-name{font-weight:800;font-size:13px;color:var(--yn-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .batch-tile .batch-site{font-size:10.5px;color:var(--yn-muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-  .batch-progress{height:5px;border-radius:4px;background:rgba(255,255,255,.07);margin-top:10px;overflow:hidden}
+  .batch-tile .batch-site{
+    font-size:11px;color:var(--yn-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    background:rgba(255,255,255,.05);border-radius:6px;padding:3px 8px;justify-self:start;
+  }
+  .batch-tile .batch-progress-col{min-width:0}
+  .batch-progress{height:5px;border-radius:4px;background:rgba(255,255,255,.07);overflow:hidden}
   .batch-progress-fill{height:100%;background:linear-gradient(90deg,var(--yn-teal),#5fe0d1);border-radius:4px;transition:width .3s ease}
-  .batch-tile .batch-counts{font-size:11px;color:var(--yn-muted);margin-top:6px;display:flex;justify-content:space-between}
+  .batch-tile .batch-counts{font-size:11px;color:var(--yn-muted);margin-top:5px;white-space:nowrap}
   .batch-tile .batch-counts b{color:var(--yn-teal);font-weight:800}
 
-  .batch-tile .batch-actions{display:flex;gap:6px;margin-top:10px}
+  .batch-tile .batch-actions{display:flex;gap:6px;flex-shrink:0}
   .batch-tile .btn.sm,.batch-tile .btn.ghost.sm{padding:6px 9px;font-size:11px}
+
+  @media (max-width: 720px){
+    .batch-tile{grid-template-columns:20px 1fr;grid-template-areas:"chk name" ". site" ". prog" ". act";row-gap:6px}
+    .batch-tile .batch-check{grid-area:chk}
+    .batch-tile .batch-titles{grid-area:name}
+    .batch-tile .batch-site{grid-area:site;justify-self:start}
+    .batch-tile .batch-progress-col{grid-area:prog}
+    .batch-tile .batch-actions{grid-area:act}
+  }
 
   .search-result{
     background:var(--yn-ink-deep);border:1px solid var(--yn-line);border-radius:10px;
@@ -281,6 +297,12 @@
 <div class="batches-panel" id="batchesPanel" style="display:none">
   <div class="sub">Tap a batch to view it below, or check one or more to act on them together.</div>
   <div class="batches-toolrow">
+    <div class="field" style="min-width:180px">
+      <label>Site</label>
+      <select id="batchSiteFilter" onchange="renderBatchRows()">
+        <option value="__all__">All sites</option>
+      </select>
+    </div>
     <label class="select-all-row">
       <input type="checkbox" id="selectAllBatches" onchange="toggleSelectAll(this.checked)">
       Select all
@@ -471,6 +493,10 @@
   // Selection state for the bulk toolbar. Keyed by "siteId::batch" (batch
   // normalized to '__none__' for the ungrouped tile) so two same-named
   // batches on different sites are never conflated into one selection.
+  // Deliberately NOT cleared when the site filter changes - checking a
+  // few batches in one site, then switching to another site to check
+  // more, then bulk-acting on all of them together is the whole point of
+  // an "All sites" bulk view.
   const selected = new Map();
   const keyFor = (b) => `${b.site_id}::${b.batch || '__none__'}`;
 
@@ -488,58 +514,91 @@
     try {
       const res = await fetch('/api/vouchers/batches', { headers: { Authorization: 'Bearer ' + token } });
       if (!res.ok) throw new Error('load failed');
-      const batches = await res.json();
-      batchRows = batches;
+      batchRows = await res.json();
       batchesLoaded = true;
       // Drop any selections whose batch no longer exists (e.g. just deleted).
-      const liveKeys = new Set(batches.map(keyFor));
+      const liveKeys = new Set(batchRows.map(keyFor));
       Array.from(selected.keys()).forEach(k => { if (!liveKeys.has(k)) selected.delete(k); });
 
-      if (!batches.length) {
-        gridEl.innerHTML = '<div class="batches-empty">No vouchers generated yet.</div>';
-        updateBulkToolbar();
-        return;
-      }
-      gridEl.innerHTML = '';
-      batches.forEach(b => {
-        const label = b.batch || UNGROUPED_LABEL;
-        const key = keyFor(b);
-        const used = b.total - b.unused;
-        const pct = b.total ? Math.round((used / b.total) * 100) : 0;
-        const tile = document.createElement('div');
-        tile.className = 'batch-tile' + (selected.has(key) ? ' checked' : '');
-        tile.dataset.batch = label;
-        tile.dataset.key = key;
-        tile.innerHTML = `
-          <div class="batch-top">
-            <input type="checkbox" class="batch-check" ${selected.has(key) ? 'checked' : ''}>
-            <div class="batch-titles">
-              <div class="batch-name">${label}</div>
-              <div class="batch-site">${b.site_name || ''}</div>
-            </div>
-          </div>
-          <div class="batch-progress"><div class="batch-progress-fill" style="width:${pct}%"></div></div>
-          <div class="batch-counts"><span>${used}/${b.total} used</span><b>${b.unused} left</b></div>
-          <div class="batch-actions">
-            <button type="button" class="btn ghost sm">View</button>
-            <button type="button" class="btn sm">Print unused</button>
-          </div>
-        `;
-        const checkbox = tile.querySelector('.batch-check');
-        const [viewBtn, printBtn] = tile.querySelectorAll('.batch-actions button');
-
-        checkbox.onclick = (e) => e.stopPropagation();
-        checkbox.onchange = () => toggleBatchSelection(b, tile, checkbox.checked);
-        viewBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); viewBatch(); };
-        printBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); printBatchUnused(); };
-        tile.onclick = () => { selectBatchTile(tile, label); viewBatch(); };
-        gridEl.appendChild(tile);
-      });
-      syncSelectAllCheckbox();
-      updateBulkToolbar();
+      populateSiteFilter();
+      renderBatchRows();
     } catch (err) {
       gridEl.innerHTML = '<div class="batches-empty">Could not load batches.</div>';
     }
+  }
+
+  // Site dropdown is built from whatever sites actually have batches -
+  // no separate /api/sites call needed, and no dead entries for a site
+  // that's never had a voucher generated.
+  function populateSiteFilter() {
+    const sel = document.getElementById('batchSiteFilter');
+    const prevValue = sel.value || '__all__';
+    const bySite = new Map();
+    batchRows.forEach(b => { if (b.site_id) bySite.set(b.site_id, b.site_name || ''); });
+    const sites = Array.from(bySite.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+    sel.innerHTML = '<option value="__all__">All sites</option>' +
+      sites.map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+    sel.value = sites.some(([id]) => id === prevValue) ? prevValue : '__all__';
+  }
+
+  function visibleBatchRows() {
+    const siteFilter = document.getElementById('batchSiteFilter').value;
+    return siteFilter === '__all__' ? batchRows : batchRows.filter(b => b.site_id === siteFilter);
+  }
+
+  function renderBatchRows() {
+    const gridEl = document.getElementById('batchesGrid');
+    const rows = visibleBatchRows();
+    const showSiteColumn = document.getElementById('batchSiteFilter').value === '__all__';
+
+    if (!batchRows.length) {
+      gridEl.innerHTML = '<div class="batches-empty">No vouchers generated yet.</div>';
+      updateBulkToolbar();
+      return;
+    }
+    if (!rows.length) {
+      gridEl.innerHTML = '<div class="batches-empty">No batches for this site.</div>';
+      updateBulkToolbar();
+      return;
+    }
+
+    gridEl.innerHTML = '';
+    rows.forEach(b => {
+      const label = b.batch || UNGROUPED_LABEL;
+      const key = keyFor(b);
+      const used = b.total - b.unused;
+      const pct = b.total ? Math.round((used / b.total) * 100) : 0;
+      const tile = document.createElement('div');
+      tile.className = 'batch-tile' + (selected.has(key) ? ' checked' : '');
+      tile.dataset.batch = label;
+      tile.dataset.key = key;
+      tile.innerHTML = `
+        <input type="checkbox" class="batch-check" ${selected.has(key) ? 'checked' : ''}>
+        <div class="batch-titles">
+          <div class="batch-name">${label}</div>
+        </div>
+        <div class="batch-site" style="${showSiteColumn ? '' : 'visibility:hidden'}">${b.site_name || ''}</div>
+        <div class="batch-progress-col">
+          <div class="batch-progress"><div class="batch-progress-fill" style="width:${pct}%"></div></div>
+          <div class="batch-counts">${used}/${b.total} used &middot; <b>${b.unused} left</b></div>
+        </div>
+        <div class="batch-actions">
+          <button type="button" class="btn ghost sm">View</button>
+          <button type="button" class="btn sm">Print unused</button>
+        </div>
+      `;
+      const checkbox = tile.querySelector('.batch-check');
+      const [viewBtn, printBtn] = tile.querySelectorAll('.batch-actions button');
+
+      checkbox.onclick = (e) => e.stopPropagation();
+      checkbox.onchange = () => toggleBatchSelection(b, tile, checkbox.checked);
+      viewBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); viewBatch(); };
+      printBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); printBatchUnused(); };
+      tile.onclick = () => { selectBatchTile(tile, label); viewBatch(); };
+      gridEl.appendChild(tile);
+    });
+    syncSelectAllCheckbox();
+    updateBulkToolbar();
   }
 
   function selectBatchTile(tile, label) {
@@ -587,8 +646,10 @@
   function syncSelectAllCheckbox() {
     const box = document.getElementById('selectAllBatches');
     if (!box) return;
-    box.checked = batchRows.length > 0 && selected.size === batchRows.length;
-    box.indeterminate = selected.size > 0 && selected.size < batchRows.length;
+    const visible = visibleBatchRows();
+    const visibleSelectedCount = visible.filter(b => selected.has(keyFor(b))).length;
+    box.checked = visible.length > 0 && visibleSelectedCount === visible.length;
+    box.indeterminate = visibleSelectedCount > 0 && visibleSelectedCount < visible.length;
   }
 
   function clearSelection() {
