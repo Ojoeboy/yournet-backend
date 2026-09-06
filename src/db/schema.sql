@@ -126,6 +126,12 @@ CREATE TABLE IF NOT EXISTS tenant_users (
   UNIQUE(tenant_id, email)
 );
 
+-- Per-agent daily self-service voucher generation ceiling (see
+-- routes/agents.js POST /me/vouchers/generate). Was a single hardcoded
+-- constant shared by every agent; this lets an owner raise one
+-- high-performing agent's limit without touching everyone else's.
+ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS daily_voucher_cap INTEGER NOT NULL DEFAULT 100;
+
 -- A physical network location. type determines which integration module is used.
 CREATE TABLE IF NOT EXISTS sites (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

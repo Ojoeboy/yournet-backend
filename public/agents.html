@@ -63,7 +63,8 @@
 <h1 data-i18n="agentsTitle">Agents</h1>
 <div class="sub">
   Agents log in on their own at <code>/agent.html</code> to see their own sales/commission, and (once they've
-  set up a secret question) generate and print their own vouchers, capped at 100/day.
+  set up a secret question) generate and print their own vouchers, capped daily at whatever limit is set below
+  for each agent (100/day by default).
 </div>
 
 <div class="setup-tabs" id="agents-tabs">
@@ -85,6 +86,9 @@
   <div class="row">
     <div><label>Secret question</label><input id="agentSecretQuestion" placeholder="e.g. What street did you grow up on?"></div>
     <div><label>Secret answer</label><input id="agentSecretAnswer" placeholder="Secret answer"></div>
+  </div>
+  <div class="row">
+    <div><label>Daily voucher cap</label><input id="agentDailyCap" type="number" min="1" placeholder="Daily voucher cap" value="100"></div>
   </div>
   <button onclick="addAgent()" data-i18n="addAgentBtn">Add agent</button>
   <div class="msg" id="agentMsg"></div>
@@ -207,11 +211,39 @@
         <td>${currency} ${summary.revenue}</td>
         <td>${summary.commissionPct}%</td>
         <td>${currency} ${summary.commissionOwed}</td>
+        <td>
+          <div style="display:flex;gap:4px;align-items:center">
+            <input id="cap-${a.id}" type="number" min="1" value="${a.daily_voucher_cap}"
+              style="width:70px;padding:4px 6px;font-size:12px">
+            <button class="secondary" style="width:auto;margin-top:0;padding:4px 8px;font-size:11px"
+              onclick="saveDailyCap('${a.id}')">Save</button>
+          </div>
+          <div class="msg" id="capMsg-${a.id}" style="margin-top:4px"></div>
+        </td>
       </tr>`);
     }
     document.getElementById('agentsTable').innerHTML =
-      '<tr><th>Agent</th><th>Sold</th><th>Revenue</th><th>Rate</th><th>Owed</th></tr>' +
-      (rowsHtml.length ? rowsHtml.join('') : '<tr><td colspan="5" style="color:var(--yn-muted)">No agents yet</td></tr>');
+      '<tr><th>Agent</th><th>Sold</th><th>Revenue</th><th>Rate</th><th>Owed</th><th>Daily cap</th></tr>' +
+      (rowsHtml.length ? rowsHtml.join('') : '<tr><td colspan="6" style="color:var(--yn-muted)">No agents yet</td></tr>');
+  }
+
+  async function saveDailyCap(id) {
+    const input = document.getElementById(`cap-${id}`);
+    const msg = document.getElementById(`capMsg-${id}`);
+    const value = Number(input.value);
+    if (!value || value < 1) {
+      msg.textContent = 'Enter a positive number.';
+      msg.className = 'msg show err';
+      return;
+    }
+    try {
+      await api(`/api/agents/${id}`, 'PATCH', { dailyVoucherCap: value });
+      msg.textContent = 'Saved.';
+      msg.className = 'msg show ok';
+    } catch (err) {
+      msg.textContent = err.message;
+      msg.className = 'msg show err';
+    }
   }
 
   function toggleSecretForm(id) {
@@ -247,6 +279,7 @@
         password: password || undefined,
         secretQuestion: document.getElementById('agentSecretQuestion').value,
         secretAnswer: document.getElementById('agentSecretAnswer').value,
+        dailyVoucherCap: document.getElementById('agentDailyCap').value === '' ? 100 : Number(document.getElementById('agentDailyCap').value),
       });
       msg.textContent = result.tempPassword
         ? `Agent added. Temp password (share this with them, shown only once): ${result.tempPassword}`
@@ -257,6 +290,7 @@
       document.getElementById('agentPassword').value = '';
       document.getElementById('agentSecretQuestion').value = '';
       document.getElementById('agentSecretAnswer').value = '';
+      document.getElementById('agentDailyCap').value = '100';
       await loadAgents();
     } catch (err) {
       msg.textContent = err.message;

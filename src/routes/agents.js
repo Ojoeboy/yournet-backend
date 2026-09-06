@@ -15,9 +15,11 @@ const emailService = require('../integrations/emailService');
 const router = express.Router();
 
 // Agent self-generation cap - see routes/agents.js POST /me/vouchers/generate.
-// A flat daily ceiling per agent, independent of how many separate calls
-// they make it in.
-const AGENT_DAILY_VOUCHER_CAP = 100;
+// Default daily ceiling for a newly-created agent (tenant_users.daily_voucher_cap),
+// independent of how many separate calls they make it in. Per-agent overrides
+// are stored on the agent's own row so an owner can raise one high-performing
+// agent's limit without raising it for everyone.
+const AGENT_DAILY_VOUCHER_CAP_DEFAULT = 100;
 // Wrong secret-question answers in a row before an agent is locked out of
 // generating (and an admin alert is logged) - see POST /verify-secret.
 const SECRET_QUESTION_MAX_ATTEMPTS = 3;
@@ -98,11 +100,14 @@ function ownerOrManagerOnly(req, res, next) {
 }
 
 router.post('/', ownerOrManagerOnly, asyncHandler(async (req, res) => {
-  const { name, email, commissionPct, password, secretQuestion, secretAnswer } = req.body;
+  const { name, email, commissionPct, password, secretQuestion, secretAnswer, dailyVoucherCap } = req.body;
   if (!validate.isNonEmptyString(name, 100)) return res.status(400).json({ error: 'A valid agent name is required.' });
   if (!validate.isEmail(email)) return res.status(400).json({ error: 'A valid email is required so the agent can log in to their own dashboard.' });
   if (commissionPct !== undefined && (Number(commissionPct) < 0 || Number(commissionPct) > 100)) {
     return res.status(400).json({ error: 'Commission percentage must be between 0 and 100.' });
+  }
+  if (dailyVoucherCap !== undefined && dailyVoucherCap !== null && dailyVoucherCap !== '' && !validate.isPositiveNumber(dailyVoucherCap)) {
+    return res.status(400).json({ error: 'Daily voucher cap must be a positive number.' });
   }
   // The secret question gates the agent's OWN self-service voucher
   // generation (see POST /me/vouchers/generate) - required at creation so
@@ -121,9 +126,14 @@ router.post('/', ownerOrManagerOnly, asyncHandler(async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO tenant_users (tenant_id, name, email, role, password_hash, commission_pct, secret_question, secret_answer_hash)
-       VALUES ($1,$2,$3,'agent',$4,$5,$6,$7) RETURNING id, name, email, commission_pct, secret_question`,
-      [req.tenantId, name, email, passwordHash, commissionPct !== undefined && commissionPct !== null && commissionPct !== '' ? commissionPct : 10, secretQuestion, secretAnswerHash]
+      `INSERT INTO tenant_users (tenant_id, name, email, role, password_hash, commission_pct, secret_question, secret_answer_hash, daily_voucher_cap)
+       VALUES ($1,$2,$3,'agent',$4,$5,$6,$7,$8) RETURNING id, name, email, commission_pct, secret_question, daily_voucher_cap`,
+      [
+        req.tenantId, name, email, passwordHash,
+        commissionPct !== undefined && commissionPct !== null && commissionPct !== '' ? commissionPct : 10,
+        secretQuestion, secretAnswerHash,
+        dailyVoucherCap !== undefined && dailyVoucherCap !== null && dailyVoucherCap !== '' ? Number(dailyVoucherCap) : AGENT_DAILY_VOUCHER_CAP_DEFAULT,
+      ]
     );
 
     // Fire-and-forget, same posture as the verification/reset emails in
@@ -154,13 +164,16 @@ router.patch('/:id', ownerOrManagerOnly, asyncHandler(async (req, res) => {
   const { rows: existing } = await pool.query(`SELECT id FROM tenant_users WHERE id=$1 AND tenant_id=$2 AND role='agent'`, [req.params.id, req.tenantId]);
   if (!existing.length) return res.status(404).json({ error: 'Agent not found' });
 
-  const { name, commissionPct, secretQuestion, secretAnswer } = req.body;
+  const { name, commissionPct, secretQuestion, secretAnswer, dailyVoucherCap } = req.body;
   if (name !== undefined && !validate.isNonEmptyString(name, 100)) return res.status(400).json({ error: 'A valid agent name is required.' });
   if (commissionPct !== undefined && (Number(commissionPct) < 0 || Number(commissionPct) > 100)) {
     return res.status(400).json({ error: 'Commission percentage must be between 0 and 100.' });
   }
   if (secretQuestion !== undefined && !validate.isNonEmptyString(secretQuestion, 200)) {
     return res.status(400).json({ error: 'Secret question can\u2019t be blank.' });
+  }
+  if (dailyVoucherCap !== undefined && dailyVoucherCap !== null && !validate.isPositiveNumber(dailyVoucherCap)) {
+    return res.status(400).json({ error: 'Daily voucher cap must be a positive number.' });
   }
 
   const secretAnswerHash = secretAnswer ? await bcrypt.hash(normalizeSecretAnswer(secretAnswer), 10) : null;
@@ -170,17 +183,18 @@ router.patch('/:id', ownerOrManagerOnly, asyncHandler(async (req, res) => {
        name = COALESCE($1, name),
        commission_pct = COALESCE($2, commission_pct),
        secret_question = COALESCE($3, secret_question),
-       secret_answer_hash = COALESCE($4, secret_answer_hash)
-     WHERE id=$5 AND tenant_id=$6 AND role='agent'
-     RETURNING id, name, email, commission_pct, secret_question`,
-    [name ?? null, commissionPct ?? null, secretQuestion ?? null, secretAnswerHash, req.params.id, req.tenantId]
+       secret_answer_hash = COALESCE($4, secret_answer_hash),
+       daily_voucher_cap = COALESCE($5, daily_voucher_cap)
+     WHERE id=$6 AND tenant_id=$7 AND role='agent'
+     RETURNING id, name, email, commission_pct, secret_question, daily_voucher_cap`,
+    [name ?? null, commissionPct ?? null, secretQuestion ?? null, secretAnswerHash, dailyVoucherCap ? Number(dailyVoucherCap) : null, req.params.id, req.tenantId]
   );
   res.json(rows[0]);
 }));
 
 router.get('/', ownerOrManagerOnly, asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT id, name, email, commission_pct, secret_question, created_at FROM tenant_users
+    `SELECT id, name, email, commission_pct, secret_question, daily_voucher_cap, created_at FROM tenant_users
      WHERE tenant_id=$1 AND role='agent' ORDER BY created_at DESC`,
     [req.tenantId]
   );
@@ -420,8 +434,11 @@ router.get('/me/options', asyncHandler(async (req, res) => {
 // "62 of 100 today" and disable the form before a rejected request.
 router.get('/me/vouchers/quota', asyncHandler(async (req, res) => {
   if (req.role !== 'agent') return res.status(403).json({ error: 'Not available to owner/manager accounts.' });
-  const usedToday = await agentVouchersUsedToday(req.tenantId, req.userId);
-  res.json({ usedToday, cap: AGENT_DAILY_VOUCHER_CAP, remaining: Math.max(0, AGENT_DAILY_VOUCHER_CAP - usedToday) });
+  const [usedToday, cap] = await Promise.all([
+    agentVouchersUsedToday(req.tenantId, req.userId),
+    agentDailyVoucherCap(req.tenantId, req.userId),
+  ]);
+  res.json({ usedToday, cap, remaining: Math.max(0, cap - usedToday) });
 }));
 
 // Agent self-service voucher generation. Requires the secret-question
@@ -455,10 +472,13 @@ router.post('/me/vouchers/generate', asyncHandler(async (req, res) => {
   if (!siteRows.length) return res.status(400).json({ error: 'That site isn\u2019t available.' });
   if (!pkgRows.length) return res.status(400).json({ error: 'That package isn\u2019t available.' });
 
-  const usedToday = await agentVouchersUsedToday(req.tenantId, req.userId);
-  const remaining = AGENT_DAILY_VOUCHER_CAP - usedToday;
+  const [usedToday, cap] = await Promise.all([
+    agentVouchersUsedToday(req.tenantId, req.userId),
+    agentDailyVoucherCap(req.tenantId, req.userId),
+  ]);
+  const remaining = cap - usedToday;
   if (remaining <= 0) {
-    return res.status(429).json({ error: `You\u2019ve reached today\u2019s limit of ${AGENT_DAILY_VOUCHER_CAP} vouchers. This resets after midnight.` });
+    return res.status(429).json({ error: `You\u2019ve reached today\u2019s limit of ${cap} vouchers. This resets after midnight.` });
   }
   const grantedQty = Math.min(Number(quantity), remaining);
 
@@ -484,7 +504,7 @@ router.post('/me/vouchers/generate', asyncHandler(async (req, res) => {
     vouchers,
     quantity: grantedQty,
     truncated: grantedQty < Number(quantity),
-    remainingToday: AGENT_DAILY_VOUCHER_CAP - usedToday - grantedQty,
+    remainingToday: cap - usedToday - grantedQty,
   });
 }));
 
@@ -570,6 +590,16 @@ async function agentVouchersUsedToday(tenantId, agentId) {
     [tenantId, agentId]
   );
   return rows[0].n;
+}
+
+// Per-agent cap (falls back to the platform default only if the row is
+// somehow missing it, which shouldn't happen given the NOT NULL DEFAULT).
+async function agentDailyVoucherCap(tenantId, agentId) {
+  const { rows } = await pool.query(
+    `SELECT daily_voucher_cap FROM tenant_users WHERE id=$1 AND tenant_id=$2`,
+    [agentId, tenantId]
+  );
+  return rows[0]?.daily_voucher_cap ?? AGENT_DAILY_VOUCHER_CAP_DEFAULT;
 }
 
 async function logAgentActivity(tenantId, agentId, agentName, type, detail) {
