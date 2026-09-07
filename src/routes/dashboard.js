@@ -225,7 +225,7 @@ router.get('/summary', asyncHandler(async (req, res) => {
   );
 
   const { rows: revenueRows } = await pool.query(
-    `SELECT COALESCE(SUM(p.price), 0) AS revenue
+    `SELECT COALESCE(SUM(COALESCE(v.price_at_sale, p.price)), 0) AS revenue
      FROM vouchers v JOIN packages p ON p.id = v.package_id
      WHERE v.tenant_id = $1 AND v.status != 'unused'`,
     [req.tenantId]
@@ -278,7 +278,7 @@ router.get('/history/revenue', asyncHandler(async (req, res) => {
   const { trunc, sinceInterval } = bucketConfig(req.query.range);
   const { rows } = await pool.query(
     `SELECT date_trunc('${trunc}', COALESCE(v.redeemed_at, v.created_at)) AS bucket,
-            COALESCE(SUM(p.price), 0) AS revenue
+            COALESCE(SUM(COALESCE(v.price_at_sale, p.price)), 0) AS revenue
      FROM vouchers v JOIN packages p ON p.id = v.package_id
      WHERE v.tenant_id = $1 AND v.status != 'unused'
        AND COALESCE(v.redeemed_at, v.created_at) >= now() - interval '${sinceInterval}'
@@ -587,7 +587,7 @@ router.get('/plan-overview', asyncHandler(async (req, res) => {
   );
 
   const { rows: customerLog } = await pool.query(
-    `SELECT 'voucher' AS kind, p.price AS amount, 'GHS' AS currency, vo.provider, vo.status,
+    `SELECT 'voucher' AS kind, COALESCE(vo.price_at_sale, p.price) AS amount, 'GHS' AS currency, vo.provider, vo.status,
        NULL AS payment_kind, vo.created_at
      FROM voucher_orders vo JOIN packages p ON p.id = vo.package_id
      WHERE vo.tenant_id=$1

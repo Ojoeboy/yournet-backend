@@ -517,6 +517,36 @@
       <tbody id="packageRows"></tbody>
     </table>
   </div>
+
+  <h2 style="margin-top:24px">Per-site pricing</h2>
+  <p class="note" style="font-size:12px;color:#6b8a91">
+    Off (default): every site charges the price set above. On: pick a site below and
+    give it its own price for any package - a site with no price set here still just
+    uses the shared price, so you only need to set this for the sites you actually
+    want to charge differently.
+  </p>
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+    <span class="switch">
+      <input type="checkbox" id="perSitePricingToggle" onchange="savePricingMode()">
+      <span class="slider"></span>
+    </span>
+    <span style="text-transform:none;font-size:13px;color:#e8f0f1">
+      Set different prices per site
+    </span>
+  </label>
+  <div class="msg" id="pricing-mode-msg"></div>
+
+  <div id="sitePricingPanel" style="display:none;margin-top:16px">
+    <label>Site</label>
+    <select id="sitePricingSiteSelect" onchange="loadSitePrices()"></select>
+    <div class="table-scroll" style="margin-top:10px">
+      <table>
+        <thead><tr><th>Package</th><th>Shared price</th><th>This site's price</th><th></th></tr></thead>
+        <tbody id="sitePricingRows"></tbody>
+      </table>
+    </div>
+    <div class="msg" id="site-pricing-msg"></div>
+  </div>
 </div>
 
 <!-- STEP 4: Vouchers -->
@@ -1380,6 +1410,90 @@
     }
   }
 
+  // ---------------- Per-site pricing ----------------
+  async function loadPricingMode() {
+    try {
+      const { perSitePricingEnabled } = await api('/api/packages/pricing-settings', 'GET');
+      document.getElementById('perSitePricingToggle').checked = perSitePricingEnabled;
+      document.getElementById('sitePricingPanel').style.display = perSitePricingEnabled ? 'block' : 'none';
+      if (perSitePricingEnabled) loadSitePrices();
+    } catch (err) { /* not logged in yet */ }
+  }
+
+  async function savePricingMode() {
+    const enabled = document.getElementById('perSitePricingToggle').checked;
+    try {
+      await api('/api/packages/pricing-settings', 'PATCH', { perSitePricingEnabled: enabled });
+      document.getElementById('sitePricingPanel').style.display = enabled ? 'block' : 'none';
+      if (enabled) loadSitePrices();
+      showMsg('pricing-mode-msg', enabled ? 'Per-site pricing turned on.' : 'Back to one shared price for every site.', 'ok');
+    } catch (err) {
+      document.getElementById('perSitePricingToggle').checked = !enabled; // revert the visual toggle on failure
+      showMsg('pricing-mode-msg', err.message, 'err');
+    }
+  }
+
+  function populatePricingSiteDropdown(sites) {
+    const sel = document.getElementById('sitePricingSiteSelect');
+    const prevValue = sel.value;
+    sel.innerHTML = sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    if (sites.some(s => s.id === prevValue)) sel.value = prevValue;
+  }
+
+  async function loadSitePrices() {
+    const siteId = document.getElementById('sitePricingSiteSelect').value;
+    const tbody = document.getElementById('sitePricingRows');
+    if (!siteId) { tbody.innerHTML = '<tr><td colspan="4">No sites yet.</td></tr>'; return; }
+    try {
+      const rows = await api(`/api/packages/site-prices?siteId=${encodeURIComponent(siteId)}`, 'GET');
+      tbody.innerHTML = rows.map(p => `
+        <tr${p.active ? '' : ' style="opacity:.5"'}>
+          <td>${escapeHtmlAdmin(p.label)}${p.active ? '' : ' (inactive)'}</td>
+          <td>${currencyLabel()} ${p.templatePrice.toFixed(2)}</td>
+          <td>
+            <input type="text" id="sitePrice-${p.id}" value="${p.sitePrice !== null ? p.sitePrice.toFixed(2) : ''}"
+              placeholder="${p.templatePrice.toFixed(2)}" style="width:90px;padding:6px 8px;font-size:12px">
+          </td>
+          <td style="white-space:nowrap">
+            <button class="secondary" style="padding:6px 10px;font-size:12px" onclick="saveSitePrice('${p.id}')">Save</button>
+            ${p.sitePrice !== null ? `<button class="secondary" style="padding:6px 10px;font-size:12px;color:#ff6b6b" onclick="removeSitePrice('${p.id}')">Remove</button>` : ''}
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="4">No packages yet.</td></tr>';
+    } catch (err) {
+      showMsg('site-pricing-msg', err.message, 'err');
+    }
+  }
+
+  async function saveSitePrice(packageId) {
+    const siteId = document.getElementById('sitePricingSiteSelect').value;
+    const input = document.getElementById(`sitePrice-${packageId}`);
+    const price = Number(input.value);
+    if (!price || price <= 0) {
+      showMsg('site-pricing-msg', 'Enter a positive price first.', 'err');
+      return;
+    }
+    try {
+      await api(`/api/packages/${packageId}/site-price`, 'PUT', { siteId, price });
+      showMsg('site-pricing-msg', 'Saved.', 'ok');
+      loadSitePrices();
+    } catch (err) {
+      showMsg('site-pricing-msg', err.message, 'err');
+    }
+  }
+
+  async function removeSitePrice(packageId) {
+    const siteId = document.getElementById('sitePricingSiteSelect').value;
+    if (!confirm('Remove this site\u2019s own price? It will go back to using the shared price above.')) return;
+    try {
+      await api(`/api/packages/${packageId}/site-price/${siteId}`, 'DELETE');
+      showMsg('site-pricing-msg', 'Removed - back to the shared price.', 'ok');
+      loadSitePrices();
+    } catch (err) {
+      showMsg('site-pricing-msg', err.message, 'err');
+    }
+  }
+
   async function deletePackage(id) {
     if (!confirm('Delete this package? This only works if it has never been used for a voucher.')) return;
     try {
@@ -1411,6 +1525,8 @@
       const pkgSelect = document.getElementById('voucherPackage');
       pkgSelect.innerHTML = packages.map(p => `<option value="${p.id}">${p.label} - ${currencyLabel()} ${p.price}</option>`).join('');
       loadPackageList();
+      populatePricingSiteDropdown(sites);
+      loadPricingMode();
       loadSiteManageList();
       loadAgentDropdown();
       populateAccessSiteDropdown(sites);

@@ -630,7 +630,7 @@ router.get('/admin/tenant-sales', requireOwnerAuth, asyncHandler(async (req, res
   const [{ rows: perTenant }, { rows: byMonth }] = await Promise.all([
     pool.query(`
       SELECT t.id AS tenant_id, t.business_name, t.owner_email,
-             COALESCE(SUM(p.price), 0) AS total,
+             COALESCE(SUM(COALESCE(vo.price_at_sale, p.price)), 0) AS total,
              COUNT(vo.id) AS count
       FROM tenants t
       LEFT JOIN voucher_orders vo ON vo.tenant_id = t.id AND vo.status = 'paid'
@@ -640,7 +640,7 @@ router.get('/admin/tenant-sales', requireOwnerAuth, asyncHandler(async (req, res
     `),
     pool.query(`
       SELECT to_char(date_trunc('month', vo.created_at), 'YYYY-MM') AS month,
-             COALESCE(SUM(p.price), 0) AS total, COUNT(*) AS count
+             COALESCE(SUM(COALESCE(vo.price_at_sale, p.price)), 0) AS total, COUNT(*) AS count
       FROM voucher_orders vo
       LEFT JOIN packages p ON p.id = vo.package_id
       WHERE vo.status='paid'

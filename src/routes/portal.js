@@ -10,6 +10,7 @@ const freeStockPhotos = require('../integrations/freeStockPhotos');
 const logger = require('../utils/logger');
 const asyncHandler = require('../utils/asyncHandler');
 const webhookToken = require('../utils/webhookToken');
+const { getEffectivePrice, listPackagesWithEffectivePrice } = require('../utils/pricing');
 
 const router = express.Router();
 
@@ -33,11 +34,15 @@ router.get('/:siteId/config', asyncHandler(async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: 'Unknown site' });
   const site = rows[0];
 
-  const { rows: packages } = await pool.query(
-    `SELECT id, label, price, duration_minutes AS "durationMinutes"
-     FROM packages WHERE tenant_id=$1 AND active=true ORDER BY price ASC`,
-    [site.tenant_id]
-  );
+  const packagesRaw = await listPackagesWithEffectivePrice(site.tenant_id, siteId);
+  // Shape stays exactly what the portal frontend already expects
+  // ({id, label, price, durationMinutes}) - price here is the resolved
+  // per-site price when per-site pricing is on and this site has an
+  // override, otherwise the same shared price as always. The frontend
+  // doesn't need to know which case it is.
+  const packages = packagesRaw.map((p) => ({
+    id: p.id, label: p.label, price: p.effective_price, durationMinutes: p.duration_minutes,
+  }));
 
   const activeGateway = await gatewayService.getActiveGateway(site.tenant_id);
 
@@ -154,6 +159,12 @@ router.post('/:siteId/buy-voucher', asyncHandler(async (req, res) => {
   const { rows: pkgRows } = await pool.query('SELECT * FROM packages WHERE id=$1 AND tenant_id=$2', [packageId, tenantId]);
   if (!pkgRows.length) return res.status(404).json({ error: 'Package not found' });
   const pkg = pkgRows[0];
+  // Resolved once, here, and carried through the checkout amount AND the
+  // order row below - see utils/pricing.js. This is the moment that
+  // actually matters: whatever's charged now is what price_at_sale locks
+  // in, so a price edit later (per-site or otherwise) can't retroactively
+  // change what this order is checked against at verification/fulfillment.
+  const effectivePrice = await getEffectivePrice(tenantId, siteId, packageId);
 
   const activeGateway = await gatewayService.getActiveGateway(tenantId);
   if (!activeGateway) return res.status(400).json({ error: 'This WiFi provider has not set up online payment yet.' });
@@ -179,7 +190,7 @@ router.post('/:siteId/buy-voucher', asyncHandler(async (req, res) => {
 
   try {
     const checkout = await gatewayService.initializeCheckout(tenantId, {
-      amountGHS: Number(pkg.price),
+      amountGHS: Number(effectivePrice),
       currency,
       email: email || 'customer@example.com',
       phone,
@@ -197,9 +208,9 @@ router.post('/:siteId/buy-voucher', asyncHandler(async (req, res) => {
     });
 
     await pool.query(
-      `INSERT INTO voucher_orders (tenant_id, site_id, package_id, customer_email, customer_phone, provider, provider_reference, webhook_token_hash)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [tenantId, siteId, packageId, email || null, phone || null, checkout.provider, checkout.reference, hubtelToken?.hash || null]
+      `INSERT INTO voucher_orders (tenant_id, site_id, package_id, customer_email, customer_phone, provider, provider_reference, webhook_token_hash, price_at_sale)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [tenantId, siteId, packageId, email || null, phone || null, checkout.provider, checkout.reference, hubtelToken?.hash || null, effectivePrice]
     );
 
     res.json({ checkoutUrl: checkout.checkoutUrl, provider: checkout.provider, reference: checkout.reference });
@@ -230,12 +241,13 @@ router.post('/:siteId/buy-voucher-manual', asyncHandler(async (req, res) => {
 
   const { rows: pkgRows } = await pool.query('SELECT id FROM packages WHERE id=$1 AND tenant_id=$2 AND active=true', [packageId, tenantId]);
   if (!pkgRows.length) return res.status(404).json({ error: 'Package not found' });
+  const effectivePrice = await getEffectivePrice(tenantId, siteId, packageId);
 
   const reference = `MANUAL-${uuidv4().slice(0, 12)}`;
   const { rows: orderRows } = await pool.query(
-    `INSERT INTO voucher_orders (tenant_id, site_id, package_id, customer_phone, customer_note, provider, provider_reference)
-     VALUES ($1,$2,$3,$4,$5,'manual_momo',$6) RETURNING id, created_at`,
-    [tenantId, siteId, packageId, phone, note || null, reference]
+    `INSERT INTO voucher_orders (tenant_id, site_id, package_id, customer_phone, customer_note, provider, provider_reference, price_at_sale)
+     VALUES ($1,$2,$3,$4,$5,'manual_momo',$6,$7) RETURNING id, created_at`,
+    [tenantId, siteId, packageId, phone, note || null, reference, effectivePrice]
   );
 
   res.json({ ok: true, orderId: orderRows[0].id, status: 'pending' });
@@ -258,6 +270,10 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
   );
   if (!rows.length) return res.status(404).send('Order not found.');
   const order = rows[0];
+  // price_at_sale is what was actually shown/charged at checkout (see
+  // buy-voucher above) - falls back to the live package price only for
+  // an order old enough to predate that column being filled in.
+  const chargedPrice = order.price_at_sale ?? order.package_price;
 
   if (order.status === 'paid') {
     return res.send(orderConfirmationPage('Already confirmed', 'This order was already completed.'));
@@ -293,7 +309,7 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
         await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
         return res.send(orderConfirmationPage('Payment could not be verified', 'This transaction does not match this order.'));
       }
-      if (Math.round(Number(result.amountGHS) * 100) < Math.round(Number(order.package_price) * 100)) {
+      if (Math.round(Number(result.amountGHS) * 100) < Math.round(Number(chargedPrice) * 100)) {
         await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
         return res.send(orderConfirmationPage('Payment could not be verified', 'The amount paid does not match this order.'));
       }
@@ -309,7 +325,7 @@ router.get('/gateway-callback/:provider', asyncHandler(async (req, res) => {
         await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
         return res.send(orderConfirmationPage('Payment could not be verified', 'This transaction does not match this order.'));
       }
-      if (Math.round(Number(result.amount) * 100) < Math.round(Number(order.package_price) * 100)) {
+      if (Math.round(Number(result.amount) * 100) < Math.round(Number(chargedPrice) * 100)) {
         await pool.query(`UPDATE voucher_orders SET status='failed' WHERE id=$1`, [order.id]);
         return res.send(orderConfirmationPage('Payment could not be verified', 'The amount paid does not match this order.'));
       }

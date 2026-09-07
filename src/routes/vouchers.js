@@ -197,7 +197,7 @@ router.post('/batches/export', asyncHandler(async (req, res) => {
 
   const { rows } = await pool.query(
     `SELECT v.code, v.batch, v.status, v.created_at, v.redeemed_at, v.expires_at,
-            p.label AS package_label, p.price AS package_price, s.name AS site_name
+            p.label AS package_label, COALESCE(v.price_at_sale, p.price) AS package_price, s.name AS site_name
      FROM vouchers v
      JOIN packages p ON p.id = v.package_id
      JOIN sites s ON s.id = v.site_id
@@ -252,7 +252,7 @@ router.get('/', asyncHandler(async (req, res) => {
   // print page can render everything from one call instead of stitching
   // together several round trips itself.
   const { rows } = await pool.query(
-    `SELECT v.*, p.label AS package_label, p.price AS package_price, p.duration_minutes AS package_duration_minutes,
+    `SELECT v.*, p.label AS package_label, COALESCE(v.price_at_sale, p.price) AS package_price, p.duration_minutes AS package_duration_minutes,
             t.business_name, a.name AS agent_name
      FROM vouchers v
      JOIN packages p ON p.id = v.package_id
@@ -332,7 +332,7 @@ router.get('/manual-orders', asyncHandler(async (req, res) => {
   const { status } = req.query;
   const { rows } = await pool.query(
     `SELECT vo.id, vo.customer_phone, vo.customer_note, vo.status, vo.created_at, vo.completed_at,
-            p.label AS package_label, p.price AS package_price, s.name AS site_name
+            p.label AS package_label, COALESCE(vo.price_at_sale, p.price) AS package_price, s.name AS site_name
      FROM voucher_orders vo
      JOIN packages p ON p.id = vo.package_id
      JOIN sites s ON s.id = vo.site_id

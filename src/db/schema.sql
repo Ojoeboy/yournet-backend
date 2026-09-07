@@ -675,6 +675,54 @@ ALTER TABLE voucher_orders ADD COLUMN IF NOT EXISTS customer_note TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_voucher_orders_reference ON voucher_orders(provider, provider_reference);
 
+-- ---------------------------------------------------------------------
+-- Per-site package pricing (see utils/pricing.js for the resolution
+-- logic all of this feeds into).
+--
+-- per_site_pricing_enabled: the tenant-wide toggle. OFF (default) means
+-- every site charges packages.price, same as before this feature
+-- existed - nothing changes for a tenant who never turns this on. ON
+-- means a site with a row in site_package_prices below charges THAT
+-- price instead; a site with no row still falls back to packages.price
+-- automatically, so turning per-site pricing on doesn't require setting
+-- an override for every site immediately.
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS per_site_pricing_enabled BOOLEAN NOT NULL DEFAULT false;
+
+-- One row per (site, package) that has been deliberately given its own
+-- price. Deleting a row (an explicit owner action, never a side effect
+-- of the toggle above) reverts that site/package back to the shared
+-- packages.price fallback - flipping the toggle off and back on again
+-- never deletes these, so per-site tuning survives being toggled off
+-- temporarily.
+CREATE TABLE IF NOT EXISTS site_package_prices (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  site_id UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  package_id UUID NOT NULL REFERENCES packages(id) ON DELETE CASCADE,
+  price NUMERIC(10,2) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(site_id, package_id)
+);
+
+-- Price snapshots - the fix for the underlying weak spot where every
+-- report anywhere re-derived price live from packages.price, so editing
+-- a price today silently rewrote yesterday's revenue/commission numbers
+-- too. Filled in once, at the moment a voucher/order is created (see
+-- utils/pricing.js and services/voucherService.js), and never touched
+-- again - old rows keep whatever was actually charged even if the
+-- package or site price changes afterward.
+--
+-- HONEST LIMIT: this only protects rows created from here onward. Rows
+-- that already existed before this column existed have NULL here -
+-- every read of this column falls back to the live packages.price join
+-- for exactly those old rows (see the COALESCE pattern used in
+-- dashboard.js/agents.js), which is only as accurate as "the price
+-- hasn't changed since they were created." There is no way to perfectly
+-- reconstruct what was actually charged for those older rows from this
+-- database alone.
+ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS price_at_sale NUMERIC(10,2);
+ALTER TABLE voucher_orders ADD COLUMN IF NOT EXISTS price_at_sale NUMERIC(10,2);
+
 -- Historical site snapshots, sampled roughly once an hour by the poller in
 -- src/server.js (the same loop that already updates sites.status every 5
 -- minutes now also writes one row here on its hourly pass). This is what

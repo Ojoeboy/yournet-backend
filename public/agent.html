@@ -170,7 +170,7 @@
       <div class="quota-bar"><div class="fill" id="quotaFill" style="width:0%"></div></div>
 
       <label>Site</label>
-      <select id="genSite"></select>
+      <select id="genSite" onchange="refreshPackagesForSite()"></select>
       <label>Package</label>
       <select id="genPackage"></select>
       <label>Quantity</label>
@@ -374,9 +374,13 @@
         api('/api/agents/me/vouchers/quota'),
       ]);
       const siteSel = document.getElementById('genSite');
-      const pkgSel = document.getElementById('genPackage');
       siteSel.innerHTML = opts.sites.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-      pkgSel.innerHTML = opts.packages.map(p => `<option value="${p.id}">${p.label} - ${Number(p.price).toFixed(2)} (${formatDuration(p.duration_minutes)})</option>`).join('');
+      // Prices depend on which site is picked (see utils/pricing.js on the
+      // backend) - loaded per-site below rather than from opts.packages
+      // directly, so this shows the right number even for a tenant using
+      // per-site pricing. opts.packages is only used as a fallback if
+      // there's no site to ask about yet.
+      await refreshPackagesForSite(opts.packages);
 
       const pct = Math.min(100, Math.round((quota.usedToday / quota.cap) * 100));
       document.getElementById('quotaFill').style.width = pct + '%';
@@ -384,6 +388,31 @@
       const qtyInput = document.getElementById('genQty');
       qtyInput.max = quota.remaining;
       document.getElementById('genBtn').disabled = quota.remaining <= 0;
+    } catch (err) {
+      showMsg('gen-msg', err.message, 'err');
+    }
+  }
+
+  // Re-fetches package prices for whichever site is currently selected.
+  // Called on load and every time the site dropdown changes - a tenant
+  // with per-site pricing on can genuinely charge different amounts at
+  // different sites, so the price shown must follow the site, not just
+  // the package.
+  async function refreshPackagesForSite(fallbackPackages) {
+    const pkgSel = document.getElementById('genPackage');
+    const siteId = document.getElementById('genSite').value;
+    const previouslySelected = pkgSel.value;
+    try {
+      const packages = siteId
+        ? await api(`/api/agents/me/packages-for-site?siteId=${encodeURIComponent(siteId)}`)
+        : (fallbackPackages || []);
+      pkgSel.innerHTML = packages.map(p => `<option value="${p.id}">${p.label} - ${Number(p.price).toFixed(2)} (${formatDuration(p.duration_minutes)})</option>`).join('');
+      // Keep whichever package was selected, if it still exists, instead
+      // of silently resetting to the first one every time someone
+      // switches sites.
+      if (previouslySelected && packages.some(p => p.id === previouslySelected)) {
+        pkgSel.value = previouslySelected;
+      }
     } catch (err) {
       showMsg('gen-msg', err.message, 'err');
     }

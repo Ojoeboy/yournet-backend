@@ -10,6 +10,7 @@ const validate = require('../utils/validate');
 const asyncHandler = require('../utils/asyncHandler');
 const voucherService = require('../services/voucherService');
 const { checkLicenseLockout } = require('../utils/licenseGate');
+const { listPackagesWithEffectivePrice } = require('../utils/pricing');
 const emailService = require('../integrations/emailService');
 
 const router = express.Router();
@@ -239,7 +240,7 @@ router.get('/:id/summary', canViewAgent, asyncHandler(async (req, res) => {
   const { rows } = await pool.query(
     `SELECT
        COUNT(*) FILTER (WHERE v.status != 'unused') AS vouchers_sold,
-       COALESCE(SUM(p.price) FILTER (WHERE v.status != 'unused'), 0) AS revenue,
+       COALESCE(SUM(COALESCE(v.price_at_sale, p.price)) FILTER (WHERE v.status != 'unused'), 0) AS revenue,
        tu.commission_pct
      FROM tenant_users tu
      LEFT JOIN vouchers v ON v.agent_id = tu.id
@@ -287,19 +288,29 @@ router.get('/:id/settlement', canViewAgent, asyncHandler(async (req, res) => {
   }
 
   const { rows: lines } = await pool.query(
-    `SELECT p.label, p.price,
+    `SELECT p.label,
+       COALESCE(v.price_at_sale, p.price) AS price,
        COUNT(*) AS given,
-       COUNT(*) FILTER (WHERE v.status != 'unused') AS sold
+       COUNT(*) FILTER (WHERE v.status != 'unused') AS sold,
+       COALESCE(SUM(COALESCE(v.price_at_sale, p.price)) FILTER (WHERE v.status != 'unused'), 0) AS sales
      FROM vouchers v JOIN packages p ON p.id = v.package_id
      WHERE ${conditions.join(' AND ')}
-     GROUP BY p.label, p.price
-     ORDER BY p.price ASC`,
+     GROUP BY p.label, COALESCE(v.price_at_sale, p.price)
+     ORDER BY price ASC`,
     params
   );
 
+  // sales comes straight from the query now (a real SUM of what was
+  // actually charged per voucher), not sold-count * today's live price -
+  // that multiplication used to silently misstate settlement whenever a
+  // price had changed since some of these vouchers were sold. Grouping by
+  // the resolved price (not just label) means two batches of the same
+  // package sold at different prices - a price edit, or a per-site
+  // override - now show as their own lines instead of being averaged
+  // together.
   let totalSales = 0;
   const items = lines.map((l) => {
-    const sales = Number(l.sold) * Number(l.price);
+    const sales = Number(l.sales);
     totalSales += sales;
     return {
       label: l.label,
@@ -430,6 +441,26 @@ router.get('/me/options', asyncHandler(async (req, res) => {
   res.json({ sites, packages });
 }));
 
+// Site-aware package prices for the agent's own generate form - called
+// again whenever the agent changes which site they're generating for, so
+// the price shown always matches what THAT site actually charges (see
+// utils/pricing.js). A tenant that's never turned on per-site pricing
+// gets back exactly the same prices /me/options already showed - this
+// only changes anything once an owner has deliberately set a site
+// override.
+router.get('/me/packages-for-site', asyncHandler(async (req, res) => {
+  if (req.role !== 'agent') return res.status(403).json({ error: 'Not available to owner/manager accounts.' });
+  const { siteId } = req.query;
+  if (!siteId) return res.status(400).json({ error: 'siteId is required' });
+  const { rows: siteRows } = await pool.query('SELECT id FROM sites WHERE id=$1 AND tenant_id=$2', [siteId, req.tenantId]);
+  if (!siteRows.length) return res.status(404).json({ error: 'Site not found' });
+
+  const packages = await listPackagesWithEffectivePrice(req.tenantId, siteId);
+  res.json(packages.map((p) => ({
+    id: p.id, label: p.label, price: Number(p.effective_price), duration_minutes: p.duration_minutes,
+  })));
+}));
+
 // How much of the daily cap this agent has used, so the UI can show
 // "62 of 100 today" and disable the form before a rejected request.
 router.get('/me/vouchers/quota', asyncHandler(async (req, res) => {
@@ -532,7 +563,7 @@ router.get('/me/vouchers', asyncHandler(async (req, res) => {
   if (batch) { params.push(batch); clauses.push(`v.batch=$${params.length}`); }
 
   const { rows } = await pool.query(
-    `SELECT v.*, p.label AS package_label, p.price AS package_price, p.duration_minutes AS package_duration_minutes,
+    `SELECT v.*, p.label AS package_label, COALESCE(v.price_at_sale, p.price) AS package_price, p.duration_minutes AS package_duration_minutes,
             t.business_name
      FROM vouchers v
      JOIN packages p ON p.id = v.package_id

@@ -7,6 +7,7 @@ const unifi = require('../integrations/unifi');
 const meraki = require('../integrations/meraki');
 const sms = require('../integrations/smsService');
 const { decrypt } = require('../utils/credentialCrypto');
+const { getEffectivePrice } = require('../utils/pricing');
 const logger = require('../utils/logger');
 
 // CSPRNG (crypto.randomInt), not Math.random() - Math.random() isn't
@@ -43,7 +44,20 @@ function parseRateToKbps(rateStr) {
  * router's user table small and avoids pre-loading thousands of unused
  * accounts onto a Mikrotik with limited memory).
  */
-async function generateVouchers(tenantId, { packageId, siteId, agentId, quantity, batch }) {
+async function generateVouchers(tenantId, { packageId, siteId, agentId, quantity, batch, priceAtSale }) {
+  // priceAtSale is only ever passed in by fulfillOrder, below - it's
+  // whatever the order already locked in at checkout time (see
+  // routes/portal.js), so a customer's voucher reflects exactly what they
+  // were charged even if the price changes between checkout and
+  // fulfillment. Every other caller (owner/agent manual generation - no
+  // preceding order to inherit a price from) resolves it fresh here,
+  // once per batch, not once per voucher - the price can't change
+  // mid-batch, and per-site pricing already means an owner or agent could
+  // be generating for any one of several different sites' prices.
+  const resolvedPrice = priceAtSale !== undefined && priceAtSale !== null
+    ? priceAtSale
+    : await getEffectivePrice(tenantId, siteId, packageId);
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -57,9 +71,9 @@ async function generateVouchers(tenantId, { packageId, siteId, agentId, quantity
         const code = randomCode();
         try {
           const { rows } = await client.query(
-            `INSERT INTO vouchers (id, tenant_id, site_id, package_id, agent_id, code, batch)
-             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-            [uuidv4(), tenantId, siteId, packageId, agentId, code, batch]
+            `INSERT INTO vouchers (id, tenant_id, site_id, package_id, agent_id, code, batch, price_at_sale)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+            [uuidv4(), tenantId, siteId, packageId, agentId, code, batch, resolvedPrice]
           );
           inserted = rows[0];
         } catch (err) {
@@ -473,6 +487,7 @@ async function fulfillOrder(order) {
       packageId: claimedOrder.package_id,
       siteId: claimedOrder.site_id,
       quantity: 1,
+      priceAtSale: claimedOrder.price_at_sale,
     });
     const voucher = vouchers[0];
 
