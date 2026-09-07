@@ -273,7 +273,7 @@
   </div>
   <div class="field">
     <label data-i18n="batch">Batch</label>
-    <input id="batchFilter" placeholder="Any" oninput="document.querySelectorAll('.batch-tile.selected').forEach(t=>t.classList.remove('selected'));debouncedLoad()">
+    <input id="batchFilter" placeholder="Any" oninput="viewingSiteId=null;document.querySelectorAll('.batch-tile.viewing').forEach(t=>t.classList.remove('viewing'));debouncedLoad()">
   </div>
   <div class="field">
     <label data-i18n="layout">Layout</label>
@@ -490,6 +490,16 @@
   let batchesLoaded = false;
   let batchRows = []; // raw /batches API rows, kept around so selection lookups don't need another fetch
 
+  // Which site the currently-"viewed" single batch belongs to. Needed
+  // because #batchFilter only ever held the batch NAME - and every site's
+  // ungrouped vouchers share the exact same name, "(no batch)" - so
+  // clicking View/Print on one site's row was silently pulling every
+  // site's same-named batch into the result. Set on tile click, cleared
+  // whenever the free-text batch box is edited by hand (that box is the
+  // older, deliberately tenant-wide search - only tile clicks are meant
+  // to be site-scoped).
+  let viewingSiteId = null;
+
   // Selection state for the bulk toolbar. Keyed by "siteId::batch" (batch
   // normalized to '__none__' for the ungrouped tile) so two same-named
   // batches on different sites are never conflated into one selection.
@@ -592,19 +602,20 @@
 
       checkbox.onclick = (e) => e.stopPropagation();
       checkbox.onchange = () => toggleBatchSelection(b, tile, checkbox.checked);
-      viewBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); viewBatch(); };
-      printBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label); printBatchUnused(); };
-      tile.onclick = () => { selectBatchTile(tile, label); viewBatch(); };
+      viewBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label, b.site_id); viewBatch(); };
+      printBtn.onclick = (e) => { e.stopPropagation(); selectBatchTile(tile, label, b.site_id); printBatchUnused(); };
+      tile.onclick = () => { selectBatchTile(tile, label, b.site_id); viewBatch(); };
       gridEl.appendChild(tile);
     });
     syncSelectAllCheckbox();
     updateBulkToolbar();
   }
 
-  function selectBatchTile(tile, label) {
+  function selectBatchTile(tile, label, siteId) {
     document.querySelectorAll('.batch-tile').forEach(t => t.classList.remove('viewing'));
     tile.classList.add('viewing');
     document.getElementById('batchFilter').value = label;
+    viewingSiteId = siteId || null;
   }
 
   // Just loads that batch into the current view so it can be checked
@@ -792,6 +803,7 @@
     if (status) params.set('status', status);
     if (agentId) params.set('agentId', agentId);
     if (batch) params.set('batch', batch);
+    if (viewingSiteId) params.set('siteId', viewingSiteId);
     const res = await fetch('/api/vouchers?' + params.toString(), { headers: { Authorization: 'Bearer ' + token } });
     const vouchers = await res.json();
     await renderVouchers(vouchers);
