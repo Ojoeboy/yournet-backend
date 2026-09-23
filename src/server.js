@@ -19,7 +19,6 @@ const paymentGatewayRoutes = require('./routes/paymentGateways');
 const portalRoutes = require('./routes/portal');
 const pppoeRoutes = require('./routes/pppoe');
 const ruijieCloudAuthRoutes = require('./routes/ruijieCloudAuth');
-const equipmentRoutes = require('./routes/equipment');
 
 const app = express();
 // Render puts this app behind exactly one reverse-proxy hop, which sets
@@ -162,7 +161,6 @@ app.use('/api/installers', apiLimiter, installerRoutes);
 app.use('/api/dashboard', apiLimiter, dashboardRoutes);
 app.use('/api/payment-gateways', apiLimiter, paymentGatewayRoutes);
 app.use('/api/pppoe', apiLimiter, pppoeRoutes);
-app.use('/api/equipment', apiLimiter, equipmentRoutes);
 app.use('/license', apiLimiter, licenseRoutes);
 app.use('/owner', ownerLoginLimiter, ownerRoutes);
 app.use('/billing', apiLimiter, billingRoutes);
@@ -370,7 +368,14 @@ async function pollAllSites() {
   }
 }
 
-const HEALTH_POLL_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
+// NOTE (quota): was every 5 minutes, which sits right at Neon's own
+// idle-auto-suspend threshold - a query landing exactly every 5 min means
+// the database compute never gets a real gap to suspend in, so it stays
+// "awake" and billing compute time 24/7 even with zero real traffic.
+// Widened to reduce Neon compute-hour usage while pre-revenue/low-traffic.
+// Revisit (tighten back up, or move to a Neon plan without auto-suspend)
+// once real tenant traffic justifies it.
+const HEALTH_POLL_INTERVAL_MS = 15 * 60 * 1000; // every 15 minutes
 setInterval(pollAllSites, HEALTH_POLL_INTERVAL_MS);
 // Run once shortly after startup too, rather than waiting a full interval.
 setTimeout(pollAllSites, 10 * 1000);
@@ -494,11 +499,20 @@ setTimeout(() => {
 // services/voucherExpiry.js for per-site-type coverage), and flips status
 // to 'expired' so the DB stops drifting from what's actually happening on
 // the router - see the delete-guard comment in routes/vouchers.js for the
-// mismatch this was causing before. Runs frequently (every minute) since,
-// unlike the billing jobs above, being late here means a customer stays
-// online longer than they paid for.
+// mismatch this was causing before. Was every minute since, unlike the
+// billing jobs above, being late here means a customer stays online
+// longer than they paid for.
+//
+// NOTE (quota): widened to 5 minutes for now. A 60-second interval never
+// let Neon's database compute go idle long enough to auto-suspend, which
+// burned through the monthly free-tier compute-hour quota in days (see
+// the "exceeded the quota" errors this caused). 5 minutes means a
+// customer could stay online up to ~5 minutes past their paid expiry
+// instead of ~1 - an acceptable trade-off at low/no-revenue volume, but
+// tighten this back up (or move off a compute-hour-limited DB plan)
+// once real paying traffic makes that latency actually matter.
 const voucherExpiry = require('./services/voucherExpiry');
-const VOUCHER_EXPIRY_INTERVAL_MS = 60 * 1000; // every minute
+const VOUCHER_EXPIRY_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
 setInterval(() => {
   voucherExpiry.runVoucherExpirySweep().catch((err) => logger.error('Voucher expiry sweep failed', { message: err.message }));
 }, VOUCHER_EXPIRY_INTERVAL_MS);
