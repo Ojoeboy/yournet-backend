@@ -117,11 +117,38 @@
     <div class="msg" id="forgot-msg"></div>
   </div>
 
+  <!-- REACTIVATE: for an EXISTING account whose subscription lapsed (the
+       login page shows "subscription has expired... renew at /license" in
+       that case) - distinct from the "I already have a key" panel above,
+       which only ever creates a brand-new account via /api/auth/signup.
+       This calls /api/auth/reactivate instead, which requires the
+       account's existing password (not just the key) so a reactivation
+       key alone can't be used to hijack someone else's account - see the
+       comment on that route in routes/auth.js. -->
+  <div class="panel" id="panel-reactivate">
+    <p style="font-size:13px;color:#9fb6bc;line-height:1.6">
+      Use this if you saw "subscription has expired" when logging in, and already
+      have a renewal key.
+    </p>
+    <label>Account email</label>
+    <input id="reactivateEmail" type="email" autocomplete="username">
+    <label>Account password</label>
+    <div class="pwd-wrap">
+      <input id="reactivatePassword" type="password" autocomplete="current-password">
+      <button type="button" class="pwd-toggle" onclick="togglePwd('reactivatePassword')" aria-label="Show password">👁</button>
+    </div>
+    <label>Renewal key</label>
+    <input id="reactivateKey" placeholder="YNET-XXXX-XXXX-XXXX">
+    <button class="primary" onclick="reactivate()">Reactivate account</button>
+    <div class="msg" id="reactivate-msg"></div>
+  </div>
+
   <div class="tabs">
     <button type="button" class="tab active" id="tab-login" onclick="switchPanel('login')">Log in</button>
     <button type="button" class="tab" id="tab-create" onclick="switchPanel('create')">Create account</button>
     <button type="button" class="tab" id="tab-key" onclick="switchPanel('key')">I already have a key</button>
     <button type="button" class="tab" id="tab-forgot" onclick="switchPanel('forgot')">Forgot password</button>
+    <button type="button" class="tab" id="tab-reactivate" onclick="switchPanel('reactivate')">Reactivate</button>
   </div>
 </div>
 
@@ -131,6 +158,7 @@
     create: ['Get YourNet Control', 'Activate your account to get started.'],
     key: ['Create your account', 'Use the key that was emailed to you.'],
     forgot: ['Reset your password', "We'll email you a reset link."],
+    reactivate: ['Reactivate your account', 'Renew an expired subscription with your key.'],
   };
 
   function switchPanel(key) {
@@ -217,6 +245,29 @@
       showMsg('forgot-msg', data.message || 'If that email has an account, a reset link has been sent.', 'ok');
     } catch (err) {
       showMsg('forgot-msg', 'Something went wrong. Please try again.', 'err');
+    }
+  }
+
+  async function reactivate() {
+    try {
+      const res = await fetch('/api/auth/reactivate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('reactivateEmail').value,
+          password: document.getElementById('reactivatePassword').value,
+          licenseKey: document.getElementById('reactivateKey').value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not reactivate account');
+      showMsg('reactivate-msg', 'Account reactivated! You can log in now.', 'ok');
+      setTimeout(() => {
+        document.getElementById('loginEmail').value = document.getElementById('reactivateEmail').value;
+        switchPanel('login');
+      }, 1200);
+    } catch (err) {
+      showMsg('reactivate-msg', err.message, 'err');
     }
   }
 
